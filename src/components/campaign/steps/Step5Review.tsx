@@ -235,12 +235,19 @@ export function Step5Review() {
                 <span className="text-sm text-muted-foreground">Distribuição</span>
                 <Badge variant="outline">{distributionLabels[config.distribution]}</Badge>
               </div>
-              {config.pixelId && (
+
+              {config.pixelId ? (
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">Pixel</span>
                   <span className="text-sm text-foreground font-mono">{config.pixelId}</span>
                 </div>
-              )}
+              ) : config.objective === 'OUTCOME_SALES' ? (
+                <div className="flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+                  <span className="text-sm font-medium text-destructive">Pixel obrigatório</span>
+                  <span className="text-xs text-muted-foreground">Volte ao Step 3 e selecione um Pixel</span>
+                </div>
+              ) : null}
+
               {config.advantagePlus && (
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Advantage+</span>
