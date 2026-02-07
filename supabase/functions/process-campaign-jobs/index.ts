@@ -431,15 +431,9 @@ async function createFacebookAd(
       objectStorySpec.instagram_user_id = instagramUserId;
     }
 
-    // Asset Feed Spec for dynamic media options:
-    // - prefer_video: true → "Priorizar vídeo" in Meta UI
-    // - optimization_type: 'PLACEMENT' → "Adaptar ao posicionamento"
-    const assetFeedSpec: Record<string, any> = {
-      // Dynamic media: prioritize video when available
-      optimization_type: 'PLACEMENT', // "Adaptar ao posicionamento"
-    };
-
     // Degrees of Freedom Spec for creative enhancements
+    // For catalog ads, this controls "Adaptar ao posicionamento" (placement asset customization)
+    // Note: asset_feed_spec is NOT compatible with template_data (catalog ads)
     const degreesOfFreedomSpec: Record<string, any> = {
       creative_features_spec: {
         // Enable "Adaptar ao posicionamento" (placement asset customization)
@@ -454,22 +448,16 @@ async function createFacebookAd(
       name: `Creative_${name}`,
       object_story_spec: JSON.stringify(objectStorySpec),
       product_set_id: config.productSetId,
-      // Single image/video format (not carousel)
-      // Meta interprets this via template_data.format_option + absence of multi_share fields
       
-      // Asset feed spec for dynamic creative optimizations
-      asset_feed_spec: JSON.stringify(assetFeedSpec),
-      
-      // Degrees of freedom for creative enhancements
+      // Degrees of freedom for creative enhancements ("Adaptar ao posicionamento")
       degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
       
-      // "Priorizar vídeo" - Meta will prefer video assets from catalog when available
-      // This is controlled via the use_retailer_item_ids flag and creative type
-      use_page_actor_override: 'true', // Use page identity for Instagram
+      // Use page identity for Instagram placements
+      use_page_actor_override: 'true',
       
-      // Configuração para substituir deep links - force destination to our link
-      // When link is set in template_data and we don't use deep_link, Meta uses our URL
-      configureCreativeLinkOverride: 'true',
+      // "Priorizar vídeo" - For catalog ads with single_image format,
+      // Meta will automatically prioritize video assets when available in the catalog
+      // This is the default behavior when using format_option: 'single_image'
     };
 
     // Add URL parameters if provided (utm_medium, utm_source, etc.)
