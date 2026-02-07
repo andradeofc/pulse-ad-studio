@@ -256,6 +256,8 @@ async function createFacebookAd(
     // Facebook DPA requires specific structure for template_data
     const objectStorySpec: Record<string, any> = {
       page_id: pageId,
+      // Use Facebook Page to represent business on Instagram (instagram_actor_id = page_id)
+      instagram_actor_id: pageId,
       template_data: {
         call_to_action: {
           type: config.ctaType || 'SHOP_NOW',
