@@ -41,146 +41,110 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse request body for selected account IDs
-    let selectedAccountIds: string[] = [];
+    // Parse request body - now accepts business_id directly
+    let businessId: string | null = null;
     try {
       const body = await req.json();
-      selectedAccountIds = body.account_ids || [];
+      businessId = body.business_id || null;
     } catch {
-      // No body or invalid JSON, will use empty array
+      // No body or invalid JSON
     }
 
-    console.log(`[sync-catalogs] Starting sync for user ${user.id}, account_ids: ${selectedAccountIds.join(', ') || 'all'}`);
-
-    // Get selected ad accounts from database
-    let accountsQuery = supabase
-      .from('facebook_ad_accounts')
-      .select('id, account_id, name, business_id, business_name, profile_id');
-
-    // Filter by selected accounts if provided (these are database UUIDs)
-    if (selectedAccountIds.length > 0) {
-      accountsQuery = accountsQuery.in('id', selectedAccountIds);
-    }
-
-    const { data: accounts, error: accountsError } = await accountsQuery;
-
-    if (accountsError) {
-      console.error('[sync-catalogs] Error fetching accounts:', accountsError);
-      throw accountsError;
-    }
-
-    if (!accounts || accounts.length === 0) {
-      console.log('[sync-catalogs] No accounts found to sync');
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: 'No accounts found',
-        catalogs_synced: 0 
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log(`[sync-catalogs] Found ${accounts.length} accounts to sync catalogs from`);
-
-    // Get unique profile IDs to fetch access tokens
-    const profileIds = [...new Set(accounts.map(a => a.profile_id))];
-    
-    const { data: profiles, error: profilesError } = await supabase
-      .from('facebook_profiles')
-      .select('id, access_token')
-      .in('id', profileIds)
-      .eq('status', 'active');
-
-    if (profilesError || !profiles || profiles.length === 0) {
-      console.error('[sync-catalogs] Error fetching profiles:', profilesError);
+    if (!businessId) {
+      console.log('[sync-catalogs] No business_id provided');
       return new Response(JSON.stringify({ 
         success: false, 
-        error: 'No active profiles found' 
+        error: 'business_id is required',
+        catalogs_synced: 0 
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const profileTokenMap = new Map(profiles.map(p => [p.id, p.access_token]));
-    const catalogsMap = new Map<string, any>(); // Deduplicate by catalog_id
-    let totalCatalogsSynced = 0;
+    console.log(`[sync-catalogs] Starting sync for user ${user.id}, business_id: ${businessId}`);
 
-    // Fetch catalogs for each ad account
-    for (const account of accounts) {
-      const accessToken = profileTokenMap.get(account.profile_id);
-      if (!accessToken) {
-        console.log(`[sync-catalogs] No token for profile ${account.profile_id}, skipping account ${account.account_id}`);
-        continue;
-      }
+    // Get a profile that has access to this business (via ad accounts)
+    const { data: accounts, error: accountsError } = await supabase
+      .from('facebook_ad_accounts')
+      .select('profile_id, business_name')
+      .eq('business_id', businessId)
+      .limit(1);
 
-      const accountId = account.account_id.startsWith('act_') 
-        ? account.account_id 
-        : `act_${account.account_id}`;
-
-      console.log(`[sync-catalogs] Fetching catalogs for account ${accountId} (${account.name})`);
-
-      try {
-        const fetchCatalogs = async (url: string, source: string, businessOverride?: { id: string | null; name: string | null }) => {
-          const res = await fetch(url);
-          const data = await res.json();
-
-          if (!res.ok) {
-            console.error(`[sync-catalogs] HTTP ${res.status} fetching catalogs from ${source}:`, data);
-            return 0;
-          }
-
-          if (data?.error) {
-            console.error(`[sync-catalogs] API error fetching catalogs from ${source}:`, data.error);
-            return 0;
-          }
-
-          const catalogs: FacebookCatalog[] = data?.data || [];
-          console.log(`[sync-catalogs] Found ${catalogs.length} catalogs from ${source}`);
-
-          for (const catalog of catalogs) {
-            if (!catalog?.id || catalogsMap.has(catalog.id)) continue;
-
-            const businessInfo = (catalog as any)?.business;
-            const businessId = businessOverride?.id ?? businessInfo?.id ?? account.business_id ?? null;
-            const businessName = businessOverride?.name ?? businessInfo?.name ?? account.business_name ?? null;
-
-            catalogsMap.set(catalog.id, {
-              profile_id: account.profile_id,
-              catalog_id: catalog.id,
-              name: catalog.name,
-              business_id: businessId,
-              business_name: businessName,
-              product_count: catalog.product_count || 0,
-              vertical: catalog.vertical || 'commerce',
-              updated_at: new Date().toISOString(),
-            });
-          }
-
-          return catalogs.length;
-        };
-
-        // 1) Try catalogs associated directly to this ad account
-        const byAccountUrl = `https://graph.facebook.com/v21.0/${accountId}/product_catalogs?fields=id,name,product_count,vertical,business&limit=500&access_token=${accessToken}`;
-        const byAccountCount = await fetchCatalogs(byAccountUrl, `ad account ${accountId}`);
-
-        // 2) Fallback: fetch catalogs owned by the Business Manager linked to the selected ad account
-        // (Catalogs are business assets; ad accounts only have access/association to them.)
-        if (byAccountCount === 0 && account.business_id) {
-          const byBusinessUrl = `https://graph.facebook.com/v21.0/${account.business_id}/owned_product_catalogs?fields=id,name,product_count,vertical&limit=500&access_token=${accessToken}`;
-          await fetchCatalogs(byBusinessUrl, `business ${account.business_id}`, { id: account.business_id, name: account.business_name });
-        }
-
-      } catch (err) {
-        console.error(`[sync-catalogs] Error processing account ${accountId}:`, err);
-      }
+    if (accountsError || !accounts || accounts.length === 0) {
+      console.error('[sync-catalogs] No accounts found for business:', accountsError);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'No accounts found for this Business Manager',
+        catalogs_synced: 0 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Upsert all unique catalogs
-    const catalogsToUpsert = Array.from(catalogsMap.values());
+    const profileId = accounts[0].profile_id;
+    const businessName = accounts[0].business_name;
+
+    // Get access token from profile
+    const { data: profile, error: profileError } = await supabase
+      .from('facebook_profiles')
+      .select('id, access_token')
+      .eq('id', profileId)
+      .eq('status', 'active')
+      .single();
+
+    if (profileError || !profile) {
+      console.error('[sync-catalogs] Error fetching profile:', profileError);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'No active profile found' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const accessToken = profile.access_token;
+    console.log(`[sync-catalogs] Fetching catalogs from BM ${businessId} (${businessName})`);
+
+    // Fetch catalogs owned by this Business Manager
+    const catalogsUrl = `https://graph.facebook.com/v21.0/${businessId}/owned_product_catalogs?fields=id,name,product_count,vertical&limit=500&access_token=${accessToken}`;
+    const catalogsRes = await fetch(catalogsUrl);
+    const catalogsData = await catalogsRes.json();
+
+    if (catalogsData.error) {
+      console.error(`[sync-catalogs] Error fetching catalogs from BM ${businessId}:`, catalogsData.error);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: catalogsData.error.message || 'Failed to fetch catalogs',
+        error_code: catalogsData.error.code,
+        catalogs_synced: 0 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const catalogs: FacebookCatalog[] = catalogsData.data || [];
+    console.log(`[sync-catalogs] Found ${catalogs.length} catalogs in BM ${businessName}`);
+
+    // Prepare catalogs for upsert
+    const catalogsToUpsert = catalogs.map(catalog => ({
+      profile_id: profileId,
+      catalog_id: catalog.id,
+      name: catalog.name,
+      business_id: businessId,
+      business_name: businessName,
+      product_count: catalog.product_count || 0,
+      vertical: catalog.vertical || 'commerce',
+      updated_at: new Date().toISOString(),
+    }));
+
+    let totalCatalogsSynced = 0;
     
     if (catalogsToUpsert.length > 0) {
-      console.log(`[sync-catalogs] Upserting ${catalogsToUpsert.length} unique catalogs`);
+      console.log(`[sync-catalogs] Upserting ${catalogsToUpsert.length} catalogs`);
       
       const { error: upsertError } = await supabase
         .from('facebook_catalogs')
@@ -196,13 +160,14 @@ Deno.serve(async (req) => {
         console.log(`[sync-catalogs] Successfully upserted ${totalCatalogsSynced} catalogs`);
       }
     } else {
-      console.log('[sync-catalogs] No catalogs found for the selected accounts');
+      console.log('[sync-catalogs] No catalogs found in this Business Manager');
     }
 
     return new Response(JSON.stringify({ 
       success: true, 
       catalogs_synced: totalCatalogsSynced,
-      accounts_checked: accounts.length
+      business_id: businessId,
+      business_name: businessName
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

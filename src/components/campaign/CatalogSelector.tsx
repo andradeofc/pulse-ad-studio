@@ -20,10 +20,10 @@ interface Catalog {
 interface CatalogSelectorProps {
   value: string;
   onChange: (catalogId: string, catalogDbId: string) => void;
-  selectedAccounts: string[]; // Account IDs selected in the campaign
+  businessManagerId: string; // BM to fetch catalogs from
 }
 
-export function CatalogSelector({ value, onChange, selectedAccounts }: CatalogSelectorProps) {
+export function CatalogSelector({ value, onChange, businessManagerId }: CatalogSelectorProps) {
   const { toast } = useToast();
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,10 +52,10 @@ export function CatalogSelector({ value, onChange, selectedAccounts }: CatalogSe
   }, []);
 
   const handleSync = async () => {
-    if (selectedAccounts.length === 0) {
+    if (!businessManagerId) {
       toast({
-        title: 'Nenhuma conta selecionada',
-        description: 'Selecione pelo menos uma conta de anúncios antes de sincronizar catálogos.',
+        title: 'Nenhum Business Manager selecionado',
+        description: 'Selecione um Business Manager antes de sincronizar catálogos.',
         variant: 'destructive',
       });
       return;
@@ -64,17 +64,16 @@ export function CatalogSelector({ value, onChange, selectedAccounts }: CatalogSe
     setSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('facebook-sync-catalogs', {
-        body: { account_ids: selectedAccounts }
+        body: { business_id: businessManagerId }
       });
       
       if (error) throw error;
       
       const syncedCount = data?.catalogs_synced || 0;
-      const accountsChecked = data?.accounts_checked || 0;
       
       toast({
         title: 'Catálogos sincronizados!',
-        description: `${syncedCount} catálogo(s) encontrado(s) em ${accountsChecked} conta(s).`,
+        description: `${syncedCount} catálogo(s) encontrado(s) no Business Manager.`,
       });
       
       await fetchCatalogs();

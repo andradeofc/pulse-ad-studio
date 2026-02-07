@@ -44,6 +44,8 @@ export interface CampaignConfig {
   adsetName: string;
   pixelId: string;
   // Catalog / Dynamic Ads fields - API compatible
+  selectedBusinessManagerId: string; // BM from which to fetch catalogs
+  selectedBusinessManagerName: string;
   catalogId: string; // Facebook catalog_id (for promoted_object.product_catalog_id)
   catalogDbId: string; // Database UUID for fetching product sets
   productSetId: string; // Facebook product_set_id (for adset promoted_object.product_set_id)
@@ -135,6 +137,8 @@ const defaultConfig: CampaignConfig = {
   shareAdsetBudget: false,
   adsetName: '{{criativo}}_CJ{{conjunto}}',
   pixelId: '',
+  selectedBusinessManagerId: '',
+  selectedBusinessManagerName: '',
   catalogId: '',
   catalogDbId: '',
   productSetId: '',
