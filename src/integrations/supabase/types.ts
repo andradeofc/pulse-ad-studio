@@ -14,6 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
+      campaign_job_items: {
+        Row: {
+          config: Json | null
+          created_at: string
+          error_message: string | null
+          facebook_id: string | null
+          id: string
+          item_type: string
+          job_id: string
+          name: string
+          parent_id: string | null
+          status: string
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string
+          error_message?: string | null
+          facebook_id?: string | null
+          id?: string
+          item_type: string
+          job_id: string
+          name: string
+          parent_id?: string | null
+          status?: string
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string
+          error_message?: string | null
+          facebook_id?: string | null
+          id?: string
+          item_type?: string
+          job_id?: string
+          name?: string
+          parent_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_job_items_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_job_items_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_job_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_jobs: {
+        Row: {
+          accounts_count: number
+          completed_at: string | null
+          config: Json
+          created_at: string
+          error_message: string | null
+          hash: string
+          id: string
+          name: string
+          progress: number
+          started_at: string | null
+          status: string
+          total_ads: number
+          total_adsets: number
+          total_campaigns: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          accounts_count?: number
+          completed_at?: string | null
+          config?: Json
+          created_at?: string
+          error_message?: string | null
+          hash: string
+          id?: string
+          name: string
+          progress?: number
+          started_at?: string | null
+          status?: string
+          total_ads?: number
+          total_adsets?: number
+          total_campaigns?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          accounts_count?: number
+          completed_at?: string | null
+          config?: Json
+          created_at?: string
+          error_message?: string | null
+          hash?: string
+          id?: string
+          name?: string
+          progress?: number
+          started_at?: string | null
+          status?: string
+          total_ads?: number
+          total_adsets?: number
+          total_campaigns?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       creatives: {
         Row: {
           created_at: string

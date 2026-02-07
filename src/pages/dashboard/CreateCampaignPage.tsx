@@ -3,9 +3,9 @@ import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useCampaignStore } from '@/stores/campaignStore';
-import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { useCreateCampaignJob } from '@/hooks/useCampaignJobs';
 
 import { WizardStepper } from '@/components/campaign/WizardStepper';
 import { CampaignSummary } from '@/components/campaign/CampaignSummary';
@@ -25,25 +25,115 @@ const steps = [
 
 export default function CreateCampaignPage() {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const { currentStep, nextStep, prevStep, getTotalCampaigns, resetConfig } = useCampaignStore();
+  const { 
+    currentStep, 
+    nextStep, 
+    prevStep, 
+    getTotalCampaigns, 
+    getTotalAdsets,
+    getTotalAds,
+    config,
+    resetConfig 
+  } = useCampaignStore();
   const [isCreating, setIsCreating] = useState(false);
+  const createJobMutation = useCreateCampaignJob();
 
   const totalCampaigns = getTotalCampaigns();
+  const totalAdsets = getTotalAdsets();
+  const totalAds = getTotalAds();
 
   const handleCreate = async () => {
     setIsCreating(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    toast({
-      title: 'Campanhas enviadas para a fila!',
-      description: `${totalCampaigns} campanha(s) serão criadas em breve.`,
-    });
-    
-    resetConfig();
-    navigate('/fila-processamento');
+    try {
+      // Build the job items structure
+      const items: Array<{
+        item_type: 'campaign' | 'adset' | 'ad';
+        name: string;
+        parent_index?: number;
+        config?: Record<string, any>;
+      }> = [];
+
+      let itemIndex = 0;
+      
+      // Generate campaigns, adsets, and ads based on config
+      for (let c = 0; c < totalCampaigns; c++) {
+        const campaignName = config.campaignName
+          .replace('{{sequencial:01}}', String(c + 1).padStart(2, '0'))
+          .replace('{{budget}}', config.useCBO ? 'CBO' : 'ABO')
+          .replace('{{estrutura}}', `${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}`)
+          .replace('{{conta_apelido}}', 'Conta');
+        
+        const campaignIndex = itemIndex;
+        items.push({
+          item_type: 'campaign',
+          name: campaignName,
+          config: { objective: config.objective },
+        });
+        itemIndex++;
+
+        // Adsets per campaign
+        const adsetsForThisCampaign = Math.ceil(totalAdsets / totalCampaigns);
+        for (let a = 0; a < adsetsForThisCampaign; a++) {
+          const adsetName = config.adsetName
+            .replace('{{criativo}}', config.selectedCreatives[a % config.selectedCreatives.length]?.name || `Criativo${a + 1}`)
+            .replace('{{conjunto}}', String(a + 1).padStart(2, '0'));
+
+          const adsetIndex = itemIndex;
+          items.push({
+            item_type: 'adset',
+            name: adsetName,
+            parent_index: campaignIndex,
+            config: { 
+              pixelId: config.pixelId,
+              catalogId: config.catalogId,
+            },
+          });
+          itemIndex++;
+
+          // Ads per adset
+          const adsForThisAdset = Math.ceil(totalAds / totalAdsets);
+          for (let ad = 0; ad < adsForThisAdset; ad++) {
+            const adName = config.adName
+              .replace('{{criativo}}', config.selectedCreatives[ad % config.selectedCreatives.length]?.name || `Criativo${ad + 1}`);
+
+            items.push({
+              item_type: 'ad',
+              name: adName,
+              parent_index: adsetIndex,
+              config: {
+                useCatalog: config.useCatalog,
+                creativeId: config.selectedCreatives[ad % config.selectedCreatives.length]?.id,
+              },
+            });
+            itemIndex++;
+          }
+        }
+      }
+
+      // Create the job name
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('pt-BR').replace(/\//g, '_');
+      const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }).replace(':', '_');
+      const jobName = `[${config.useCatalog ? 'CAT' : 'CRE'}|${config.useCBO ? 'CBO' : 'ABO'}][${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}][${dateStr}][${timeStr}]`;
+
+      await createJobMutation.mutateAsync({
+        name: jobName,
+        config: config as any,
+        totalCampaigns,
+        totalAdsets,
+        totalAds,
+        accountsCount: config.selectedAccounts.length || 1,
+        items,
+      });
+      
+      resetConfig();
+      navigate('/fila-processamento');
+    } catch (error) {
+      console.error('Error creating campaign job:', error);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const renderStep = () => {
