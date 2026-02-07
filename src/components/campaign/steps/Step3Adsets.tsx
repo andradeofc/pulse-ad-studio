@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Plus, X, MapPin, Globe, Users } from 'lucide-react';
+import { RefreshCw, Plus, X, MapPin, Globe, Users, Edit3, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +16,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { cn } from '@/lib/utils';
+import { NamingModal } from '../NamingModal';
 
 const distributionOptions = [
   {
@@ -69,6 +71,8 @@ export function Step3Adsets() {
         return 1;
     }
   };
+
+  const [adsetNamingModalOpen, setAdsetNamingModalOpen] = useState(false);
 
   const isFieldAffected = (field: 'campaigns' | 'adsets' | 'ads') => {
     if (field === 'campaigns' && config.distribution === 'campaign') return true;
@@ -306,22 +310,39 @@ export function Step3Adsets() {
           Nome do Conjunto
         </h3>
 
-        <div className="flex gap-2">
-          <Input
-            value={config.adsetName}
-            onChange={(e) => updateConfig({ adsetName: e.target.value })}
-            placeholder="{{criativo}}_CJ{{conjunto}}"
-            className="bg-secondary/50 font-mono text-sm"
-          />
-          <Button variant="outline">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Gerar
-          </Button>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <div 
+              className="flex-1 relative cursor-pointer group"
+              onClick={() => setAdsetNamingModalOpen(true)}
+            >
+              <Input
+                value={config.adsetName}
+                readOnly
+                placeholder="Clique para configurar nomenclatura..."
+                className="bg-secondary/50 font-mono text-sm cursor-pointer pr-10 hover:border-primary/50 transition-colors"
+              />
+              <Edit3 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            <Button variant="outline" onClick={() => setAdsetNamingModalOpen(true)}>
+              <Sparkles className="w-4 h-4 mr-2" />
+              Configurar
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Clique no campo ou no botão para abrir o editor de nomenclatura com variáveis dinâmicas
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Se vazio: [nome_criativo]_CJ01, CJ02...
-        </p>
       </section>
+
+      {/* Adset Naming Modal */}
+      <NamingModal
+        open={adsetNamingModalOpen}
+        onOpenChange={setAdsetNamingModalOpen}
+        context="adset"
+        value={config.adsetName}
+        onApply={(template) => updateConfig({ adsetName: template })}
+      />
 
       {/* Pixel Section */}
       <section className="space-y-4">
