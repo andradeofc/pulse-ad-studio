@@ -21,9 +21,10 @@ interface CatalogSelectorProps {
   value: string;
   onChange: (catalogId: string, catalogDbId: string) => void;
   businessManagerId: string; // BM to fetch catalogs from
+  selectedAccounts: string[]; // DB UUIDs (used to fetch shared catalogs via ad account)
 }
 
-export function CatalogSelector({ value, onChange, businessManagerId }: CatalogSelectorProps) {
+export function CatalogSelector({ value, onChange, businessManagerId, selectedAccounts }: CatalogSelectorProps) {
   const { toast } = useToast();
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,11 +32,18 @@ export function CatalogSelector({ value, onChange, businessManagerId }: CatalogS
   const [search, setSearch] = useState('');
 
   const fetchCatalogs = async () => {
+    if (!businessManagerId) {
+      setCatalogs([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('facebook_catalogs')
         .select('id, catalog_id, name, business_name, product_count, vertical')
+        .eq('business_id', businessManagerId)
         .order('name');
 
       if (error) throw error;
@@ -49,7 +57,7 @@ export function CatalogSelector({ value, onChange, businessManagerId }: CatalogS
 
   useEffect(() => {
     fetchCatalogs();
-  }, []);
+  }, [businessManagerId]);
 
   const handleSync = async () => {
     if (!businessManagerId) {
@@ -64,16 +72,26 @@ export function CatalogSelector({ value, onChange, businessManagerId }: CatalogS
     setSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('facebook-sync-catalogs', {
-        body: { business_id: businessManagerId }
+        body: { business_id: businessManagerId, ad_account_ids: selectedAccounts }
       });
       
       if (error) throw error;
       
       const syncedCount = data?.catalogs_synced || 0;
-      
+      const debug = data?.debug;
+
+      const ownedCount = debug?.owned_product_catalogs?.count ?? null;
+      const discoveredCount = debug?.discovered_from_adsets?.catalog_ids_found ?? null;
+
+      const breakdownParts: string[] = [];
+      if (ownedCount !== null) breakdownParts.push(`owned: ${ownedCount}`);
+      if (discoveredCount !== null) breakdownParts.push(`via adsets: ${discoveredCount}`);
+
+      const breakdown = breakdownParts.length ? ` (${breakdownParts.join(', ')})` : '';
+
       toast({
         title: 'Catálogos sincronizados!',
-        description: `${syncedCount} catálogo(s) encontrado(s) no Business Manager.`,
+        description: `${syncedCount} catálogo(s) encontrado(s).${breakdown}`,
       });
       
       await fetchCatalogs();
