@@ -417,8 +417,6 @@ async function createFacebookAd(
       // Force single image/video format (not carousel)
       // Valid values: carousel_images_multi_items, carousel_images_single_item, single_image, collection_video
       format_option: 'single_image',
-      // Enable "Substituir deep links do site do catálogo" - use the destination URL
-      // By omitting retailer_item_ids, Meta uses the link field instead of product deep links
     };
 
     const objectStorySpec: Record<string, any> = {
@@ -431,6 +429,17 @@ async function createFacebookAd(
       objectStorySpec.instagram_user_id = instagramUserId;
     }
 
+    // Degrees of Freedom Spec for:
+    // 1. media_type_automation: OPT_IN = "Mídia dinâmica" / "Priorizar vídeo" - prioritize video assets from catalog
+    // Reference: https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/dynamic-media/
+    const degreesOfFreedomSpec: Record<string, any> = {
+      creative_features_spec: {
+        media_type_automation: {
+          enroll_status: 'OPT_IN', // Enable Dynamic Media (prioritize video)
+        },
+      },
+    };
+
     const creativeParams: Record<string, any> = {
       access_token: accessToken,
       name: `Creative_${name}`,
@@ -440,9 +449,12 @@ async function createFacebookAd(
       // Use page identity for Instagram placements
       use_page_actor_override: 'true',
       
-      // Note: degrees_of_freedom_spec with standard_enhancements has been deprecated by Meta
-      // "Adaptar ao posicionamento" is now the default behavior for catalog ads
-      // "Priorizar vídeo" - Meta automatically prioritizes video assets when available
+      // "Mídia dinâmica" / "Priorizar vídeo" - enable video priority from catalog
+      degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
+      
+      // "Substituir deep links do site do catálogo" - force web URL instead of app deep links
+      // web_only = Always send someone to the given web URL. This overrides any deep links in your feed.
+      applink_treatment: 'web_only',
     };
 
     // Add URL parameters if provided (utm_medium, utm_source, etc.)
