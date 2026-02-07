@@ -6,6 +6,7 @@ import { useCampaignStore } from '@/stores/campaignStore';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useCreateCampaignJob } from '@/hooks/useCampaignJobs';
+import { useToast } from '@/hooks/use-toast';
 
 import { WizardStepper } from '@/components/campaign/WizardStepper';
 import { CampaignSummary } from '@/components/campaign/CampaignSummary';
@@ -25,8 +26,11 @@ const steps = [
 
 export default function CreateCampaignPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+
   const { 
     currentStep, 
+    setStep,
     nextStep, 
     prevStep, 
     getTotalCampaigns, 
@@ -43,6 +47,17 @@ export default function CreateCampaignPage() {
   const totalAds = getTotalAds();
 
   const handleCreate = async () => {
+    const requiresPixel = config.objective === 'OUTCOME_SALES';
+    if (requiresPixel && !config.pixelId) {
+      toast({
+        title: 'Pixel obrigatório',
+        description: 'Para o objetivo VENDAS com otimização de conversões no site, selecione um Pixel no Step 3 (Conjuntos).',
+        variant: 'destructive',
+      });
+      setStep(3);
+      return;
+    }
+
     setIsCreating(true);
     
     try {
