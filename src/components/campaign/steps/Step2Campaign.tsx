@@ -283,66 +283,123 @@ export function Step2Campaign() {
           Orçamento
         </h3>
 
-        {/* Mixed currencies warning */}
-        {hasMixedCurrencies && (
-          <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-amber-500">
-                Contas com moedas diferentes selecionadas
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Você selecionou contas em {selectedCurrencies.join(', ')}. 
-                O orçamento será aplicado na moeda de cada conta.
-              </p>
+        {/* Mixed currencies - individual inputs per currency */}
+        {hasMixedCurrencies ? (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-amber-500">
+                  Contas com moedas diferentes selecionadas
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Defina o orçamento para cada moeda separadamente.
+                </p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {selectedCurrencies.map((currency) => {
+                const currInfo = currencyConfig[currency] || { symbol: currency, minBudget: 1 };
+                const accountsInCurrency = selectedAccountsData.filter(a => (a.currency || 'BRL') === currency);
+                const budgetValue = config.budgetByCurrency[currency] ?? config.budget;
+                
+                return (
+                  <div key={currency} className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      Orçamento ({currInfo.symbol})
+                      <Badge variant="outline" className="text-xs">
+                        {accountsInCurrency.length} conta(s)
+                      </Badge>
+                    </Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                        {currInfo.symbol}
+                      </span>
+                      <Input
+                        type="number"
+                        value={budgetValue}
+                        onChange={(e) => {
+                          const newValue = parseFloat(e.target.value) || 0;
+                          updateConfig({ 
+                            budgetByCurrency: {
+                              ...config.budgetByCurrency,
+                              [currency]: newValue
+                            }
+                          });
+                        }}
+                        min={currInfo.minBudget}
+                        step={1}
+                        className="bg-secondary/50 pl-10"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Mínimo: {currInfo.symbol} {currInfo.minBudget.toFixed(2)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Período</Label>
+              <Select
+                value={config.budgetPeriod}
+                onValueChange={(value) => updateConfig({ budgetPeriod: value as 'daily' | 'lifetime' })}
+              >
+                <SelectTrigger className="bg-secondary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Diário</SelectItem>
+                  <SelectItem value="lifetime">Vitalício</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>
+                  Orçamento ({currencyInfo.symbol})
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    {currencyInfo.symbol}
+                  </span>
+                  <Input
+                    type="number"
+                    value={config.budget}
+                    onChange={(e) => updateConfig({ budget: parseFloat(e.target.value) || 0 })}
+                    min={currencyInfo.minBudget}
+                    step={1}
+                    className="bg-secondary/50 pl-10"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Período</Label>
+                <Select
+                  value={config.budgetPeriod}
+                  onValueChange={(value) => updateConfig({ budgetPeriod: value as 'daily' | 'lifetime' })}
+                >
+                  <SelectTrigger className="bg-secondary/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Diário</SelectItem>
+                    <SelectItem value="lifetime">Vitalício</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Mínimo: {currencyInfo.symbol} {currencyInfo.minBudget.toFixed(2)}
+              {config.selectedAccounts.length === 0 && ' · Selecione uma conta para ver a moeda correta'}
+            </p>
+          </>
         )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>
-              Orçamento ({currencyInfo.symbol})
-              {hasMixedCurrencies && (
-                <Badge variant="outline" className="ml-2 text-xs">
-                  {selectedCurrencies.join(' / ')}
-                </Badge>
-              )}
-            </Label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                {currencyInfo.symbol}
-              </span>
-              <Input
-                type="number"
-                value={config.budget}
-                onChange={(e) => updateConfig({ budget: parseFloat(e.target.value) || 0 })}
-                min={currencyInfo.minBudget}
-                step={1}
-                className="bg-secondary/50 pl-10"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Período</Label>
-            <Select
-              value={config.budgetPeriod}
-              onValueChange={(value) => updateConfig({ budgetPeriod: value as 'daily' | 'lifetime' })}
-            >
-              <SelectTrigger className="bg-secondary/50">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">Diário</SelectItem>
-                <SelectItem value="lifetime">Vitalício</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Mínimo: {currencyInfo.symbol} {currencyInfo.minBudget.toFixed(2)}
-          {config.selectedAccounts.length === 0 && ' · Selecione uma conta para ver a moeda correta'}
-        </p>
       </section>
 
       {/* Bid Strategy Section */}

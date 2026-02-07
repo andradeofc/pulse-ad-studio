@@ -23,6 +23,7 @@ export interface CampaignConfig {
   objective: string;
   campaignType: 'cbo' | 'abo' | 'catalog';
   budget: number;
+  budgetByCurrency: Record<string, number>; // e.g., { USD: 50, BRL: 200 }
   budgetPeriod: 'daily' | 'lifetime';
   bidStrategy: 'volume' | 'cost' | 'roas';
   
@@ -88,6 +89,7 @@ const defaultConfig: CampaignConfig = {
   objective: 'sales',
   campaignType: 'cbo',
   budget: 50,
+  budgetByCurrency: {},
   budgetPeriod: 'daily',
   bidStrategy: 'volume',
   distribution: 'campaign',
