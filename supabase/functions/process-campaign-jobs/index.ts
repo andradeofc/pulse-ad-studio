@@ -405,16 +405,14 @@ async function createFacebookAd(
     const urlParams = config.urlParams || '';
     
     // Template data for single image/video format (not carousel)
+    // NOTE: Do NOT use force_single_link here - it conflicts with format_option and degrees_of_freedom_spec
+    // The deep link override is handled via template_url_spec at the ad creative level instead
     const templateData: Record<string, any> = {
       call_to_action: {
         type: config.ctaType || 'SHOP_NOW',
         value: { link: finalDestinationUrl },
       },
 
-      // "Substituir deep links do site do catálogo" + "Definir deep links do catálogo"
-      // force_single_link: true forces single link format AND overrides catalog deep links with the 'link' below
-      // Reference: https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/get-started/#template-creative
-      force_single_link: true,
       link: finalDestinationUrl,
 
       message: config.primaryText || '{{product.name}}',
@@ -459,8 +457,15 @@ async function createFacebookAd(
       // "Mídia dinâmica" / "Priorizar vídeo" - enable video priority from catalog
       degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
       
-      // "Substituir deep links do site do catálogo" - force web URL instead of app deep links
-      // web_only = Always send someone to the given web URL. This overrides any deep links in your feed.
+      // "Substituir deep links do site do catálogo" - override catalog links with ad destination URL
+      // template_url_spec defines the URL templates per platform (web, ios, android)
+      // Using only web.url to force all clicks to go to the specified website URL
+      // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-creative-template-url-spec
+      template_url_spec: JSON.stringify({
+        web: { url: finalDestinationUrl },
+      }),
+      
+      // applink_treatment: web_only ensures app deep links in the feed are ignored
       applink_treatment: 'web_only',
     };
 
