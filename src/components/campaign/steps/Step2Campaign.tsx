@@ -381,6 +381,7 @@ export function Step2Campaign() {
               onChange={(catalogId, catalogDbId) => {
                 updateConfig({ catalogId, catalogDbId, productSetId: '' });
               }}
+              selectedAccounts={config.selectedAccounts}
             />
             <p className="text-xs text-muted-foreground">
               Selecione o catálogo de produtos. O conjunto de produtos será selecionado na próxima etapa (Conjuntos).
