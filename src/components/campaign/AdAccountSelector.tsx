@@ -151,7 +151,7 @@ export function AdAccountSelector({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[400px] p-0 bg-popover border-border" align="start">
-          <Command className="bg-transparent">
+          <Command className="bg-transparent" shouldFilter={false}>
             <CommandInput 
               placeholder="Buscar pelo nome, ID ou BM..." 
               value={searchQuery}
@@ -171,7 +171,7 @@ export function AdAccountSelector({
                     return (
                       <CommandItem
                         key={account.id}
-                        value={account.id}
+                        value={`${account.name} ${account.account_id} ${account.business_name || ''}`}
                         onSelect={() => toggleAccount(account.id)}
                         className={cn(
                           "flex items-center gap-3 px-3 py-3 cursor-pointer",
