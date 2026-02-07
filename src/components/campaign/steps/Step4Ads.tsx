@@ -1,5 +1,4 @@
-import { motion } from 'framer-motion';
-import { RefreshCw, Shield, Facebook, ExternalLink } from 'lucide-react';
+import { RefreshCw, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +15,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCampaignStore } from '@/stores/campaignStore';
+import { PageSelector } from '@/components/campaign/PageSelector';
 
 const ctaOptions = [
   { value: 'LEARN_MORE', label: 'Saiba Mais' },
@@ -28,18 +28,9 @@ const ctaOptions = [
   { value: 'APPLY_NOW', label: 'Solicitar Agora' },
 ];
 
-// Mock pages
-const mockPages = [
-  { id: '1', name: 'Página Principal', slots: 15 },
-  { id: '2', name: 'Marca Secundária', slots: 8 },
-  { id: '3', name: 'Landing Page Offers', slots: 12 },
-  { id: '4', name: 'Promo Store', slots: 5 },
-];
-
 export function Step4Ads() {
   const { config, updateConfig, getTotalAds } = useCampaignStore();
   const totalAds = getTotalAds();
-  const availablePages = mockPages.filter((p) => p.slots > 0);
 
   return (
     <div className="space-y-8">
@@ -75,69 +66,40 @@ export function Step4Ads() {
               </div>
               <Switch
                 checked={config.antiSpyEnabled}
-                onCheckedChange={(checked) => updateConfig({ antiSpyEnabled: checked })}
+                onCheckedChange={(checked) => {
+                  updateConfig({ antiSpyEnabled: checked });
+                  if (!checked) {
+                    // Reset to single page mode
+                    updateConfig({ selectedPages: config.selectedPages.slice(0, 1) });
+                  }
+                }}
               />
             </div>
 
-            {config.antiSpyEnabled ? (
-              <div className="space-y-3 pt-4 border-t border-border">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {totalAds} anúncios · {availablePages.length} páginas disponíveis
-                  </span>
-                  <Button variant="link" size="sm" className="text-primary p-0 h-auto">
-                    Gerenciar páginas
-                  </Button>
+            <div className="pt-4 border-t border-border">
+              {config.antiSpyEnabled ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">
+                      {totalAds} anúncios a criar
+                    </span>
+                  </div>
+                  <PageSelector
+                    selectedPages={config.selectedPages}
+                    onSelectionChange={(pages) => updateConfig({ selectedPages: pages })}
+                    multiSelect={true}
+                    totalAdsToCreate={totalAds}
+                  />
                 </div>
-                
-                <div className="space-y-2">
-                  {availablePages.slice(0, 3).map((page) => (
-                    <div
-                      key={page.id}
-                      className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Facebook className="w-5 h-5 text-ads-info" />
-                        <span className="text-sm text-foreground">{page.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className="text-xs">
-                          {Math.ceil(totalAds / availablePages.length)} anúncio(s)
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {page.slots} slots
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                
-                {availablePages.length > 3 && (
-                  <Button variant="link" size="sm" className="text-muted-foreground p-0 h-auto">
-                    Ver todas as {availablePages.length} páginas →
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div className="pt-4 border-t border-border">
-                <Label className="text-sm">Página do Facebook</Label>
-                <Select>
-                  <SelectTrigger className="bg-secondary/50 mt-2">
-                    <SelectValue placeholder="Selecione uma página" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockPages.map((page) => (
-                      <SelectItem key={page.id} value={page.id}>
-                        <div className="flex items-center gap-2">
-                          <Facebook className="w-4 h-4" />
-                          {page.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+              ) : (
+                <PageSelector
+                  selectedPages={config.selectedPages}
+                  onSelectionChange={(pages) => updateConfig({ selectedPages: pages })}
+                  multiSelect={false}
+                  totalAdsToCreate={totalAds}
+                />
+              )}
+            </div>
           </CardContent>
         </Card>
       </section>

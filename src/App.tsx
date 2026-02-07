@@ -19,6 +19,7 @@ import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage";
 // Dashboard Pages
 import DashboardPage from "@/pages/dashboard/DashboardPage";
 import FacebookProfilesPage from "@/pages/dashboard/FacebookProfilesPage";
+import FacebookPagesPage from "@/pages/dashboard/FacebookPagesPage";
 import AdAccountsPage from "@/pages/dashboard/AdAccountsPage";
 import CreateCampaignPage from "@/pages/dashboard/CreateCampaignPage";
 import ProcessingQueuePage from "@/pages/dashboard/ProcessingQueuePage";
@@ -58,7 +59,7 @@ const App = () => {
             <Route path="/contas-anuncio" element={<AdAccountsPage />} />
             <Route path="/campanhas" element={<PlaceholderPage title="Campanhas" description="Gerencie suas campanhas ativas" />} />
             <Route path="/campanhas/criar" element={<CreateCampaignPage />} />
-            <Route path="/paginas" element={<PlaceholderPage title="Páginas" description="Gerencie suas páginas do Facebook" />} />
+            <Route path="/paginas" element={<FacebookPagesPage />} />
             <Route path="/fila-processamento" element={<ProcessingQueuePage />} />
             <Route path="/biblioteca-midia" element={<PlaceholderPage title="Biblioteca de Mídia" description="Upload e gerenciamento de criativos" />} />
             <Route path="/publicos" element={<PlaceholderPage title="Públicos" description="Gerencie seus públicos salvos" />} />
