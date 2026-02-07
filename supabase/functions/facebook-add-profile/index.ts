@@ -15,31 +15,83 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchJsonWithRetry(
+  url: string,
+  init?: RequestInit,
+  maxAttempts = 5
+): Promise<{ ok: boolean; status: number; data: any }> {
+  let attempt = 0;
+
+  while (attempt < maxAttempts) {
+    attempt++;
+
+    try {
+      const res = await fetch(url, init);
+      const status = res.status;
+      const text = await res.text();
+
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = { raw: text };
+      }
+
+      const apiError = data?.error;
+      const isRateLimit = status === 429 || apiError?.code === 4;
+
+      if (res.ok && !apiError) {
+        return { ok: true, status, data };
+      }
+
+      if (isRateLimit && attempt < maxAttempts) {
+        const waitMs = Math.min(30000, 1000 * 2 ** (attempt - 1));
+        console.warn(`Rate limited. Retrying in ${waitMs}ms (attempt ${attempt}/${maxAttempts})`);
+        await sleep(waitMs);
+        continue;
+      }
+
+      return { ok: false, status, data };
+    } catch (e) {
+      if (attempt < maxAttempts) {
+        const waitMs = Math.min(10000, 500 * attempt);
+        console.warn(`Network error. Retrying in ${waitMs}ms (attempt ${attempt}/${maxAttempts})`, e);
+        await sleep(waitMs);
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  return { ok: false, status: 0, data: null };
+}
+
+function normalizeAdAccountId(account: any): string | null {
+  const raw = account?.account_id ?? account?.id;
+  if (!raw) return null;
+  const s = String(raw);
+  return s.startsWith("act_") ? s.slice(4) : s;
+}
+
 // Fetch all paginated results from Facebook API
 async function fetchAllPaginated(url: string): Promise<any[]> {
   const all: any[] = [];
   let nextUrl: string | null = url;
 
   while (nextUrl) {
-    try {
-      const response = await fetch(nextUrl);
-      if (!response.ok) {
-        console.error("Pagination fetch failed:", response.status);
-        break;
-      }
-      const data = await response.json();
-      
-      if (data.error) {
-        console.error("Facebook API error in pagination:", data.error);
-        break;
-      }
-      
-      all.push(...(data.data || []));
-      nextUrl = data.paging?.next || null;
-    } catch (e) {
-      console.error("Error in pagination:", e);
+    const { ok, status, data } = await fetchJsonWithRetry(nextUrl, undefined, 5);
+
+    if (!ok) {
+      console.error("Pagination fetch failed:", status, data?.error || data);
       break;
     }
+
+    all.push(...(data?.data || []));
+    nextUrl = data?.paging?.next || null;
   }
 
   return all;
@@ -76,86 +128,114 @@ async function performFullSync(
 
   try {
     // ========== STAGE 1: SYNC AD ACCOUNTS ==========
-    const accountsMap = new Map<string, any>(); // Deduplicate by account_id
+    // Source of truth: /me/adaccounts (all accessible accounts). Then we enrich BM (business) via Batch.
+    const accountsMap = new Map<string, any>();
 
-    // Personal accounts
-    console.log("Fetching personal accounts...");
-    const personalAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`;
-    const personalAccounts = await fetchAllPaginated(personalAccountsUrl);
-    console.log(`Found ${personalAccounts.length} personal accounts`);
+    console.log("Fetching all accessible ad accounts (/me/adaccounts)...");
+    const adAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`;
+    const rawAccounts = await fetchAllPaginated(adAccountsUrl);
+    console.log(`Found ${rawAccounts.length} ad accounts (raw)`);
 
-    for (const account of personalAccounts) {
-      accountsMap.set(account.account_id, {
+    for (const account of rawAccounts) {
+      const accountId = normalizeAdAccountId(account);
+      if (!accountId) continue;
+
+      const key = String(accountId);
+      const existing = accountsMap.get(key);
+
+      accountsMap.set(key, {
         profile_id: profileId,
-        account_id: account.account_id,
-        name: account.name,
-        currency: account.currency,
-        timezone: account.timezone_name,
+        account_id: key,
+        name: account.name ?? existing?.name ?? "-",
+        currency: account.currency ?? existing?.currency ?? null,
+        timezone: account.timezone_name ?? existing?.timezone ?? null,
         status: account.account_status === 1 ? "active" : "inactive",
-        business_id: null,
-        business_name: "Pessoal",
+        business_id: existing?.business_id ?? null,
+        business_name: existing?.business_name ?? null,
       });
     }
 
-    // Fetch all Business Managers
-    console.log("Fetching Business Managers...");
-    const businessesUrl = `${FACEBOOK_GRAPH_API}/me/businesses?fields=id,name&limit=100&access_token=${accessToken}`;
+    // Fetch all Business Managers (used in Stage 2 pages sync)
+    console.log("Fetching Business Managers (/me/businesses)...");
+    const businessesUrl = `${FACEBOOK_GRAPH_API}/me/businesses?fields=id,name&limit=500&access_token=${accessToken}`;
     allBusinesses = await fetchAllPaginated(businessesUrl);
     console.log(`Found ${allBusinesses.length} Business Managers`);
 
-    // Process BMs in parallel (5 at a time)
-    const bmChunks = chunk(allBusinesses, 5);
+    // Enrich business info for EVERY account via Batch API (more complete + fewer calls)
+    const uniqueAccounts = Array.from(accountsMap.values());
+    console.log(`Enriching business info for ${uniqueAccounts.length} accounts via Batch API...`);
 
-    for (const bmChunk of bmChunks) {
-      const bmPromises = bmChunk.map(async (business: any) => {
+    let enrichedCount = 0;
+    const accountChunksForBusiness = chunk(uniqueAccounts, 50);
+
+    for (const accountChunk of accountChunksForBusiness) {
+      const batch = accountChunk.map((acc: any) => ({
+        method: "GET",
+        relative_url: `act_${acc.account_id}?fields=business{id,name}`,
+      }));
+
+      const form = new URLSearchParams();
+      form.set("access_token", accessToken);
+      form.set("batch", JSON.stringify(batch));
+
+      const { ok, status, data } = await fetchJsonWithRetry(
+        FACEBOOK_GRAPH_API,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString(),
+        },
+        5
+      );
+
+      if (!ok || !Array.isArray(data)) {
+        console.error("Batch business enrichment failed:", status, data?.error || data);
+        continue;
+      }
+
+      for (let i = 0; i < data.length; i++) {
+        const result = data[i];
+        const acc = accountChunk[i];
+
+        if (!result || result.code !== 200) continue;
+
         try {
-          const [ownedAccounts, clientAccounts] = await Promise.all([
-            fetchAllPaginated(
-              `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`
-            ),
-            fetchAllPaginated(
-              `${FACEBOOK_GRAPH_API}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`
-            ),
-          ]);
+          const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+          const business = body?.business;
 
-          console.log(`BM ${business.name}: ${ownedAccounts.length} owned, ${clientAccounts.length} client accounts`);
-
-          return [...ownedAccounts, ...clientAccounts].map(account => ({
-            account,
-            business,
-          }));
-        } catch (e) {
-          console.error(`Error fetching accounts for BM ${business.name}:`, e);
-          return [];
-        }
-      });
-
-      const results = await Promise.all(bmPromises);
-      for (const accountList of results) {
-        for (const { account, business } of accountList) {
-          // Only add if not already in map (personal takes precedence)
-          if (!accountsMap.has(account.account_id)) {
-            accountsMap.set(account.account_id, {
-              profile_id: profileId,
-              account_id: account.account_id,
-              name: account.name,
-              currency: account.currency,
-              timezone: account.timezone_name,
-              status: account.account_status === 1 ? "active" : "inactive",
-              business_id: business.id,
-              business_name: business.name,
-            });
+          if (business?.id) {
+            const key = String(acc.account_id);
+            const current = accountsMap.get(key);
+            if (current) {
+              current.business_id = String(business.id);
+              current.business_name = String(business.name || "BM");
+              accountsMap.set(key, current);
+              enrichedCount++;
+            }
           }
+        } catch (e) {
+          console.error("Error parsing business batch body:", e);
         }
+      }
+
+      // gentle pacing to avoid rate limits
+      await sleep(250);
+    }
+
+    // Mark the remaining accounts as personal
+    for (const row of accountsMap.values()) {
+      if (!row.business_id) {
+        row.business_name = row.business_name || "Pessoal";
       }
     }
 
-    // Upsert accounts in chunks
-    const uniqueAccounts = Array.from(accountsMap.values());
-    console.log(`Upserting ${uniqueAccounts.length} unique accounts...`);
-    
-    const accountChunks = chunk(uniqueAccounts, 500);
-    for (const rows of accountChunks) {
+    const finalAccounts = Array.from(accountsMap.values());
+    console.log(
+      `Upserting ${finalAccounts.length} unique accounts... (BM-labeled: ${enrichedCount})`
+    );
+
+    const finalChunks = chunk(finalAccounts, 500);
+    for (const rows of finalChunks) {
       if (rows.length === 0) continue;
       const { error } = await supabase
         .from("facebook_ad_accounts")
@@ -163,7 +243,7 @@ async function performFullSync(
       if (error) console.error("Error upserting accounts:", error);
     }
 
-    console.log(`✓ STAGE 1 COMPLETE: ${uniqueAccounts.length} accounts synced`);
+    console.log(`✓ STAGE 1 COMPLETE: ${finalAccounts.length} accounts synced`);
 
   } catch (error) {
     console.error("Error in Stage 1 (accounts):", error);
