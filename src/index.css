@@ -2,95 +2,84 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/* AdsPulse Design System - Dark Theme
+   Professional Facebook Ads Management Platform
+   Colors in HSL format for Tailwind compatibility
 */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Core Background Colors */
+    --background: 222 47% 5%;           /* #0a0e1a - Main background */
+    --foreground: 210 40% 98%;          /* #f9fafb - Primary text */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-
-    --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
+    /* Card/Surface Colors */
+    --card: 220 26% 10%;                /* #111827 - Card background */
     --card-foreground: 210 40% 98%;
 
-    --popover: 222.2 84% 4.9%;
+    --popover: 220 26% 10%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    /* Primary - Emerald Green for CTAs and success */
+    --primary: 160 84% 39%;             /* #10b981 */
+    --primary-foreground: 210 40% 98%;
 
-    --secondary: 217.2 32.6% 17.5%;
+    /* Secondary - Subtle dark surface */
+    --secondary: 217 33% 12%;           /* #1a2332 */
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    /* Muted - For secondary text and subtle elements */
+    --muted: 217 33% 15%;
+    --muted-foreground: 215 16% 65%;    /* #9ca3af */
 
-    --accent: 217.2 32.6% 17.5%;
+    /* Accent - For highlights and interactive states */
+    --accent: 217 33% 17%;
     --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 62.8% 30.6%;
+    /* Destructive - Red for alerts and danger actions */
+    --destructive: 0 84% 60%;           /* #ef4444 */
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Border and Input */
+    --border: 217 33% 17%;              /* #1f2937 */
+    --input: 217 33% 17%;
+    --ring: 160 84% 39%;                /* Emerald ring */
+
+    --radius: 0.75rem;
+
+    /* Sidebar */
+    --sidebar-background: 222 47% 5%;
+    --sidebar-foreground: 215 16% 65%;
+    --sidebar-primary: 160 84% 39%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 217 33% 12%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 160 84% 39%;
+
+    /* Custom AdsPulse Colors */
+    --ads-warning: 38 92% 50%;          /* #f59e0b - Amber */
+    --ads-info: 217 91% 60%;            /* #3b82f6 - Blue */
+    --ads-success: 160 84% 39%;         /* #10b981 - Emerald */
+    --ads-danger: 0 84% 60%;            /* #ef4444 - Red */
+    
+    /* Gradient tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(160 84% 39%), hsl(160 84% 50%));
+    --gradient-hero: linear-gradient(135deg, hsl(160 84% 39% / 0.2), hsl(217 91% 60% / 0.1));
+    --gradient-card: linear-gradient(180deg, hsl(220 26% 12%), hsl(220 26% 8%));
+    --gradient-glow: radial-gradient(ellipse at center, hsl(160 84% 39% / 0.15), transparent 70%);
+    
+    /* Shadow tokens */
+    --shadow-glow: 0 0 40px hsl(160 84% 39% / 0.3);
+    --shadow-card: 0 4px 24px hsl(222 47% 2% / 0.5);
+    --shadow-button: 0 4px 14px hsl(160 84% 39% / 0.4);
+  }
+
+  /* Dark mode is default, no light mode variant needed */
+  .dark {
+    /* Same as root - dark by default */
   }
 }
 
@@ -99,7 +88,142 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
+
+@layer components {
+  /* Glass effect for cards */
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Glow effect for primary buttons */
+  .glow-primary {
+    box-shadow: var(--shadow-button);
+  }
+
+  /* Gradient text */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(160 84% 50%), hsl(160 84% 70%));
+  }
+
+  /* Status badges */
+  .badge-active {
+    @apply bg-ads-success/20 text-ads-success border border-ads-success/30;
+  }
+
+  .badge-warning {
+    @apply bg-ads-warning/20 text-ads-warning border border-ads-warning/30;
+  }
+
+  .badge-danger {
+    @apply bg-ads-danger/20 text-ads-danger border border-ads-danger/30;
+  }
+
+  .badge-info {
+    @apply bg-ads-info/20 text-ads-info border border-ads-info/30;
+  }
+
+  /* Sidebar active state */
+  .sidebar-active {
+    @apply bg-sidebar-accent text-sidebar-primary-foreground border-l-2 border-l-primary;
+  }
+
+  /* Step indicator */
+  .step-complete {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .step-active {
+    @apply bg-primary/20 text-primary border-2 border-primary;
+  }
+
+  .step-pending {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  /* Metric cards */
+  .metric-card {
+    @apply glass-card rounded-xl p-6 transition-all duration-300;
+  }
+
+  .metric-card:hover {
+    @apply border-primary/30;
+    box-shadow: 0 0 20px hsl(160 84% 39% / 0.1);
+  }
+
+  /* Input focus glow */
+  .input-glow:focus {
+    @apply ring-2 ring-primary/50;
+    box-shadow: 0 0 0 4px hsl(160 84% 39% / 0.1);
+  }
+}
+
+@layer utilities {
+  /* Animation utilities */
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes glow {
+    from {
+      box-shadow: 0 0 20px hsl(160 84% 39% / 0.2);
+    }
+    to {
+      box-shadow: 0 0 40px hsl(160 84% 39% / 0.4);
+    }
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  /* Gradient backgrounds */
+  .bg-gradient-radial {
+    background: radial-gradient(ellipse at center, var(--tw-gradient-from), var(--tw-gradient-to));
+  }
+
+  .bg-hero-glow {
+    background: var(--gradient-glow);
   }
 }
