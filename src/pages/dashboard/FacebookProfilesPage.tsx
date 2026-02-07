@@ -260,14 +260,39 @@ export default function FacebookProfilesPage() {
         return;
       }
       
-      toast({
-        title: 'Token atualizado!',
-        description: `Sincronizado: ${result.synced.accounts} contas, ${result.synced.pixels} pixels, ${result.synced.pages} páginas`,
-      });
-      
-      setIsUpdateTokenOpen(false);
-      setUpdateTokenInput('');
-      await loadProfiles();
+      // Check if sync is running in background
+      if (result.background) {
+        toast({
+          title: 'Token atualizado!',
+          description: 'Sincronização iniciada em background. Os dados aparecerão em alguns segundos.',
+        });
+        
+        // Reload profiles after a short delay to show updated data
+        setIsUpdateTokenOpen(false);
+        setUpdateTokenInput('');
+        await loadProfiles();
+        
+        // Reload again after 5 seconds to catch background sync results
+        setTimeout(() => {
+          loadProfiles();
+        }, 5000);
+        
+        // And once more after 15 seconds for larger accounts
+        setTimeout(() => {
+          loadProfiles();
+        }, 15000);
+      } else {
+        toast({
+          title: 'Token atualizado!',
+          description: result.synced 
+            ? `Sincronizado: ${result.synced.accounts} contas, ${result.synced.pixels} pixels, ${result.synced.pages} páginas`
+            : 'Dados sincronizados com sucesso.',
+        });
+        
+        setIsUpdateTokenOpen(false);
+        setUpdateTokenInput('');
+        await loadProfiles();
+      }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       toast({
