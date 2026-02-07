@@ -1,16 +1,17 @@
-import { RefreshCw, Clock, CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, Inbox } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, Inbox, Play, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { useCampaignJobs, useCampaignJobItems } from '@/hooks/useCampaignJobs';
+import { useCampaignJobs, useCampaignJobItems, useProcessCampaignJob } from '@/hooks/useCampaignJobs';
 import { JobItemsTree } from '@/components/campaign/JobItemsTree';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 const statusIcons = {
   queued: Clock,
@@ -30,10 +31,46 @@ export default function ProcessingQueuePage() {
   const [activeTab, setActiveTab] = useState('all');
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const processJobMutation = useProcessCampaignJob();
 
   const statusFilter = activeTab === 'all' ? undefined : activeTab;
   const { data: jobs = [], isLoading, refetch } = useCampaignJobs(statusFilter);
   const { data: expandedJobItems = [], isLoading: isLoadingItems } = useCampaignJobItems(expandedJob);
+
+  // Realtime subscription for job updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('campaign-jobs-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'campaign_jobs',
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['campaign-jobs'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'campaign_job_items',
+        },
+        () => {
+          if (expandedJob) {
+            queryClient.invalidateQueries({ queryKey: ['campaign-job-items', expandedJob] });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient, expandedJob]);
 
   const stats = {
     queued: jobs.filter(j => j.status === 'queued').length,
@@ -47,6 +84,11 @@ export default function ProcessingQueuePage() {
     if (expandedJob) {
       queryClient.invalidateQueries({ queryKey: ['campaign-job-items', expandedJob] });
     }
+  };
+
+  const handleProcessJob = (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    processJobMutation.mutate(jobId);
   };
 
   const filteredJobs = activeTab === 'all' 
@@ -159,7 +201,35 @@ export default function ProcessingQueuePage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-4 flex-shrink-0">
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Process button for queued/failed jobs */}
+                        {(job.status === 'queued' || job.status === 'failed') && (
+                          <Button
+                            size="sm"
+                            variant={job.status === 'failed' ? 'outline' : 'default'}
+                            onClick={(e) => handleProcessJob(job.id, e)}
+                            disabled={processJobMutation.isPending}
+                            className={cn(
+                              "h-7 px-3 text-xs",
+                              job.status === 'queued' && "bg-ads-success hover:bg-ads-success/90"
+                            )}
+                          >
+                            {processJobMutation.isPending ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : job.status === 'failed' ? (
+                              <>
+                                <RotateCcw className="w-3 h-3 mr-1" />
+                                Reprocessar
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3 h-3 mr-1" />
+                                Processar
+                              </>
+                            )}
+                          </Button>
+                        )}
+
                         {(job.status === 'processing' || job.status === 'queued') && (
                           <div className="w-24">
                             <Progress value={job.progress} className="h-2" />
