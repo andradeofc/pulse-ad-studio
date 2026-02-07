@@ -340,9 +340,32 @@ export default function FacebookProfilesPage() {
         await loadProfiles();
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      // Try to extract the error details from the response
+      let errorTitle = 'Erro ao atualizar token';
+      let errorMessage = 'Erro desconhecido';
+      
+      if (error && typeof error === 'object' && 'context' in error) {
+        try {
+          const context = (error as any).context;
+          if (context?.json) {
+            const jsonData = await context.json();
+            if (jsonData.isRateLimit) {
+              errorTitle = 'Rate limit atingido';
+              errorMessage = jsonData.details || 'Aguarde alguns minutos e tente novamente.';
+            } else {
+              errorMessage = jsonData.details || jsonData.error || errorMessage;
+            }
+          }
+        } catch {
+          // Fallback to error message
+          errorMessage = error instanceof Error ? error.message : errorMessage;
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
-        title: 'Erro ao atualizar token',
+        title: errorTitle,
         description: errorMessage,
         variant: 'destructive',
       });
