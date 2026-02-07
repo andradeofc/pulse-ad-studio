@@ -109,6 +109,53 @@ export type Database = {
           },
         ]
       }
+      facebook_catalogs: {
+        Row: {
+          business_id: string | null
+          business_name: string | null
+          catalog_id: string
+          created_at: string
+          id: string
+          name: string
+          product_count: number | null
+          profile_id: string
+          updated_at: string
+          vertical: string | null
+        }
+        Insert: {
+          business_id?: string | null
+          business_name?: string | null
+          catalog_id: string
+          created_at?: string
+          id?: string
+          name: string
+          product_count?: number | null
+          profile_id: string
+          updated_at?: string
+          vertical?: string | null
+        }
+        Update: {
+          business_id?: string | null
+          business_name?: string | null
+          catalog_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          product_count?: number | null
+          profile_id?: string
+          updated_at?: string
+          vertical?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_catalogs_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facebook_pages: {
         Row: {
           access_token: string | null
@@ -214,6 +261,44 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facebook_product_sets: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          filter: string | null
+          id: string
+          name: string
+          product_count: number | null
+          product_set_id: string
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          filter?: string | null
+          id?: string
+          name: string
+          product_count?: number | null
+          product_set_id: string
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          filter?: string | null
+          id?: string
+          name?: string
+          product_count?: number | null
+          product_set_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_product_sets_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_catalogs"
             referencedColumns: ["id"]
           },
         ]

@@ -98,7 +98,7 @@ export function Step5Review() {
 
   // Build API-compatible ad creative object for preview
   const buildAdCreativePreview = () => {
-    return {
+    const creative: any = {
       object_story_spec: {
         page_id: config.selectedPages[0] || '<PAGE_ID>',
         link_data: {
@@ -119,6 +119,27 @@ export function Step5Review() {
         enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
       },
     };
+
+    return creative;
+  };
+
+  // Build API-compatible promoted object for campaign/adset
+  const buildPromotedObject = () => {
+    const promotedObject: any = {};
+
+    if (config.useCatalog && config.catalogId) {
+      promotedObject.product_catalog_id = config.catalogId;
+    }
+
+    if (config.useCatalog && config.productSetId) {
+      promotedObject.product_set_id = config.productSetId;
+    }
+
+    if (config.pixelId) {
+      promotedObject.pixel_id = config.pixelId;
+    }
+
+    return Object.keys(promotedObject).length > 0 ? promotedObject : undefined;
   };
 
   return (
@@ -165,12 +186,20 @@ export function Step5Review() {
                 </Badge>
               </div>
               {config.useCatalog && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Catálogo</span>
-                  <Badge variant="secondary" className="bg-pink-500/20 text-pink-400 border-pink-500/30">
-                    Dynamic Ads
-                  </Badge>
-                </div>
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Catálogo</span>
+                    <Badge variant="secondary" className="bg-pink-500/20 text-pink-400 border-pink-500/30">
+                      Dynamic Ads
+                    </Badge>
+                  </div>
+                  {config.catalogId && (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Catalog ID</span>
+                      <span className="text-xs text-foreground font-mono">{config.catalogId}</span>
+                    </div>
+                  )}
+                </>
               )}
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Contas Selecionadas</span>
@@ -216,6 +245,12 @@ export function Step5Review() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Advantage+</span>
                   <Badge className="bg-ads-info/20 text-ads-info border-ads-info/30">Ativado</Badge>
+                </div>
+              )}
+              {config.useCatalog && config.productSetId && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Product Set</span>
+                  <span className="text-xs text-foreground font-mono">{config.productSetId}</span>
                 </div>
               )}
             </CardContent>
@@ -532,6 +567,29 @@ export function Step5Review() {
               </pre>
             </CardContent>
           </Card>
+
+          {/* Promoted Object Preview - for Dynamic Ads */}
+          {config.useCatalog && (
+            <Card className="glass-card border-pink-500/30">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Check className="w-5 h-5 text-pink-400" />
+                  Promoted Object (API)
+                  <Badge variant="secondary" className="text-xs bg-pink-500/20 text-pink-400 border-pink-500/30">
+                    DPA
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <pre className="text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap bg-secondary/50 p-3 rounded-lg">
+{JSON.stringify(buildPromotedObject(), null, 2)}
+                </pre>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Usado no <code className="px-1 py-0.5 bg-secondary rounded">campaign.promoted_object</code> e <code className="px-1 py-0.5 bg-secondary rounded">adset.promoted_object</code>
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* API Targeting Preview */}
           <Card className="glass-card">

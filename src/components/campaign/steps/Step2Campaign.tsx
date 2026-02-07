@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Layers, Grid3X3, Edit3, AlertCircle } from 'lucide-react';
+import { Sparkles, Layers, Grid3X3, Edit3, AlertCircle, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +19,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { NamingModal } from '../NamingModal';
 import { AdAccountSelector } from '../AdAccountSelector';
+import { CatalogSelector } from '../CatalogSelector';
 
 const objectives = [
   { value: 'OUTCOME_SALES', label: 'Vendas', description: 'Conversões e compras no site' },
@@ -337,7 +338,7 @@ export function Step2Campaign() {
               "w-10 h-10 rounded-lg flex items-center justify-center",
               config.useCatalog ? "bg-primary/20" : "bg-secondary"
             )}>
-              <Sparkles className={cn(
+              <Package className={cn(
                 "w-5 h-5",
                 config.useCatalog ? "text-primary" : "text-muted-foreground"
               )} />
@@ -355,10 +356,37 @@ export function Step2Campaign() {
             </Badge>
             <Switch
               checked={config.useCatalog}
-              onCheckedChange={(checked) => updateConfig({ useCatalog: checked })}
+              onCheckedChange={(checked) => {
+                updateConfig({ useCatalog: checked });
+                // Clear catalog selection when disabling
+                if (!checked) {
+                  updateConfig({ catalogId: '', catalogDbId: '', productSetId: '' });
+                }
+              }}
             />
           </div>
         </div>
+
+        {/* Catalog Selector - Shown when Dynamic Ads is enabled */}
+        {config.useCatalog && (
+          <div className="space-y-4 p-4 bg-pink-500/5 rounded-lg border border-pink-500/20">
+            <div className="flex items-center gap-2">
+              <Label className="text-foreground">Selecionar Catálogo</Label>
+              <Badge variant="outline" className="text-xs font-mono">
+                product_catalog_id
+              </Badge>
+            </div>
+            <CatalogSelector
+              value={config.catalogId}
+              onChange={(catalogId, catalogDbId) => {
+                updateConfig({ catalogId, catalogDbId, productSetId: '' });
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Selecione o catálogo de produtos. O conjunto de produtos será selecionado na próxima etapa (Conjuntos).
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Budget Section */}
