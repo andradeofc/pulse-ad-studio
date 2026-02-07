@@ -411,16 +411,15 @@ async function createFacebookAd(
         value: { link: finalDestinationUrl },
       },
 
-      // Destination URL — deep link override is handled by applink_treatment at creative level
+      // "Substituir deep links do site do catálogo" + "Definir deep links do catálogo"
+      // force_single_link: true forces single link format AND overrides catalog deep links with the 'link' below
+      // Reference: https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/get-started/#template-creative
+      force_single_link: true,
       link: finalDestinationUrl,
 
       message: config.primaryText || '{{product.name}}',
       name: config.headline || '{{product.name}}',
       description: config.description || '{{product.price}}',
-
-      // Dynamic Media: "Priorizar vídeo" -> use single_video format option
-      // (cannot combine with force_single_link per API restriction)
-      format_option: 'single_video',
     };
 
     const objectStorySpec: Record<string, any> = {
