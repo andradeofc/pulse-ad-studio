@@ -82,11 +82,26 @@ Deno.serve(async (req) => {
 
     let totalPages = 0;
 
-    for (const profile of profiles) {
+  for (const profile of profiles) {
       try {
         console.log(`Processing profile: ${profile.id} (${profile.name})`);
 
-        // 1. Fetch personal pages (me/accounts)
+        // 1. Check token permissions first
+        const debugUrl = `https://graph.facebook.com/v21.0/me/permissions?access_token=${profile.access_token}`;
+        const debugResponse = await fetch(debugUrl);
+        const debugData = await debugResponse.json();
+        
+        if (debugData.data) {
+          const grantedPerms = debugData.data.filter((p: any) => p.status === 'granted').map((p: any) => p.permission);
+          console.log(`Token permissions: ${grantedPerms.join(', ')}`);
+          
+          const hasPagePerms = grantedPerms.includes('pages_read_engagement') || grantedPerms.includes('pages_show_list');
+          if (!hasPagePerms) {
+            console.log('Warning: Token may lack page permissions (pages_read_engagement or pages_show_list)');
+          }
+        }
+
+        // 2. Fetch personal pages (me/accounts)
         const pagesUrl = `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${profile.access_token}`;
         
         console.log("Fetching personal pages...");
@@ -98,6 +113,11 @@ Deno.serve(async (req) => {
         } else {
           const pages: FacebookPage[] = pagesData.data || [];
           console.log(`Found ${pages.length} personal pages`);
+          
+          // Log raw response for debugging if empty
+          if (pages.length === 0) {
+            console.log('Personal pages raw response:', JSON.stringify(pagesData));
+          }
 
           for (const page of pages) {
             await upsertPage(supabase, profile.id, page, null, null);
