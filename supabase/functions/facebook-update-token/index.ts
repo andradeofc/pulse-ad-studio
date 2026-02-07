@@ -330,11 +330,74 @@ async function performFullSync(
       }
     }
 
-    // Upsert pages in chunks
+    // Fetch ads limits for each page via Batch API
     const uniquePages = Array.from(pagesMap.values());
-    console.log(`Upserting ${uniquePages.length} unique pages...`);
+    console.log(`Fetching ads limits for ${uniquePages.length} pages...`);
+
+    const pageChunksForLimits = chunk(uniquePages, 50);
+    let adsLimitsEnriched = 0;
+
+    for (const pageChunk of pageChunksForLimits) {
+      const batch = pageChunk.map((p: any) => ({
+        method: "GET",
+        relative_url: `${p.page_id}?fields=ads_volume`,
+      }));
+
+      const form = new URLSearchParams();
+      form.set("access_token", accessToken);
+      form.set("batch", JSON.stringify(batch));
+
+      const { ok, status, data } = await fetchJsonWithRetry(
+        FACEBOOK_GRAPH_API,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString(),
+        },
+        3
+      );
+
+      if (!ok || !Array.isArray(data)) {
+        console.error("Batch ads limits request failed:", status, data?.error || data);
+        continue;
+      }
+
+      for (let i = 0; i < data.length; i++) {
+        const result = data[i];
+        const page = pageChunk[i];
+
+        if (!result || result.code !== 200) continue;
+
+        try {
+          const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+          const adsVolume = body?.ads_volume;
+
+          if (adsVolume) {
+            const key = String(page.page_id);
+            const current = pagesMap.get(key);
+            if (current) {
+              // ads_volume returns: { ads_running_or_in_review_count, limit_on_ads_running_or_in_review }
+              current.ads_running = adsVolume.ads_running_or_in_review_count || 0;
+              current.ads_limit = adsVolume.limit_on_ads_running_or_in_review || 250;
+              pagesMap.set(key, current);
+              adsLimitsEnriched++;
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing ads limits batch body:", e);
+        }
+      }
+
+      await sleep(250);
+    }
+
+    console.log(`Enriched ${adsLimitsEnriched} pages with ads limits`);
+
+    // Upsert pages in chunks
+    const finalPages = Array.from(pagesMap.values());
+    console.log(`Upserting ${finalPages.length} unique pages...`);
     
-    const pageChunks = chunk(uniquePages, 500);
+    const pageChunks = chunk(finalPages, 500);
     for (const rows of pageChunks) {
       if (rows.length === 0) continue;
       const { error } = await supabase
@@ -343,7 +406,7 @@ async function performFullSync(
       if (error) console.error("Error upserting pages:", error);
     }
 
-    console.log(`✓ STAGE 2 COMPLETE: ${uniquePages.length} pages synced`);
+    console.log(`✓ STAGE 2 COMPLETE: ${finalPages.length} pages synced`);
 
   } catch (error) {
     console.error("Error in Stage 2 (pages):", error);
