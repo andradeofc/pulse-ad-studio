@@ -70,10 +70,10 @@ async function createFacebookCampaign(
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
-  // Build special_ad_categories array
-  const specialAdCategories = config.specialAdCategory && config.specialAdCategory !== 'NONE' 
-    ? [config.specialAdCategory] 
-    : [];
+  // Facebook requires special_ad_categories to always be present.
+  // When there is no special category, it MUST contain "NONE".
+  const specialAdCategory = (config.specialAdCategory || 'NONE') as string;
+  const specialAdCategories = [specialAdCategory];
 
   const params: Record<string, any> = {
     access_token: accessToken,
@@ -103,7 +103,24 @@ async function createFacebookCampaign(
   });
 
   if (!ok || json.error) {
-    return { success: false, error: json.error?.message || 'Failed to create campaign' };
+    const fbError = json?.error;
+    console.error('[process-jobs] Facebook campaign error:', JSON.stringify(fbError ?? json, null, 2));
+
+    const msg = fbError?.message || 'Failed to create campaign';
+    const code = fbError?.code;
+    const subcode = fbError?.error_subcode;
+    const userMsg = fbError?.error_user_msg;
+
+    const details = [
+      msg,
+      code !== undefined ? `code=${code}` : null,
+      subcode !== undefined ? `subcode=${subcode}` : null,
+      userMsg ? `user_msg=${userMsg}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    return { success: false, error: details };
   }
 
   return { success: true, id: json.id };
