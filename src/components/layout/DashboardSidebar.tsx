@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
+import { SyncProgressBadge } from './SyncProgressBadge';
 
 interface NavItem {
   title: string;
@@ -176,6 +177,9 @@ export function DashboardSidebar() {
           </div>
         ))}
       </div>
+
+      {/* Sync Progress Badge */}
+      <SyncProgressBadge isCollapsed={isCollapsed} />
 
       {/* Bottom Section */}
       <div className="border-t border-border px-3 py-4 space-y-1">
