@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   Users,
@@ -155,33 +154,25 @@ export function DashboardSidebar() {
               </button>
             )}
             
-            <AnimatePresence>
-              {(isCollapsed || expandedSections.includes(section.label)) && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="space-y-1 overflow-hidden"
-                >
-                  {section.items.map((item) => (
-                    <Link
-                      key={item.href}
-                      to={item.href}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all",
-                        isActive(item.href)
-                          ? "bg-sidebar-accent text-primary border-l-2 border-primary"
-                          : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
-                      )}
-                    >
-                      <item.icon className="w-5 h-5 flex-shrink-0" />
-                      {!isCollapsed && <span>{item.title}</span>}
-                    </Link>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {(isCollapsed || expandedSections.includes(section.label)) && (
+              <div className="space-y-1">
+                {section.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors",
+                      isActive(item.href)
+                        ? "bg-sidebar-accent text-primary border-l-2 border-primary"
+                        : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5 flex-shrink-0" />
+                    {!isCollapsed && <span>{item.title}</span>}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -255,17 +246,12 @@ export function DashboardSidebar() {
       </Button>
 
       {/* Mobile Overlay */}
-      <AnimatePresence>
-        {isMobileOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
-            onClick={() => setIsMobileOpen(false)}
-          />
-        )}
-      </AnimatePresence>
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
 
       {/* Sidebar */}
       <aside
