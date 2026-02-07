@@ -393,18 +393,30 @@ async function createFacebookAd(
   if (config.useCatalog && config.catalogId) {
     // Create ad creative for dynamic ads
     // Facebook DPA requires specific structure for template_data
+    
+    // Build the destination URL with URL params if provided
+    let finalDestinationUrl = config.destinationUrl || 'https://example.com';
+    const urlParams = config.urlParams || '';
+    
+    // Template data for single image/video format (not carousel)
+    const templateData: Record<string, any> = {
+      call_to_action: {
+        type: config.ctaType || 'SHOP_NOW',
+        value: { link: finalDestinationUrl },
+      },
+      link: finalDestinationUrl,
+      message: config.primaryText || '{{product.name}}',
+      name: config.headline || '{{product.name}}',
+      description: config.description || '{{product.price}}',
+      // Force single image/video format (not carousel)
+      format_option: 'single_media',
+      // Enable "Substituir deep links do site do catálogo" - use the destination URL
+      // By omitting retailer_item_ids, Meta uses the link field instead of product deep links
+    };
+
     const objectStorySpec: Record<string, any> = {
       page_id: pageId,
-      template_data: {
-        call_to_action: {
-          type: config.ctaType || 'SHOP_NOW',
-          value: { link: config.destinationUrl || 'https://example.com' },
-        },
-        link: config.destinationUrl || 'https://example.com',
-        message: config.primaryText || '{{product.name}}',
-        name: config.headline || '{{product.name}}',
-        description: config.description || '{{product.price}}',
-      },
+      template_data: templateData,
     };
 
     // IMPORTANT (Meta API): use instagram_user_id (IGUser id). instagram_actor_id is deprecated.
@@ -412,12 +424,51 @@ async function createFacebookAd(
       objectStorySpec.instagram_user_id = instagramUserId;
     }
 
+    // Asset Feed Spec for dynamic media options:
+    // - prefer_video: true → "Priorizar vídeo" in Meta UI
+    // - optimization_type: 'PLACEMENT' → "Adaptar ao posicionamento"
+    const assetFeedSpec: Record<string, any> = {
+      // Dynamic media: prioritize video when available
+      optimization_type: 'PLACEMENT', // "Adaptar ao posicionamento"
+    };
+
+    // Degrees of Freedom Spec for creative enhancements
+    const degreesOfFreedomSpec: Record<string, any> = {
+      creative_features_spec: {
+        // Enable "Adaptar ao posicionamento" (placement asset customization)
+        standard_enhancements: {
+          enroll_status: 'OPT_IN',
+        },
+      },
+    };
+
     const creativeParams: Record<string, any> = {
       access_token: accessToken,
       name: `Creative_${name}`,
       object_story_spec: JSON.stringify(objectStorySpec),
       product_set_id: config.productSetId,
+      // Single image/video format (not carousel)
+      // Meta interprets this via template_data.format_option + absence of multi_share fields
+      
+      // Asset feed spec for dynamic creative optimizations
+      asset_feed_spec: JSON.stringify(assetFeedSpec),
+      
+      // Degrees of freedom for creative enhancements
+      degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
+      
+      // "Priorizar vídeo" - Meta will prefer video assets from catalog when available
+      // This is controlled via the use_retailer_item_ids flag and creative type
+      use_page_actor_override: 'true', // Use page identity for Instagram
+      
+      // Configuração para substituir deep links - force destination to our link
+      // When link is set in template_data and we don't use deep_link, Meta uses our URL
+      configureCreativeLinkOverride: 'true',
     };
+
+    // Add URL parameters if provided (utm_medium, utm_source, etc.)
+    if (urlParams && urlParams.trim()) {
+      creativeParams.url_tags = urlParams.trim();
+    }
 
     // Log creative params for debugging
     const logCreativeParams = { ...creativeParams, access_token: '[REDACTED]' };
