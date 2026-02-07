@@ -144,7 +144,7 @@ export function Step3Adsets() {
       </section>
 
       {/* Adset Budget (if ABO) */}
-      {config.campaignType === 'abo' && (
+      {!config.useCBO && (
         <section className="space-y-4">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Orçamento por Conjunto
