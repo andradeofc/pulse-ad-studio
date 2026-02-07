@@ -884,7 +884,7 @@ export function Step3Adsets() {
           <div className="space-y-2">
             <Label className="flex items-center gap-2">
               <Clock className="w-4 h-4" />
-              Horário de Início
+              Horário de Início (EST)
             </Label>
             <div className="flex gap-2">
               <Select
@@ -928,10 +928,18 @@ export function Step3Adsets() {
                   ))}
                 </SelectContent>
               </Select>
+              <Badge variant="outline" className="ml-2 text-xs">
+                EST
+              </Badge>
             </div>
             {!config.scheduleStart && (
               <p className="text-xs text-muted-foreground">
                 Selecione uma data para definir o horário
+              </p>
+            )}
+            {config.scheduleStart && (
+              <p className="text-xs text-muted-foreground">
+                Fuso horário: Eastern Standard Time (Nova York)
               </p>
             )}
           </div>

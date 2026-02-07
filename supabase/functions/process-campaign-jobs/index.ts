@@ -338,7 +338,8 @@ async function createFacebookAdset(
     params.attribution_spec = JSON.stringify(attributionSpec);
   }
 
-  // Start time (schedule) - ISO 8601 format
+  // Start time (schedule) - User enters time in EST (Eastern Standard Time)
+  // Facebook API expects ISO 8601 format with timezone
   if (config.scheduleStart) {
     // Accept both Date objects (from frontend) and ISO strings
     const startDate = typeof config.scheduleStart === 'string' 
@@ -346,7 +347,19 @@ async function createFacebookAdset(
       : config.scheduleStart;
     
     if (startDate instanceof Date && !isNaN(startDate.getTime())) {
-      params.start_time = startDate.toISOString();
+      // Format the date in EST timezone (America/New_York)
+      // Facebook API accepts ISO 8601 with timezone offset
+      // EST is UTC-5, EDT is UTC-4 (we use -05:00 for consistency as "EST")
+      const year = startDate.getFullYear();
+      const month = String(startDate.getMonth() + 1).padStart(2, '0');
+      const day = String(startDate.getDate()).padStart(2, '0');
+      const hours = String(startDate.getHours()).padStart(2, '0');
+      const minutes = String(startDate.getMinutes()).padStart(2, '0');
+      const seconds = String(startDate.getSeconds()).padStart(2, '0');
+      
+      // Format as ISO 8601 with EST offset (-05:00)
+      params.start_time = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}-05:00`;
+      console.log(`[process-jobs] Schedule start time (EST): ${params.start_time}`);
     }
   }
 
