@@ -25,7 +25,10 @@ export interface CampaignConfig {
   budget: number;
   budgetByCurrency: Record<string, number>; // e.g., { USD: 50, BRL: 200 }
   budgetPeriod: 'daily' | 'lifetime';
-  bidStrategy: 'volume' | 'cost' | 'roas';
+  bidStrategy: 'LOWEST_COST_WITHOUT_CAP' | 'COST_CAP' | 'LOWEST_COST_WITH_BID_CAP' | 'LOWEST_COST_WITH_MIN_ROAS';
+  costCap: number | null; // For COST_CAP strategy
+  bidCap: number | null; // For LOWEST_COST_WITH_BID_CAP strategy
+  roasGoal: number | null; // For LOWEST_COST_WITH_MIN_ROAS strategy (e.g., 2.0 = 200% ROAS)
   
   // Step 3 - Ad Sets
   distribution: 'campaign' | 'adset' | 'ad';
@@ -91,7 +94,10 @@ const defaultConfig: CampaignConfig = {
   budget: 50,
   budgetByCurrency: {},
   budgetPeriod: 'daily',
-  bidStrategy: 'volume',
+  bidStrategy: 'LOWEST_COST_WITHOUT_CAP',
+  costCap: null,
+  bidCap: null,
+  roasGoal: null,
   distribution: 'campaign',
   campaignsPerCreative: 1,
   adsetsPerCampaign: 1,
