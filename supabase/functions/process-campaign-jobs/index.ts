@@ -419,9 +419,9 @@ async function createFacebookAd(
       name: config.headline || '{{product.name}}',
       description: config.description || '{{product.price}}',
 
-      // Force single image/video format (not carousel)
-      // Dynamic Media (degrees_of_freedom_spec) will prioritize video when available
-      format_option: 'single_image',
+      // Force single image/video format (not carousel) AND prioritize video
+      // "single_video" = formato único com priorização de vídeo do catálogo
+      format_option: 'single_video',
     };
 
     const objectStorySpec: Record<string, any> = {
