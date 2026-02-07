@@ -385,7 +385,7 @@ async function createFacebookAd(
   config: Record<string, any>,
   name: string,
   pageId: string,
-  instagramActorId: string | null,
+  instagramUserId: string | null,
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
@@ -407,9 +407,9 @@ async function createFacebookAd(
       },
     };
 
-    // For Instagram placements, Meta requires a valid IGUser id here (Page-backed IG account).
-    if (instagramActorId) {
-      objectStorySpec.instagram_actor_id = instagramActorId;
+    // IMPORTANT (Meta API): use instagram_user_id (IGUser id). instagram_actor_id is deprecated.
+    if (instagramUserId) {
+      objectStorySpec.instagram_user_id = instagramUserId;
     }
 
     const creativeParams: Record<string, any> = {
@@ -661,7 +661,7 @@ Deno.serve(async (req) => {
       console.log(`[process-jobs] Resolved pageId: ${pageId} from selectedPages: ${selectedPageValue}`);
     }
 
-    const instagramActorIdForJob = pageId
+    const instagramUserIdForJob = pageId
       ? await resolveInstagramActorIdForPage({
           userAccessToken: accessToken,
           pageId,
@@ -669,10 +669,10 @@ Deno.serve(async (req) => {
         })
       : null;
 
-    // If we can't resolve an Instagram actor, force placements to Facebook only to avoid #1772103.
-    const adsetPlacementTargeting = instagramActorIdForJob ? undefined : { publisher_platforms: ['facebook'] };
-    if (!instagramActorIdForJob) {
-      console.warn(`[process-jobs] No Instagram actor resolved; forcing placements to Facebook only for this job.`);
+    // We do NOT force placements. If Meta requires an Instagram identity and we can't resolve it,
+    // the creative creation will fail and the error will be reported back to the job.
+    if (!instagramUserIdForJob) {
+      console.warn(`[process-jobs] No Instagram user id resolved for page ${pageId}.`);
     }
 
     // Process items in order: campaigns → adsets → ads
@@ -740,7 +740,7 @@ Deno.serve(async (req) => {
         .update({ status: 'processing' })
         .eq('id', adset.id);
 
-      const result = await createFacebookAdset(accessToken, adAccount.account_id, parentFbId, config, adset.name, adsetPlacementTargeting);
+      const result = await createFacebookAdset(accessToken, adAccount.account_id, parentFbId, config, adset.name);
 
       if (result.success && result.id) {
         idMap.set(adset.id, result.id);
@@ -794,7 +794,7 @@ Deno.serve(async (req) => {
         .update({ status: 'processing' })
         .eq('id', ad.id);
 
-      const result = await createFacebookAd(accessToken, adAccount.account_id, parentFbId, config, ad.name, pageId, instagramActorIdForJob);
+      const result = await createFacebookAd(accessToken, adAccount.account_id, parentFbId, config, ad.name, pageId, instagramUserIdForJob);
 
       if (result.success && result.id) {
         idMap.set(ad.id, result.id);
