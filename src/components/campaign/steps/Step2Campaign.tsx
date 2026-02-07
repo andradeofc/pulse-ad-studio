@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { NamingModal } from '../NamingModal';
 import { AdAccountSelector } from '../AdAccountSelector';
 import { CatalogSelector } from '../CatalogSelector';
+import { BusinessManagerSelector } from '../BusinessManagerSelector';
 
 const objectives = [
   { value: 'OUTCOME_SALES', label: 'Vendas', description: 'Conversões e compras no site' },
@@ -367,25 +368,56 @@ export function Step2Campaign() {
           </div>
         </div>
 
-        {/* Catalog Selector - Shown when Dynamic Ads is enabled */}
+        {/* Business Manager & Catalog Selector - Shown when Dynamic Ads is enabled */}
         {config.useCatalog && (
-          <div className="space-y-4 p-4 bg-pink-500/5 rounded-lg border border-pink-500/20">
-            <div className="flex items-center gap-2">
-              <Label className="text-foreground">Selecionar Catálogo</Label>
-              <Badge variant="outline" className="text-xs font-mono">
-                product_catalog_id
-              </Badge>
+          <div className="space-y-4 p-4 bg-secondary/30 rounded-lg border border-border">
+            {/* Business Manager Selection */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-foreground">Business Manager</Label>
+                <Badge variant="outline" className="text-xs font-mono">
+                  Detectado das contas
+                </Badge>
+              </div>
+              <BusinessManagerSelector
+                selectedAccounts={config.selectedAccounts}
+                value={config.selectedBusinessManagerId}
+                onChange={(businessId, businessName) => {
+                  updateConfig({ 
+                    selectedBusinessManagerId: businessId, 
+                    selectedBusinessManagerName: businessName,
+                    catalogId: '', // Reset catalog when BM changes
+                    catalogDbId: '',
+                    productSetId: ''
+                  });
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                O BM é detectado automaticamente das contas selecionadas.
+              </p>
             </div>
-            <CatalogSelector
-              value={config.catalogId}
-              onChange={(catalogId, catalogDbId) => {
-                updateConfig({ catalogId, catalogDbId, productSetId: '' });
-              }}
-              selectedAccounts={config.selectedAccounts}
-            />
-            <p className="text-xs text-muted-foreground">
-              Selecione o catálogo de produtos. O conjunto de produtos será selecionado na próxima etapa (Conjuntos).
-            </p>
+
+            {/* Catalog Selection - Only shown if BM is selected */}
+            {config.selectedBusinessManagerId && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-foreground">Selecionar Catálogo</Label>
+                  <Badge variant="outline" className="text-xs font-mono">
+                    product_catalog_id
+                  </Badge>
+                </div>
+                <CatalogSelector
+                  value={config.catalogId}
+                  onChange={(catalogId, catalogDbId) => {
+                    updateConfig({ catalogId, catalogDbId, productSetId: '' });
+                  }}
+                  businessManagerId={config.selectedBusinessManagerId}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Catálogos do BM "{config.selectedBusinessManagerName}". O conjunto de produtos será selecionado na próxima etapa.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </section>
