@@ -20,17 +20,20 @@ const distributionOptions = [
   {
     value: 'campaign',
     title: 'Campanha',
-    description: '1 criativo por campanha (cada criativo gera uma campanha separada)',
+    description: 'Cada criativo gera sua própria campanha',
+    hint: 'Criativos ÷ Campanhas',
   },
   {
     value: 'adset',
     title: 'Conjunto',
-    description: 'Todos criativos em 1 campanha, cada um em seu conjunto',
+    description: 'Todos criativos em 1 campanha, divididos entre conjuntos',
+    hint: 'Criativos ÷ Conjuntos',
   },
   {
     value: 'ad',
     title: 'Anúncio',
-    description: 'Todos criativos como anúncios dentro do mesmo conjunto',
+    description: 'Todos criativos como anúncios no mesmo conjunto',
+    hint: 'Criativos = Anúncios por conjunto',
   },
 ];
 
@@ -41,8 +44,38 @@ const mockPixels = [
 ];
 
 export function Step3Adsets() {
-  const { config, updateConfig, getTotalCampaigns, getTotalAds } = useCampaignStore();
+  const { config, updateConfig, getTotalCampaigns, getTotalAdsets, getTotalAds } = useCampaignStore();
   const creativesCount = config.selectedCreatives.length || 1;
+
+  // Get the effective values based on distribution and creative count
+  const getEffectiveValue = (field: 'campaigns' | 'adsets' | 'ads') => {
+    switch (field) {
+      case 'campaigns':
+        if (config.distribution === 'campaign') {
+          return Math.max(creativesCount, config.campaignsPerCreative);
+        }
+        return config.campaignsPerCreative;
+      case 'adsets':
+        if (config.distribution === 'adset') {
+          return Math.max(creativesCount, config.adsetsPerCampaign);
+        }
+        return config.adsetsPerCampaign;
+      case 'ads':
+        if (config.distribution === 'ad') {
+          return Math.max(creativesCount, config.adsPerAdset);
+        }
+        return config.adsPerAdset;
+      default:
+        return 1;
+    }
+  };
+
+  const isFieldAffected = (field: 'campaigns' | 'adsets' | 'ads') => {
+    if (field === 'campaigns' && config.distribution === 'campaign') return true;
+    if (field === 'adsets' && config.distribution === 'adset') return true;
+    if (field === 'ads' && config.distribution === 'ad') return true;
+    return false;
+  };
 
   const removeLocation = (location: string) => {
     updateConfig({
@@ -103,44 +136,118 @@ export function Step3Adsets() {
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label>Campanhas/Criativo</Label>
+          {/* Campaigns */}
+          <div className={cn(
+            "space-y-2 p-3 rounded-lg border",
+            isFieldAffected('campaigns') 
+              ? "bg-primary/5 border-primary/30" 
+              : "bg-secondary/30 border-border"
+          )}>
+            <Label className="flex items-center gap-2">
+              Campanhas
+              {isFieldAffected('campaigns') && (
+                <Badge variant="secondary" className="text-xs">
+                  Mín: {creativesCount}
+                </Badge>
+              )}
+            </Label>
             <Input
               type="number"
               value={config.campaignsPerCreative}
               onChange={(e) => updateConfig({ campaignsPerCreative: parseInt(e.target.value) || 1 })}
-              min={1}
-              className="bg-secondary/50"
+              min={isFieldAffected('campaigns') ? creativesCount : 1}
+              className="bg-background"
             />
+            {isFieldAffected('campaigns') && config.campaignsPerCreative < creativesCount && (
+              <p className="text-xs text-primary">
+                Ajustado para {getEffectiveValue('campaigns')} (1 por criativo)
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
-              = {getTotalCampaigns()} camp.
+              Total: {getTotalCampaigns()} campanhas
             </p>
           </div>
-          <div className="space-y-2">
-            <Label>Conjuntos/Campanha</Label>
+
+          {/* Ad Sets */}
+          <div className={cn(
+            "space-y-2 p-3 rounded-lg border",
+            isFieldAffected('adsets') 
+              ? "bg-primary/5 border-primary/30" 
+              : "bg-secondary/30 border-border"
+          )}>
+            <Label className="flex items-center gap-2">
+              Conjuntos/Campanha
+              {isFieldAffected('adsets') && (
+                <Badge variant="secondary" className="text-xs">
+                  Mín: {creativesCount}
+                </Badge>
+              )}
+            </Label>
             <Input
               type="number"
               value={config.adsetsPerCampaign}
               onChange={(e) => updateConfig({ adsetsPerCampaign: parseInt(e.target.value) || 1 })}
-              min={1}
-              className="bg-secondary/50"
+              min={isFieldAffected('adsets') ? creativesCount : 1}
+              className="bg-background"
             />
+            {isFieldAffected('adsets') && config.adsetsPerCampaign < creativesCount && (
+              <p className="text-xs text-primary">
+                Ajustado para {getEffectiveValue('adsets')} (1 por criativo)
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Total: {getTotalAdsets()} conjuntos
+            </p>
           </div>
-          <div className="space-y-2">
-            <Label>Anúncios/Conjunto</Label>
+
+          {/* Ads */}
+          <div className={cn(
+            "space-y-2 p-3 rounded-lg border",
+            isFieldAffected('ads') 
+              ? "bg-primary/5 border-primary/30" 
+              : "bg-secondary/30 border-border"
+          )}>
+            <Label className="flex items-center gap-2">
+              Anúncios/Conjunto
+              {isFieldAffected('ads') && (
+                <Badge variant="secondary" className="text-xs">
+                  Mín: {creativesCount}
+                </Badge>
+              )}
+            </Label>
             <Input
               type="number"
               value={config.adsPerAdset}
               onChange={(e) => updateConfig({ adsPerAdset: parseInt(e.target.value) || 1 })}
-              min={1}
-              className="bg-secondary/50"
+              min={isFieldAffected('ads') ? creativesCount : 1}
+              className="bg-background"
             />
+            {isFieldAffected('ads') && config.adsPerAdset < creativesCount && (
+              <p className="text-xs text-primary">
+                Ajustado para {getEffectiveValue('ads')} (1 por criativo)
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Total: {getTotalAds()} anúncios
+            </p>
           </div>
         </div>
 
-        <p className="text-sm text-muted-foreground p-3 bg-secondary/30 rounded-lg">
-          {getTotalAds()} anúncios · Limite: 250
-        </p>
+        {/* Summary */}
+        <div className="p-4 bg-secondary/30 rounded-lg border border-border space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Estrutura Final</span>
+            <Badge variant="outline" className="font-mono">
+              {getTotalCampaigns()}-{getTotalAdsets() / getTotalCampaigns()}-{getTotalAds() / getTotalAdsets()}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {getTotalCampaigns()} campanhas × {Math.round(getTotalAdsets() / getTotalCampaigns())} conjuntos × {Math.round(getTotalAds() / getTotalAdsets())} anúncios = <strong>{getTotalAds()} anúncios</strong>
+            {getTotalAds() > 250 && (
+              <span className="text-destructive ml-2">⚠️ Limite excedido (máx: 250)</span>
+            )}
+          </p>
+        </div>
       </section>
 
       {/* Adset Budget (if ABO) */}

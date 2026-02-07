@@ -165,9 +165,12 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     
     switch (config.distribution) {
       case 'campaign':
-        return creativeCount * config.campaignsPerCreative;
+        // Criativos são distribuídos a nível de campanha
+        // Mínimo = número de criativos (1 criativo por campanha)
+        return Math.max(creativeCount, config.campaignsPerCreative);
       case 'adset':
       case 'ad':
+        // Criativos são distribuídos em níveis inferiores
         return config.campaignsPerCreative;
       default:
         return 1;
@@ -176,13 +179,30 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   
   getTotalAdsets: () => {
     const { config } = get();
+    const creativeCount = config.selectedCreatives.length || 1;
     const totalCampaigns = get().getTotalCampaigns();
+    
+    if (config.distribution === 'adset') {
+      // Criativos são distribuídos a nível de conjunto
+      // Cada campanha precisa ter pelo menos X conjuntos para acomodar criativos
+      const adsetsNeeded = Math.max(creativeCount, config.adsetsPerCampaign);
+      return totalCampaigns * adsetsNeeded;
+    }
+    
     return totalCampaigns * config.adsetsPerCampaign;
   },
   
   getTotalAds: () => {
     const { config } = get();
+    const creativeCount = config.selectedCreatives.length || 1;
     const totalAdsets = get().getTotalAdsets();
+    
+    if (config.distribution === 'ad') {
+      // Criativos são distribuídos a nível de anúncio
+      // Cada conjunto tem todos os criativos como anúncios
+      return totalAdsets * Math.max(creativeCount, config.adsPerAdset);
+    }
+    
     return totalAdsets * config.adsPerAdset;
   },
   
