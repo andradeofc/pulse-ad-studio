@@ -18,15 +18,26 @@ function chunk<T>(arr: T[], size: number): T[][] {
 // Fetch all paginated results from Facebook API
 async function fetchAllPaginated(url: string): Promise<any[]> {
   const all: any[] = [];
-  let response = await fetch(url);
+  let nextUrl: string | null = url;
 
-  while (response.ok) {
-    const data = await response.json();
-    all.push(...(data.data || []));
-
-    if (data.paging?.next) {
-      response = await fetch(data.paging.next);
-    } else {
+  while (nextUrl) {
+    try {
+      const response = await fetch(nextUrl);
+      if (!response.ok) {
+        console.error("Pagination fetch failed:", response.status);
+        break;
+      }
+      const data = await response.json();
+      
+      if (data.error) {
+        console.error("Facebook API error in pagination:", data.error);
+        break;
+      }
+      
+      all.push(...(data.data || []));
+      nextUrl = data.paging?.next || null;
+    } catch (e) {
+      console.error("Error in pagination:", e);
       break;
     }
   }
@@ -34,7 +45,19 @@ async function fetchAllPaginated(url: string): Promise<any[]> {
   return all;
 }
 
-// Background sync function
+// Update sync status helper
+async function updateSyncStatus(supabase: any, profileId: string, status: string) {
+  const { error } = await supabase
+    .from("facebook_profiles")
+    .update({ sync_status: status })
+    .eq("id", profileId);
+  
+  if (error) {
+    console.error("Error updating sync status:", error);
+  }
+}
+
+// Background sync function - STAGED approach
 async function performFullSync(
   supabaseUrl: string,
   supabaseKey: string,
@@ -46,25 +69,23 @@ async function performFullSync(
     global: { headers: { Authorization: authHeader } },
   });
 
-  console.log("Background sync started...");
+  console.log("=== STAGE 1: SYNCING ACCOUNTS ===");
+  await updateSyncStatus(supabase, profileId, "syncing_accounts");
 
-  // Mark sync as started
-  await supabase
-    .from("facebook_profiles")
-    .update({ sync_status: "syncing" })
-    .eq("id", profileId);
+  let allBusinesses: any[] = [];
 
   try {
-    // ========== 1. SYNC AD ACCOUNTS ==========
-    console.log("Syncing ad accounts...");
-    const syncedAccounts: any[] = [];
+    // ========== STAGE 1: SYNC AD ACCOUNTS ==========
+    const accountsMap = new Map<string, any>(); // Deduplicate by account_id
 
     // Personal accounts
+    console.log("Fetching personal accounts...");
     const personalAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`;
     const personalAccounts = await fetchAllPaginated(personalAccountsUrl);
+    console.log(`Found ${personalAccounts.length} personal accounts`);
 
     for (const account of personalAccounts) {
-      syncedAccounts.push({
+      accountsMap.set(account.account_id, {
         profile_id: profileId,
         account_id: account.account_id,
         name: account.name,
@@ -77,51 +98,63 @@ async function performFullSync(
     }
 
     // Fetch all Business Managers
+    console.log("Fetching Business Managers...");
     const businessesUrl = `${FACEBOOK_GRAPH_API}/me/businesses?fields=id,name&limit=100&access_token=${accessToken}`;
-    const allBusinesses = await fetchAllPaginated(businessesUrl);
+    allBusinesses = await fetchAllPaginated(businessesUrl);
     console.log(`Found ${allBusinesses.length} Business Managers`);
 
-    // Process BMs in parallel (5 at a time to avoid rate limits)
+    // Process BMs in parallel (5 at a time)
     const bmChunks = chunk(allBusinesses, 5);
 
     for (const bmChunk of bmChunks) {
       const bmPromises = bmChunk.map(async (business: any) => {
-        const accounts: any[] = [];
+        try {
+          const [ownedAccounts, clientAccounts] = await Promise.all([
+            fetchAllPaginated(
+              `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`
+            ),
+            fetchAllPaginated(
+              `${FACEBOOK_GRAPH_API}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`
+            ),
+          ]);
 
-        // Fetch owned and client accounts in parallel
-        const [ownedAccounts, clientAccounts] = await Promise.all([
-          fetchAllPaginated(
-            `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`
-          ),
-          fetchAllPaginated(
-            `${FACEBOOK_GRAPH_API}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`
-          ),
-        ]);
+          console.log(`BM ${business.name}: ${ownedAccounts.length} owned, ${clientAccounts.length} client accounts`);
 
-        for (const account of [...ownedAccounts, ...clientAccounts]) {
-          accounts.push({
-            profile_id: profileId,
-            account_id: account.account_id,
-            name: account.name,
-            currency: account.currency,
-            timezone: account.timezone_name,
-            status: account.account_status === 1 ? "active" : "inactive",
-            business_id: business.id,
-            business_name: business.name,
-          });
+          return [...ownedAccounts, ...clientAccounts].map(account => ({
+            account,
+            business,
+          }));
+        } catch (e) {
+          console.error(`Error fetching accounts for BM ${business.name}:`, e);
+          return [];
         }
-
-        return accounts;
       });
 
       const results = await Promise.all(bmPromises);
-      for (const accounts of results) {
-        syncedAccounts.push(...accounts);
+      for (const accountList of results) {
+        for (const { account, business } of accountList) {
+          // Only add if not already in map (personal takes precedence)
+          if (!accountsMap.has(account.account_id)) {
+            accountsMap.set(account.account_id, {
+              profile_id: profileId,
+              account_id: account.account_id,
+              name: account.name,
+              currency: account.currency,
+              timezone: account.timezone_name,
+              status: account.account_status === 1 ? "active" : "inactive",
+              business_id: business.id,
+              business_name: business.name,
+            });
+          }
+        }
       }
     }
 
-    // Batch upsert accounts
-    const accountChunks = chunk(syncedAccounts, 500);
+    // Upsert accounts in chunks
+    const uniqueAccounts = Array.from(accountsMap.values());
+    console.log(`Upserting ${uniqueAccounts.length} unique accounts...`);
+    
+    const accountChunks = chunk(uniqueAccounts, 500);
     for (const rows of accountChunks) {
       if (rows.length === 0) continue;
       const { error } = await supabase
@@ -130,91 +163,29 @@ async function performFullSync(
       if (error) console.error("Error upserting accounts:", error);
     }
 
-    console.log(`Synced ${syncedAccounts.length} ad accounts`);
+    console.log(`✓ STAGE 1 COMPLETE: ${uniqueAccounts.length} accounts synced`);
 
-    // ========== 2. SYNC PIXELS (Batch API) ==========
-    console.log("Syncing pixels...");
+  } catch (error) {
+    console.error("Error in Stage 1 (accounts):", error);
+    await updateSyncStatus(supabase, profileId, "error");
+    return;
+  }
 
-    const { data: adAccounts } = await supabase
-      .from("facebook_ad_accounts")
-      .select("account_id, name, business_id, business_name")
-      .eq("profile_id", profileId);
+  // ========== STAGE 2: SYNC PAGES ==========
+  console.log("=== STAGE 2: SYNCING PAGES ===");
+  await updateSyncStatus(supabase, profileId, "syncing_pages");
 
-    const accounts = adAccounts || [];
-    const pixelRows: any[] = [];
-    const accountChunksForPixels = chunk(accounts, 50);
-
-    for (const accountChunk of accountChunksForPixels) {
-      const batch = accountChunk.map((acc: any) => ({
-        method: "GET",
-        relative_url: `act_${acc.account_id}/adspixels?fields=id,name&limit=500`,
-      }));
-
-      const form = new URLSearchParams();
-      form.set("access_token", accessToken);
-      form.set("batch", JSON.stringify(batch));
-
-      const batchResponse = await fetch(FACEBOOK_GRAPH_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: form.toString(),
-      });
-
-      if (!batchResponse.ok) {
-        console.error("Batch pixels request failed:", await batchResponse.text());
-        continue;
-      }
-
-      const batchResults = await batchResponse.json();
-
-      for (let i = 0; i < batchResults.length; i++) {
-        const result = batchResults[i];
-        const acc = accountChunk[i];
-
-        if (!result || result.code !== 200) continue;
-
-        try {
-          const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-          for (const pixel of body?.data || []) {
-            pixelRows.push({
-              profile_id: profileId,
-              pixel_id: pixel.id,
-              name: pixel.name,
-              account_id: acc.account_id,
-              account_name: acc.name,
-              business_id: acc.business_id,
-              business_name: acc.business_name,
-            });
-          }
-        } catch (e) {
-          console.error("Error parsing pixels batch body:", e);
-        }
-      }
-    }
-
-    // Batch upsert pixels
-    const pixelChunks = chunk(pixelRows, 500);
-    for (const rows of pixelChunks) {
-      if (rows.length === 0) continue;
-      const { error } = await supabase
-        .from("facebook_pixels")
-        .upsert(rows, { onConflict: "profile_id,pixel_id" });
-      if (error) console.error("Error upserting pixels:", error);
-    }
-
-    console.log(`Synced ${pixelRows.length} pixels`);
-
-    // ========== 3. SYNC PAGES ==========
-    console.log("Syncing pages...");
-    const pageRows: any[] = [];
+  try {
+    const pagesMap = new Map<string, any>(); // Deduplicate by page_id
 
     // Personal pages
+    console.log("Fetching personal pages...");
     const pagesUrl = `${FACEBOOK_GRAPH_API}/me/accounts?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`;
     const personalPages = await fetchAllPaginated(pagesUrl);
     console.log(`Found ${personalPages.length} personal pages`);
 
     for (const page of personalPages) {
-      pageRows.push({
+      pagesMap.set(page.id, {
         profile_id: profileId,
         page_id: page.id,
         name: page.name,
@@ -230,49 +201,60 @@ async function performFullSync(
     }
 
     // Process BM pages in parallel (5 at a time)
+    const bmChunks = chunk(allBusinesses, 5);
+    
     for (const bmChunk of bmChunks) {
       const bmPromises = bmChunk.map(async (business: any) => {
-        const pages: any[] = [];
+        try {
+          const [ownedPages, clientPages] = await Promise.all([
+            fetchAllPaginated(
+              `${FACEBOOK_GRAPH_API}/${business.id}/owned_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`
+            ),
+            fetchAllPaginated(
+              `${FACEBOOK_GRAPH_API}/${business.id}/client_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`
+            ),
+          ]);
 
-        // Fetch owned and client pages in parallel
-        const [ownedPages, clientPages] = await Promise.all([
-          fetchAllPaginated(
-            `${FACEBOOK_GRAPH_API}/${business.id}/owned_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`
-          ),
-          fetchAllPaginated(
-            `${FACEBOOK_GRAPH_API}/${business.id}/client_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`
-          ),
-        ]);
+          console.log(`BM ${business.name}: ${ownedPages.length} owned, ${clientPages.length} client pages`);
 
-        console.log(`BM ${business.name}: ${ownedPages.length} owned, ${clientPages.length} client pages`);
-
-        for (const page of [...ownedPages, ...clientPages]) {
-          pages.push({
-            profile_id: profileId,
-            page_id: page.id,
-            name: page.name,
-            category: page.category,
-            access_token: page.access_token,
-            picture_url: page.picture?.data?.url,
-            followers_count: page.followers_count || 0,
-            is_published: page.is_published !== false,
-            tasks: page.tasks || [],
-            business_id: business.id,
-            business_name: business.name,
-          });
+          return [...ownedPages, ...clientPages].map(page => ({
+            page,
+            business,
+          }));
+        } catch (e) {
+          console.error(`Error fetching pages for BM ${business.name}:`, e);
+          return [];
         }
-
-        return pages;
       });
 
       const results = await Promise.all(bmPromises);
-      for (const pages of results) {
-        pageRows.push(...pages);
+      for (const pageList of results) {
+        for (const { page, business } of pageList) {
+          // Only add if not already in map (personal takes precedence)
+          if (!pagesMap.has(page.id)) {
+            pagesMap.set(page.id, {
+              profile_id: profileId,
+              page_id: page.id,
+              name: page.name,
+              category: page.category,
+              access_token: page.access_token,
+              picture_url: page.picture?.data?.url,
+              followers_count: page.followers_count || 0,
+              is_published: page.is_published !== false,
+              tasks: page.tasks || [],
+              business_id: business.id,
+              business_name: business.name,
+            });
+          }
+        }
       }
     }
 
-    // Batch upsert pages
-    const pageChunks = chunk(pageRows, 500);
+    // Upsert pages in chunks
+    const uniquePages = Array.from(pagesMap.values());
+    console.log(`Upserting ${uniquePages.length} unique pages...`);
+    
+    const pageChunks = chunk(uniquePages, 500);
     for (const rows of pageChunks) {
       if (rows.length === 0) continue;
       const { error } = await supabase
@@ -281,33 +263,122 @@ async function performFullSync(
       if (error) console.error("Error upserting pages:", error);
     }
 
-    console.log(`Synced ${pageRows.length} pages`);
-
-    // ========== 4. UPDATE LAST SYNCED ==========
-    await supabase
-      .from("facebook_profiles")
-      .update({
-        last_synced_at: new Date().toISOString(),
-        page_token_valid: true,
-        sync_status: "completed",
-      })
-      .eq("id", profileId);
-
-    console.log("Background sync completed successfully!");
-    console.log(`Summary: ${syncedAccounts.length} accounts, ${pixelRows.length} pixels, ${pageRows.length} pages`);
+    console.log(`✓ STAGE 2 COMPLETE: ${uniquePages.length} pages synced`);
 
   } catch (error) {
-    console.error("Background sync error:", error);
-    
-    // Mark profile with error status
-    await supabase
-      .from("facebook_profiles")
-      .update({ 
-        last_synced_at: new Date().toISOString(),
-        sync_status: "error",
-      })
-      .eq("id", profileId);
+    console.error("Error in Stage 2 (pages):", error);
+    await updateSyncStatus(supabase, profileId, "error");
+    return;
   }
+
+  // ========== STAGE 3: SYNC PIXELS ==========
+  console.log("=== STAGE 3: SYNCING PIXELS ===");
+  await updateSyncStatus(supabase, profileId, "syncing_pixels");
+
+  try {
+    const pixelsMap = new Map<string, any>(); // Deduplicate by pixel_id
+
+    // Get all ad accounts for this profile
+    const { data: adAccounts } = await supabase
+      .from("facebook_ad_accounts")
+      .select("account_id, name, business_id, business_name")
+      .eq("profile_id", profileId);
+
+    const accounts = adAccounts || [];
+    console.log(`Fetching pixels from ${accounts.length} accounts...`);
+
+    // Use Batch API for efficiency
+    const accountChunksForPixels = chunk(accounts, 50);
+
+    for (const accountChunk of accountChunksForPixels) {
+      const batch = accountChunk.map((acc: any) => ({
+        method: "GET",
+        relative_url: `act_${acc.account_id}/adspixels?fields=id,name&limit=500`,
+      }));
+
+      const form = new URLSearchParams();
+      form.set("access_token", accessToken);
+      form.set("batch", JSON.stringify(batch));
+
+      try {
+        const batchResponse = await fetch(FACEBOOK_GRAPH_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString(),
+        });
+
+        if (!batchResponse.ok) {
+          console.error("Batch pixels request failed:", batchResponse.status);
+          continue;
+        }
+
+        const batchResults = await batchResponse.json();
+
+        for (let i = 0; i < batchResults.length; i++) {
+          const result = batchResults[i];
+          const acc = accountChunk[i];
+
+          if (!result || result.code !== 200) continue;
+
+          try {
+            const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+            for (const pixel of body?.data || []) {
+              // Only add if not already in map
+              if (!pixelsMap.has(pixel.id)) {
+                pixelsMap.set(pixel.id, {
+                  profile_id: profileId,
+                  pixel_id: pixel.id,
+                  name: pixel.name,
+                  account_id: acc.account_id,
+                  account_name: acc.name,
+                  business_id: acc.business_id,
+                  business_name: acc.business_name,
+                });
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing pixels batch body:", e);
+          }
+        }
+      } catch (e) {
+        console.error("Error in batch pixels request:", e);
+      }
+    }
+
+    // Upsert pixels in chunks
+    const uniquePixels = Array.from(pixelsMap.values());
+    console.log(`Upserting ${uniquePixels.length} unique pixels...`);
+    
+    const pixelChunks = chunk(uniquePixels, 500);
+    for (const rows of pixelChunks) {
+      if (rows.length === 0) continue;
+      const { error } = await supabase
+        .from("facebook_pixels")
+        .upsert(rows, { onConflict: "profile_id,pixel_id" });
+      if (error) console.error("Error upserting pixels:", error);
+    }
+
+    console.log(`✓ STAGE 3 COMPLETE: ${uniquePixels.length} pixels synced`);
+
+  } catch (error) {
+    console.error("Error in Stage 3 (pixels):", error);
+    await updateSyncStatus(supabase, profileId, "error");
+    return;
+  }
+
+  // ========== FINAL: UPDATE COMPLETED ==========
+  console.log("=== SYNC COMPLETED ===");
+  
+  await supabase
+    .from("facebook_profiles")
+    .update({
+      last_synced_at: new Date().toISOString(),
+      page_token_valid: true,
+      sync_status: "completed",
+    })
+    .eq("id", profileId);
+
+  console.log("Background sync completed successfully!");
 }
 
 Deno.serve(async (req) => {
@@ -431,6 +502,7 @@ Deno.serve(async (req) => {
         token_expires_at: tokenExpiresAt,
         permissions: permissions,
         status: "active",
+        sync_status: "syncing_accounts",
         updated_at: new Date().toISOString(),
       })
       .eq("id", profileId);
@@ -439,7 +511,7 @@ Deno.serve(async (req) => {
       throw updateError;
     }
 
-    console.log("Token updated, starting background sync...");
+    console.log("Token updated, starting staged background sync...");
 
     // 4. Start background sync (non-blocking)
     // @ts-ignore: EdgeRuntime is available in Supabase Edge Functions
