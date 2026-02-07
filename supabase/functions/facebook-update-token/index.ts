@@ -371,9 +371,22 @@ Deno.serve(async (req) => {
 
     if (validateData.error) {
       console.error("Token validation failed:", validateData.error);
+      
+      // Check for rate limit error (code 4)
+      if (validateData.error.code === 4) {
+        return new Response(
+          JSON.stringify({
+            error: "Rate limit atingido",
+            details: "O Facebook limitou as requisições. Aguarde alguns minutos e tente novamente.",
+            isRateLimit: true,
+          }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
       return new Response(
         JSON.stringify({
-          error: "Invalid token",
+          error: "Token inválido",
           details: validateData.error.message,
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
