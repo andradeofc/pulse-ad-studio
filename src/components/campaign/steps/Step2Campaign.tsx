@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Layers, Grid3X3, RefreshCw } from 'lucide-react';
+import { Sparkles, Layers, Grid3X3, RefreshCw, Edit3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +16,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { cn } from '@/lib/utils';
+import { NamingModal } from '../NamingModal';
 
 const objectives = [
   { value: 'sales', label: 'Vendas' },
@@ -62,9 +64,9 @@ const mockAdAccounts = [
 
 export function Step2Campaign() {
   const { config, updateConfig } = useCampaignStore();
+  const [namingModalOpen, setNamingModalOpen] = useState(false);
 
-  const generateCampaignName = () => {
-    const template = '[CP{{sequencial:01}}][{{budget}}][{{estrutura}}][{{conta_apelido}}]';
+  const handleApplyNaming = (template: string) => {
     updateConfig({ campaignName: template });
   };
 
@@ -148,19 +150,25 @@ export function Step2Campaign() {
         <div className="space-y-2">
           <Label>Nome da Campanha</Label>
           <div className="flex gap-2">
-            <Input
-              value={config.campaignName}
-              onChange={(e) => updateConfig({ campaignName: e.target.value })}
-              placeholder="[CP{{sequencial:01}}][{{budget}}][{{estrutura}}][{{conta_apelido}}]"
-              className="bg-secondary/50 font-mono text-sm"
-            />
-            <Button variant="outline" onClick={generateCampaignName}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Gerar
+            <div 
+              className="flex-1 relative cursor-pointer group"
+              onClick={() => setNamingModalOpen(true)}
+            >
+              <Input
+                value={config.campaignName}
+                readOnly
+                placeholder="Clique para configurar nomenclatura..."
+                className="bg-secondary/50 font-mono text-sm cursor-pointer pr-10 hover:border-primary/50 transition-colors"
+              />
+              <Edit3 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            <Button variant="outline" onClick={() => setNamingModalOpen(true)}>
+              <Sparkles className="w-4 h-4 mr-2" />
+              Configurar
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Variáveis: {`{{sequencial:01}}`}, {`{{budget}}`}, {`{{estrutura}}`}, {`{{conta_apelido}}`}, {`{{conta_nome}}`}, {`{{conta_id}}`}, {`{{criativo}}`}
+            Clique no campo ou no botão para abrir o editor de nomenclatura com variáveis dinâmicas
           </p>
         </div>
 
@@ -310,6 +318,15 @@ export function Step2Campaign() {
           ))}
         </div>
       </section>
+
+      {/* Naming Modal */}
+      <NamingModal
+        open={namingModalOpen}
+        onOpenChange={setNamingModalOpen}
+        context="campaign"
+        value={config.campaignName}
+        onApply={handleApplyNaming}
+      />
     </div>
   );
 }

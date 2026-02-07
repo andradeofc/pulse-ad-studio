@@ -148,11 +148,12 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
+            className="h-full"
           >
-            <Card className="metric-card">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div>
+            <Card className="metric-card h-full">
+              <CardContent className="p-6 h-full">
+                <div className="flex items-start justify-between h-full min-h-[100px]">
+                  <div className="flex flex-col justify-between h-full">
                     <p className="text-sm text-muted-foreground">{metric.title}</p>
                     <p className="text-3xl font-bold text-foreground mt-2">{metric.value}</p>
                     <div className="flex items-center gap-1 mt-2">
@@ -173,7 +174,7 @@ export default function DashboardPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
                     <metric.icon className="w-6 h-6 text-primary" />
                   </div>
                 </div>
