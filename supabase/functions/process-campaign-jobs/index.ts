@@ -83,7 +83,8 @@ async function createFacebookCampaign(
     special_ad_categories: JSON.stringify(specialAdCategories),
   };
 
-  console.log(`[process-jobs] Campaign params:`, JSON.stringify(params, null, 2));
+  const logParams = { ...params, access_token: '[REDACTED]' };
+  console.log(`[process-jobs] Campaign params:`, JSON.stringify(logParams, null, 2));
 
   // CBO: set campaign budget
   if (config.useCBO) {
@@ -144,6 +145,10 @@ async function createFacebookAdset(
     campaign_id: campaignId,
     name,
     status: config.isPaused ? 'PAUSED' : 'ACTIVE',
+
+    // Required for most website conversion/ad catalog flows
+    destination_type: 'WEBSITE',
+
     billing_event: 'IMPRESSIONS',
     optimization_goal: 'OFFSITE_CONVERSIONS',
     targeting: JSON.stringify({
@@ -159,20 +164,24 @@ async function createFacebookAdset(
     params.daily_budget = Math.round((config.adsetBudget || 10) * 100);
   }
 
-  // Promoted object
+  // Promoted object (combine Pixel + Catalog when available)
+  const promotedObject: Record<string, any> = {};
   if (config.pixelId) {
-    params.promoted_object = JSON.stringify({
-      pixel_id: config.pixelId,
-      custom_event_type: 'PURCHASE',
-      ...(config.catalogId && { product_catalog_id: config.catalogId }),
-      ...(config.productSetId && { product_set_id: config.productSetId }),
-    });
-  } else if (config.catalogId) {
-    params.promoted_object = JSON.stringify({
-      product_catalog_id: config.catalogId,
-      ...(config.productSetId && { product_set_id: config.productSetId }),
-    });
+    promotedObject.pixel_id = config.pixelId;
+    promotedObject.custom_event_type = 'PURCHASE';
   }
+  if (config.catalogId) {
+    promotedObject.product_catalog_id = config.catalogId;
+  }
+  if (config.productSetId) {
+    promotedObject.product_set_id = config.productSetId;
+  }
+  if (Object.keys(promotedObject).length > 0) {
+    params.promoted_object = JSON.stringify(promotedObject);
+  }
+
+  const logParams = { ...params, access_token: '[REDACTED]' };
+  console.log(`[process-jobs] Adset params:`, JSON.stringify(logParams, null, 2));
 
   const formData = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -186,7 +195,28 @@ async function createFacebookAdset(
   });
 
   if (!ok || json.error) {
-    return { success: false, error: json.error?.message || 'Failed to create adset' };
+    const fbError = json?.error;
+    console.error('[process-jobs] Facebook adset error:', JSON.stringify(fbError ?? json, null, 2));
+
+    const msg = fbError?.message || 'Failed to create adset';
+    const code = fbError?.code;
+    const subcode = fbError?.error_subcode;
+    const userMsg = fbError?.error_user_msg;
+    const blame = fbError?.error_data?.blame_field_specs
+      ? JSON.stringify(fbError.error_data.blame_field_specs)
+      : null;
+
+    const details = [
+      msg,
+      code !== undefined ? `code=${code}` : null,
+      subcode !== undefined ? `subcode=${subcode}` : null,
+      userMsg ? `user_msg=${userMsg}` : null,
+      blame ? `blame_field_specs=${blame}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    return { success: false, error: details };
   }
 
   return { success: true, id: json.id };
