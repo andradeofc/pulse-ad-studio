@@ -14,11 +14,11 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { PageSelector } from '@/components/campaign/PageSelector';
 import { NamingModal } from '@/components/campaign/NamingModal';
 
+// CTA options mapped to Facebook API call_to_action.type values
 const ctaOptions = [
   { value: 'LEARN_MORE', label: 'Saiba Mais' },
   { value: 'SHOP_NOW', label: 'Comprar Agora' },
@@ -28,6 +28,16 @@ const ctaOptions = [
   { value: 'WATCH_MORE', label: 'Assistir Mais' },
   { value: 'CONTACT_US', label: 'Fale Conosco' },
   { value: 'APPLY_NOW', label: 'Solicitar Agora' },
+  { value: 'GET_OFFER', label: 'Obter Oferta' },
+  { value: 'GET_QUOTE', label: 'Solicitar Orçamento' },
+  { value: 'BUY_NOW', label: 'Comprar' },
+  { value: 'ORDER_NOW', label: 'Pedir Agora' },
+  { value: 'BOOK_TRAVEL', label: 'Reservar' },
+  { value: 'SEE_MORE', label: 'Ver Mais' },
+  { value: 'SEND_MESSAGE', label: 'Enviar Mensagem' },
+  { value: 'WHATSAPP_MESSAGE', label: 'WhatsApp' },
+  { value: 'CALL_NOW', label: 'Ligar Agora' },
+  { value: 'GET_DIRECTIONS', label: 'Como Chegar' },
 ];
 
 export function Step4Ads() {
@@ -150,44 +160,65 @@ export function Step4Ads() {
       />
 
       {/* Multi-Advertiser Section */}
+      {/* API: contextual_multi_ads.enroll_status = OPT_IN | OPT_OUT */}
       <section className="space-y-4">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Multi-Advertiser Ads
           </h3>
-          <Badge variant="outline" className="text-xs">Opcional</Badge>
+          <Badge variant="outline" className="text-xs font-mono">
+            contextual_multi_ads
+          </Badge>
         </div>
 
-        <div className="flex items-center space-x-3 p-4 bg-secondary/50 rounded-lg border border-border">
-          <Checkbox
-            id="multiAdvertiser"
-            checked={config.multiAdvertiser}
-            onCheckedChange={(checked) => updateConfig({ multiAdvertiser: checked as boolean })}
-          />
-          <div>
-            <Label htmlFor="multiAdvertiser" className="text-foreground cursor-pointer">
-              Ativar Multi-Advertiser Ads
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              Permite que o Facebook exiba seu anúncio junto com outros anunciantes
-            </p>
+        <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border">
+          <div className="flex items-center gap-3">
+            <div>
+              <Label className="text-foreground">Ativar Multi-Advertiser Ads</Label>
+              <p className="text-sm text-muted-foreground">
+                Permite que o Facebook exiba seu anúncio junto com outros anunciantes
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Badge 
+              variant="outline" 
+              className={`text-xs font-mono ${config.multiAdvertiser ? 'bg-ads-success/20 text-ads-success border-ads-success/30' : 'bg-destructive/20 text-destructive border-destructive/30'}`}
+            >
+              {config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT'}
+            </Badge>
+            <Switch
+              checked={config.multiAdvertiser}
+              onCheckedChange={(checked) => updateConfig({ multiAdvertiser: checked })}
+            />
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Recomendado: Manter desativado para controle total
+          A partir de Agosto 2024, o padrão da API é OPT_IN. Recomendamos manter desativado para controle total.
         </p>
       </section>
 
       {/* Ad Content Section */}
+      {/* API: object_story_spec.link_data fields */}
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          Conteúdo do Anúncio
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Conteúdo do Anúncio
+          </h3>
+          <Badge variant="outline" className="text-xs font-mono">
+            link_data
+          </Badge>
+        </div>
 
         <div className="space-y-4">
-          {/* Primary Text */}
+          {/* Primary Text - API: message */}
           <div className="space-y-2">
-            <Label>Texto Principal</Label>
+            <div className="flex items-center gap-2">
+              <Label>Texto Principal</Label>
+              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                message
+              </Badge>
+            </div>
             <Textarea
               value={config.primaryText}
               onChange={(e) => updateConfig({ primaryText: e.target.value })}
@@ -200,9 +231,14 @@ export function Step4Ads() {
             </p>
           </div>
 
-          {/* Headline */}
+          {/* Headline - API: name */}
           <div className="space-y-2">
-            <Label>Título (Headline)</Label>
+            <div className="flex items-center gap-2">
+              <Label>Título (Headline)</Label>
+              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                name
+              </Badge>
+            </div>
             <Input
               value={config.headline}
               onChange={(e) => updateConfig({ headline: e.target.value })}
@@ -211,13 +247,18 @@ export function Step4Ads() {
               maxLength={40}
             />
             <p className="text-xs text-muted-foreground">
-              Aparece em destaque abaixo da mídia
+              Aparece em destaque abaixo da mídia (máx. 40 caracteres)
             </p>
           </div>
 
-          {/* Description */}
+          {/* Description - API: description */}
           <div className="space-y-2">
-            <Label>Descrição</Label>
+            <div className="flex items-center gap-2">
+              <Label>Descrição</Label>
+              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                description
+              </Badge>
+            </div>
             <Input
               value={config.description}
               onChange={(e) => updateConfig({ description: e.target.value })}
@@ -226,7 +267,7 @@ export function Step4Ads() {
               maxLength={90}
             />
             <p className="text-xs text-muted-foreground">
-              Texto adicional (nem sempre visível)
+              Texto adicional abaixo do título (nem sempre visível, máx. 90 caracteres)
             </p>
           </div>
         </div>
@@ -240,14 +281,26 @@ export function Step4Ads() {
       </section>
 
       {/* Link and CTA Section */}
+      {/* API: link_data.link, link_data.call_to_action */}
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          Link e Ação
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Link e Ação
+          </h3>
+          <Badge variant="outline" className="text-xs font-mono">
+            call_to_action
+          </Badge>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Destination URL - API: link */}
           <div className="space-y-2">
-            <Label>URL de Destino</Label>
+            <div className="flex items-center gap-2">
+              <Label>URL de Destino</Label>
+              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                link
+              </Badge>
+            </div>
             <Input
               type="url"
               value={config.destinationUrl}
@@ -256,11 +309,18 @@ export function Step4Ads() {
               className="bg-secondary/50"
             />
             <p className="text-xs text-muted-foreground">
-              Link de destino do anúncio
+              Link de destino do anúncio (obrigatório)
             </p>
           </div>
+          
+          {/* CTA Button - API: call_to_action.type */}
           <div className="space-y-2">
-            <Label>Botão de Ação (CTA)</Label>
+            <div className="flex items-center gap-2">
+              <Label>Botão de Ação (CTA)</Label>
+              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                type
+              </Badge>
+            </div>
             <Select
               value={config.ctaType}
               onValueChange={(value) => updateConfig({ ctaType: value })}
@@ -271,7 +331,12 @@ export function Step4Ads() {
               <SelectContent>
                 {ctaOptions.map((cta) => (
                   <SelectItem key={cta.value} value={cta.value}>
-                    {cta.label}
+                    <div className="flex items-center gap-2">
+                      <span>{cta.label}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {cta.value}
+                      </span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -281,30 +346,41 @@ export function Step4Ads() {
       </section>
 
       {/* Tracking Section */}
+      {/* API: url_tags */}
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          Rastreamento
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Rastreamento
+          </h3>
+          <Badge variant="outline" className="text-xs font-mono">
+            url_tags
+          </Badge>
+        </div>
 
         <div className="space-y-2">
-          <Label>Parâmetros de URL</Label>
+          <div className="flex items-center gap-2">
+            <Label>Parâmetros de URL</Label>
+            <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+              url_tags
+            </Badge>
+          </div>
           <Textarea
             value={config.urlParams}
             onChange={(e) => updateConfig({ urlParams: e.target.value })}
-            placeholder="utm_medium={{adset.name}}"
+            placeholder="utm_source=facebook&utm_medium={{adset.name}}&utm_campaign={{campaign.name}}"
             className="bg-secondary/50 font-mono text-sm min-h-[80px] resize-none"
           />
           <p className="text-xs text-muted-foreground">
-            Parâmetros adicionados automaticamente à URL de destino
+            Parâmetros adicionados automaticamente à URL de destino (não incluir "?" inicial)
           </p>
         </div>
 
         <div className="p-4 bg-secondary/30 rounded-lg space-y-2">
-          <p className="text-xs font-medium text-foreground">Variáveis do Facebook:</p>
+          <p className="text-xs font-medium text-foreground">Variáveis Dinâmicas do Facebook (suportadas na API):</p>
           <p className="text-xs text-muted-foreground font-mono">
-            {`{{campaign.name}}`}, {`{{campaign.id}}`}, {`{{adset.name}}`}, {`{{adset.id}}`}, {`{{ad.name}}`}, {`{{ad.id}}`}, {`{{placement}}`}
+            {`{{campaign.name}}`}, {`{{campaign.id}}`}, {`{{adset.name}}`}, {`{{adset.id}}`}, {`{{ad.name}}`}, {`{{ad.id}}`}, {`{{placement}}`}, {`{{site_source_name}}`}
           </p>
-          <p className="text-xs font-medium text-foreground mt-3">Variáveis Dinâmicas:</p>
+          <p className="text-xs font-medium text-foreground mt-3">Variáveis Personalizadas (substituídas antes do envio):</p>
           <p className="text-xs text-muted-foreground font-mono">
             {`{{conta_nome}}`}, {`{{conta_apelido}}`}, {`{{conta_id}}`}, {`{{criativo}}`}
           </p>
