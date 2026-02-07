@@ -83,6 +83,13 @@ async function createFacebookCampaign(
     special_ad_categories: JSON.stringify(specialAdCategories),
   };
 
+  // For Dynamic Product Ads (DPA/Catalog), add product_catalog_id at CAMPAIGN level
+  if (config.useCatalog && config.catalogId) {
+    params.promoted_object = JSON.stringify({
+      product_catalog_id: config.catalogId,
+    });
+  }
+
   const logParams = { ...params, access_token: '[REDACTED]' };
   console.log(`[process-jobs] Campaign params:`, JSON.stringify(logParams, null, 2));
 
@@ -184,14 +191,9 @@ async function createFacebookAdset(
   promotedObject.pixel_id = config.pixelId;
   promotedObject.custom_event_type = 'PURCHASE';
 
-  // Only include catalog fields when useCatalog is explicitly enabled (DPA mode)
-  if (config.useCatalog) {
-    if (config.catalogId) {
-      promotedObject.product_catalog_id = config.catalogId;
-    }
-    if (config.productSetId) {
-      promotedObject.product_set_id = config.productSetId;
-    }
+  // For DPA mode: only include product_set_id at adset level (product_catalog_id goes at campaign level)
+  if (config.useCatalog && config.productSetId) {
+    promotedObject.product_set_id = config.productSetId;
   }
 
   params.promoted_object = JSON.stringify(promotedObject);
