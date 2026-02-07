@@ -431,33 +431,18 @@ async function createFacebookAd(
       objectStorySpec.instagram_user_id = instagramUserId;
     }
 
-    // Degrees of Freedom Spec for creative enhancements
-    // For catalog ads, this controls "Adaptar ao posicionamento" (placement asset customization)
-    // Note: asset_feed_spec is NOT compatible with template_data (catalog ads)
-    const degreesOfFreedomSpec: Record<string, any> = {
-      creative_features_spec: {
-        // Enable "Adaptar ao posicionamento" (placement asset customization)
-        standard_enhancements: {
-          enroll_status: 'OPT_IN',
-        },
-      },
-    };
-
     const creativeParams: Record<string, any> = {
       access_token: accessToken,
       name: `Creative_${name}`,
       object_story_spec: JSON.stringify(objectStorySpec),
       product_set_id: config.productSetId,
       
-      // Degrees of freedom for creative enhancements ("Adaptar ao posicionamento")
-      degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
-      
       // Use page identity for Instagram placements
       use_page_actor_override: 'true',
       
-      // "Priorizar vídeo" - For catalog ads with single_image format,
-      // Meta will automatically prioritize video assets when available in the catalog
-      // This is the default behavior when using format_option: 'single_image'
+      // Note: degrees_of_freedom_spec with standard_enhancements has been deprecated by Meta
+      // "Adaptar ao posicionamento" is now the default behavior for catalog ads
+      // "Priorizar vídeo" - Meta automatically prioritizes video assets when available
     };
 
     // Add URL parameters if provided (utm_medium, utm_source, etc.)
