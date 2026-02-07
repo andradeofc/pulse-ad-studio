@@ -89,6 +89,10 @@ async function createFacebookCampaign(
   if (config.useCBO) {
     params.daily_budget = Math.round((config.budget || 50) * 100); // cents
     params.bid_strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
+  } else {
+    // ABO: Facebook requires is_adset_budget_sharing_enabled when not using CBO
+    // This allows adsets to share up to 20% of budget for optimization
+    params.is_adset_budget_sharing_enabled = config.shareAdsetBudget !== false;
   }
 
   const formData = new URLSearchParams();
