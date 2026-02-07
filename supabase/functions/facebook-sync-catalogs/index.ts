@@ -50,20 +50,16 @@ Deno.serve(async (req) => {
       // No body or invalid JSON, will use empty array
     }
 
-    console.log(`[sync-catalogs] Starting sync for user ${user.id}, accounts: ${selectedAccountIds.join(', ') || 'all'}`);
+    console.log(`[sync-catalogs] Starting sync for user ${user.id}, account_ids: ${selectedAccountIds.join(', ') || 'all'}`);
 
     // Get selected ad accounts from database
     let accountsQuery = supabase
       .from('facebook_ad_accounts')
       .select('id, account_id, name, business_id, business_name, profile_id');
 
-    // Filter by selected accounts if provided
+    // Filter by selected accounts if provided (these are database UUIDs)
     if (selectedAccountIds.length > 0) {
-      // Remove 'act_' prefix if present for matching
-      const normalizedIds = selectedAccountIds.map(id => id.replace(/^act_/, ''));
-      accountsQuery = accountsQuery.or(
-        normalizedIds.map(id => `account_id.eq.${id},account_id.eq.act_${id}`).join(',')
-      );
+      accountsQuery = accountsQuery.in('id', selectedAccountIds);
     }
 
     const { data: accounts, error: accountsError } = await accountsQuery;
