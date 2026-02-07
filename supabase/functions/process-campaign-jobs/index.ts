@@ -70,13 +70,20 @@ async function createFacebookCampaign(
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
+  // Build special_ad_categories array
+  const specialAdCategories = config.specialAdCategory && config.specialAdCategory !== 'NONE' 
+    ? [config.specialAdCategory] 
+    : [];
+
   const params: Record<string, any> = {
     access_token: accessToken,
     name,
     objective: config.objective || 'OUTCOME_SALES',
     status: config.isPaused ? 'PAUSED' : 'ACTIVE',
-    special_ad_categories: config.specialAdCategory === 'NONE' ? '[]' : `["${config.specialAdCategory}"]`,
+    special_ad_categories: JSON.stringify(specialAdCategories),
   };
+
+  console.log(`[process-jobs] Campaign params:`, JSON.stringify(params, null, 2));
 
   // CBO: set campaign budget
   if (config.useCBO) {
