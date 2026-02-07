@@ -33,6 +33,43 @@ interface Job {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Get Page-backed Instagram Account ID for a Facebook Page
+// This is required for Instagram placements - uses "Use Selected Page" option
+async function getPageBackedInstagramAccountId(
+  accessToken: string,
+  pageId: string,
+): Promise<string | null> {
+  try {
+    // Query the page's instagram_accounts edge to get the Page-backed Instagram Account
+    const url = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_accounts{id,username}&access_token=${accessToken}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    
+    if (json.instagram_accounts?.data?.length > 0) {
+      const igAccountId = json.instagram_accounts.data[0].id;
+      console.log(`[process-jobs] Found Instagram account ${igAccountId} for page ${pageId}`);
+      return igAccountId;
+    }
+    
+    // Fallback: try page_backed_instagram_accounts endpoint
+    const fallbackUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${accessToken}`;
+    const fallbackRes = await fetch(fallbackUrl);
+    const fallbackJson = await fallbackRes.json();
+    
+    if (fallbackJson.data?.length > 0) {
+      const igAccountId = fallbackJson.data[0].id;
+      console.log(`[process-jobs] Found Page-backed Instagram account ${igAccountId} for page ${pageId}`);
+      return igAccountId;
+    }
+    
+    console.log(`[process-jobs] No Instagram account found for page ${pageId}`);
+    return null;
+  } catch (err) {
+    console.error(`[process-jobs] Error fetching Instagram account for page ${pageId}:`, err);
+    return null;
+  }
+}
+
 async function fetchWithRetry(
   url: string,
   options: RequestInit,
@@ -252,12 +289,14 @@ async function createFacebookAd(
 
   // For catalog ads, we use a template creative
   if (config.useCatalog && config.catalogId) {
+    // Get the Page-backed Instagram Account ID for Instagram placements
+    // This implements "Use Selected Page" option in Facebook Ads Manager
+    const instagramActorId = await getPageBackedInstagramAccountId(accessToken, pageId);
+    
     // Create ad creative for dynamic ads
     // Facebook DPA requires specific structure for template_data
     const objectStorySpec: Record<string, any> = {
       page_id: pageId,
-      // Use Facebook Page to represent business on Instagram (instagram_actor_id = page_id)
-      instagram_actor_id: pageId,
       template_data: {
         call_to_action: {
           type: config.ctaType || 'SHOP_NOW',
@@ -269,6 +308,11 @@ async function createFacebookAd(
         description: config.description || '{{product.price}}',
       },
     };
+    
+    // Add instagram_actor_id only if we found a valid Instagram account
+    if (instagramActorId) {
+      objectStorySpec.instagram_actor_id = instagramActorId;
+    }
 
     const creativeParams: Record<string, any> = {
       access_token: accessToken,
