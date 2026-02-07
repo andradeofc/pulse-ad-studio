@@ -109,6 +109,50 @@ export type Database = {
           },
         ]
       }
+      facebook_business_managers: {
+        Row: {
+          business_id: string
+          created_at: string
+          id: string
+          name: string
+          primary_page_id: string | null
+          profile_id: string
+          timezone: string | null
+          updated_at: string
+          verification_status: string | null
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          id?: string
+          name: string
+          primary_page_id?: string | null
+          profile_id: string
+          timezone?: string | null
+          updated_at?: string
+          verification_status?: string | null
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          primary_page_id?: string | null
+          profile_id?: string
+          timezone?: string | null
+          updated_at?: string
+          verification_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_business_managers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facebook_catalogs: {
         Row: {
           business_id: string | null

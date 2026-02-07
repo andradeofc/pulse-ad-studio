@@ -23,3 +23,12 @@ verify_jwt = false
 
 [functions.facebook-update-token]
 verify_jwt = false
+
+[functions.facebook-sync-catalogs]
+verify_jwt = false
+
+[functions.facebook-sync-product-sets]
+verify_jwt = false
+
+[functions.facebook-sync-business-managers]
+verify_jwt = false

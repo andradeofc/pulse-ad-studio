@@ -155,3 +155,17 @@ export async function updateFacebookToken(profileId: string, accessToken: string
 
   return data;
 }
+
+// Sync Business Managers for a profile (or all profiles if no profileId)
+export async function syncBusinessManagers(profileId?: string) {
+  const { data, error } = await supabase.functions.invoke('facebook-sync-business-managers', {
+    body: profileId ? { profile_id: profileId } : {},
+  });
+
+  if (error) {
+    console.error('Error syncing business managers:', error);
+    throw error;
+  }
+
+  return data;
+}

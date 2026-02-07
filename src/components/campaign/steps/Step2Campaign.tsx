@@ -376,11 +376,10 @@ export function Step2Campaign() {
               <div className="flex items-center gap-2">
                 <Label className="text-foreground">Business Manager</Label>
                 <Badge variant="outline" className="text-xs font-mono">
-                  Detectado das contas
+                  Todos os BMs do perfil
                 </Badge>
               </div>
               <BusinessManagerSelector
-                selectedAccounts={config.selectedAccounts}
                 value={config.selectedBusinessManagerId}
                 onChange={(businessId, businessName) => {
                   updateConfig({ 
