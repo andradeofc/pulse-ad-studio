@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Layers, Grid3X3, Edit3 } from 'lucide-react';
+import { Sparkles, Layers, Grid3X3, Edit3, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { NamingModal } from '../NamingModal';
 import { AdAccountSelector } from '../AdAccountSelector';
@@ -56,9 +57,58 @@ const bidStrategies = [
   { value: 'roas', label: 'Meta de ROAS', description: 'Retorno em anúncios', available: false },
 ];
 
+// Currency symbols and minimum budgets
+const currencyConfig: Record<string, { symbol: string; minBudget: number }> = {
+  BRL: { symbol: 'R$', minBudget: 6 },
+  USD: { symbol: '$', minBudget: 1 },
+  EUR: { symbol: '€', minBudget: 1 },
+  GBP: { symbol: '£', minBudget: 1 },
+};
+
+interface AdAccountData {
+  id: string;
+  currency: string | null;
+  name: string;
+}
+
 export function Step2Campaign() {
   const { config, updateConfig } = useCampaignStore();
   const [namingModalOpen, setNamingModalOpen] = useState(false);
+  const [selectedAccountsData, setSelectedAccountsData] = useState<AdAccountData[]>([]);
+
+  // Fetch selected accounts data for currency info
+  useEffect(() => {
+    const fetchAccountsData = async () => {
+      if (config.selectedAccounts.length === 0) {
+        setSelectedAccountsData([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('facebook_ad_accounts')
+        .select('id, currency, name')
+        .in('id', config.selectedAccounts);
+
+      if (!error && data) {
+        setSelectedAccountsData(data);
+      }
+    };
+
+    fetchAccountsData();
+  }, [config.selectedAccounts]);
+
+  // Get unique currencies from selected accounts
+  const selectedCurrencies = useMemo(() => {
+    const currencies = [...new Set(selectedAccountsData.map(a => a.currency || 'BRL'))];
+    return currencies;
+  }, [selectedAccountsData]);
+
+  // Get primary currency (first selected account's currency)
+  const primaryCurrency = selectedCurrencies[0] || 'BRL';
+  const currencyInfo = currencyConfig[primaryCurrency] || { symbol: primaryCurrency, minBudget: 1 };
+  
+  // Check if there are mixed currencies
+  const hasMixedCurrencies = selectedCurrencies.length > 1;
 
   const handleApplyNaming = (template: string) => {
     updateConfig({ campaignName: template });
@@ -233,17 +283,45 @@ export function Step2Campaign() {
           Orçamento
         </h3>
 
+        {/* Mixed currencies warning */}
+        {hasMixedCurrencies && (
+          <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+            <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-amber-500">
+                Contas com moedas diferentes selecionadas
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Você selecionou contas em {selectedCurrencies.join(', ')}. 
+                O orçamento será aplicado na moeda de cada conta.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Orçamento (R$)</Label>
-            <Input
-              type="number"
-              value={config.budget}
-              onChange={(e) => updateConfig({ budget: parseFloat(e.target.value) || 0 })}
-              min={6}
-              step={1}
-              className="bg-secondary/50"
-            />
+            <Label>
+              Orçamento ({currencyInfo.symbol})
+              {hasMixedCurrencies && (
+                <Badge variant="outline" className="ml-2 text-xs">
+                  {selectedCurrencies.join(' / ')}
+                </Badge>
+              )}
+            </Label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                {currencyInfo.symbol}
+              </span>
+              <Input
+                type="number"
+                value={config.budget}
+                onChange={(e) => updateConfig({ budget: parseFloat(e.target.value) || 0 })}
+                min={currencyInfo.minBudget}
+                step={1}
+                className="bg-secondary/50 pl-10"
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Período</Label>
@@ -262,7 +340,8 @@ export function Step2Campaign() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Mínimo: R$ 6.00 (≈ $1 USD · Cotação: R$ 6.00)
+          Mínimo: {currencyInfo.symbol} {currencyInfo.minBudget.toFixed(2)}
+          {config.selectedAccounts.length === 0 && ' · Selecione uma conta para ver a moeda correta'}
         </p>
       </section>
 
