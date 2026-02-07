@@ -109,6 +109,71 @@ export type Database = {
           },
         ]
       }
+      facebook_pages: {
+        Row: {
+          access_token: string | null
+          ads_limit: number | null
+          ads_running: number | null
+          business_id: string | null
+          business_name: string | null
+          category: string | null
+          created_at: string
+          followers_count: number | null
+          id: string
+          is_published: boolean | null
+          name: string
+          page_id: string
+          picture_url: string | null
+          profile_id: string
+          tasks: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          ads_limit?: number | null
+          ads_running?: number | null
+          business_id?: string | null
+          business_name?: string | null
+          category?: string | null
+          created_at?: string
+          followers_count?: number | null
+          id?: string
+          is_published?: boolean | null
+          name: string
+          page_id: string
+          picture_url?: string | null
+          profile_id: string
+          tasks?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          ads_limit?: number | null
+          ads_running?: number | null
+          business_id?: string | null
+          business_name?: string | null
+          category?: string | null
+          created_at?: string
+          followers_count?: number | null
+          id?: string
+          is_published?: boolean | null
+          name?: string
+          page_id?: string
+          picture_url?: string | null
+          profile_id?: string
+          tasks?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_pages_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facebook_pixels: {
         Row: {
           account_id: string | null

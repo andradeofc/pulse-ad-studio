@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.facebook-update-proxy]
 verify_jwt = false
+
+[functions.facebook-sync-pixels]
+verify_jwt = false
+
+[functions.facebook-sync-pages]
+verify_jwt = false
