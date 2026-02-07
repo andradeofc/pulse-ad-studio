@@ -254,47 +254,78 @@ Deno.serve(async (req) => {
           }
         }
 
-        // 4. Enrich pages with ads_volume using Batch API
-        const uniquePages = Array.from(pagesMap.values());
-        console.log(`Total unique pages to enrich: ${uniquePages.length}`);
+        // 4. Enrich pages with ads_volume from Ad Accounts
+        // The correct approach: query ads_volume from each ad account with show_breakdown_by_actor=true
+        console.log("Fetching ads volume from ad accounts...");
+        
+        // Get all ad accounts for this profile from DB
+        const { data: adAccounts, error: adAccountsError } = await supabase
+          .from("facebook_ad_accounts")
+          .select("account_id")
+          .eq("profile_id", profile.id);
 
-        const BATCH_SIZE = 50;
-        for (let i = 0; i < uniquePages.length; i += BATCH_SIZE) {
-          const chunk = uniquePages.slice(i, i + BATCH_SIZE);
-          const batch = chunk.map((p) => ({
-            method: "GET",
-            relative_url: `${p.page_id}?fields=ads_volume`,
-          }));
+        if (adAccountsError) {
+          console.error("Error fetching ad accounts:", adAccountsError);
+        }
 
-          try {
-            const batchRes = await fetchJsonWithRetry(
-              `https://graph.facebook.com/v21.0/?access_token=${accessToken}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ batch: JSON.stringify(batch) }),
+        // Build a map of page_id -> { ads_running, ads_limit }
+        const pageAdsVolumeMap = new Map<string, { ads_running: number; ads_limit: number }>();
+
+        if (adAccounts && adAccounts.length > 0) {
+          console.log(`Found ${adAccounts.length} ad accounts to query for ads_volume`);
+
+          for (const account of adAccounts) {
+            try {
+              // Use the correct endpoint: /act_{account_id}/ads_volume with show_breakdown_by_actor=true
+              const adsVolumeUrl = `https://graph.facebook.com/v21.0/act_${account.account_id}/ads_volume?show_breakdown_by_actor=true&access_token=${accessToken}`;
+              
+              const adsVolumeData = await fetchJsonWithRetry(adsVolumeUrl);
+
+              if (adsVolumeData.error) {
+                console.log(`Error fetching ads_volume for account ${account.account_id}: ${adsVolumeData.error.message}`);
+                continue;
               }
-            );
 
-            if (Array.isArray(batchRes)) {
-              for (let j = 0; j < batchRes.length; j++) {
-                const item = batchRes[j];
-                if (item?.code === 200 && item.body) {
-                  try {
-                    const body = JSON.parse(item.body);
-                    const adsVolume = body?.ads_volume;
-                    if (adsVolume) {
-                      chunk[j].ads_running = adsVolume.ads_running_or_in_review_count || 0;
-                      chunk[j].ads_limit = adsVolume.limit_on_ads_running_or_in_review || 250;
+              // The response contains an array with breakdown by actor (page)
+              if (adsVolumeData.data && Array.isArray(adsVolumeData.data)) {
+                for (const item of adsVolumeData.data) {
+                  const actorId = item.actor_id;
+                  const adsRunning = item.ads_running_or_in_review_count || 0;
+                  const adsLimit = item.limit_on_ads_running_or_in_review || 250;
+
+                  if (actorId) {
+                    // Aggregate ads across accounts (a page can have ads from multiple accounts)
+                    const existing = pageAdsVolumeMap.get(actorId);
+                    if (existing) {
+                      // Sum the ads running, keep the max limit
+                      pageAdsVolumeMap.set(actorId, {
+                        ads_running: existing.ads_running + adsRunning,
+                        ads_limit: Math.max(existing.ads_limit, adsLimit),
+                      });
+                    } else {
+                      pageAdsVolumeMap.set(actorId, {
+                        ads_running: adsRunning,
+                        ads_limit: adsLimit,
+                      });
                     }
-                  } catch (parseErr) {
-                    console.error("Error parsing batch item:", parseErr);
                   }
                 }
               }
+            } catch (err) {
+              console.error(`Error querying ads_volume for account ${account.account_id}:`, err);
             }
-          } catch (batchErr) {
-            console.error("Error in batch ads_volume request:", batchErr);
+          }
+
+          console.log(`Found ads volume data for ${pageAdsVolumeMap.size} pages`);
+        }
+
+        // Apply ads_volume data to pages
+        const uniquePages = Array.from(pagesMap.values());
+        for (const page of uniquePages) {
+          const adsData = pageAdsVolumeMap.get(page.page_id);
+          if (adsData) {
+            page.ads_running = adsData.ads_running;
+            page.ads_limit = adsData.ads_limit;
           }
         }
 

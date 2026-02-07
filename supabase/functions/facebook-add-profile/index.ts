@@ -330,68 +330,105 @@ async function performFullSync(
       }
     }
 
-    // Fetch ads limits for each page via Batch API
+    // Fetch ads volume from Ad Accounts using the correct endpoint: /act_{account_id}/ads_volume?show_breakdown_by_actor=true
+    // This is the ONLY correct way per Facebook Marketing API documentation
     const uniquePages = Array.from(pagesMap.values());
-    console.log(`Fetching ads limits for ${uniquePages.length} pages...`);
+    console.log(`Fetching ads volume for ${uniquePages.length} pages via Ad Accounts...`);
 
-    const pageChunksForLimits = chunk(uniquePages, 50);
-    let adsLimitsEnriched = 0;
+    // Build a map of page_id -> { ads_running, ads_limit }
+    const pageAdsVolumeMap = new Map<string, { ads_running: number; ads_limit: number }>();
 
-    for (const pageChunk of pageChunksForLimits) {
-      const batch = pageChunk.map((p: any) => ({
-        method: "GET",
-        relative_url: `${p.page_id}?fields=ads_volume`,
-      }));
+    // Get all ad accounts that were synced in Stage 1
+    const { data: adAccounts } = await supabase
+      .from("facebook_ad_accounts")
+      .select("account_id")
+      .eq("profile_id", profileId);
 
-      const form = new URLSearchParams();
-      form.set("access_token", accessToken);
-      form.set("batch", JSON.stringify(batch));
+    if (adAccounts && adAccounts.length > 0) {
+      console.log(`Querying ads_volume from ${adAccounts.length} ad accounts...`);
 
-      const { ok, status, data } = await fetchJsonWithRetry(
-        FACEBOOK_GRAPH_API,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: form.toString(),
-        },
-        3
-      );
+      // Use Batch API to query multiple accounts at once
+      const accountChunksForAdsVolume = chunk(adAccounts, 50);
 
-      if (!ok || !Array.isArray(data)) {
-        console.error("Batch ads limits request failed:", status, data?.error || data);
-        continue;
-      }
+      for (const accountChunk of accountChunksForAdsVolume) {
+        const batch = accountChunk.map((acc: any) => ({
+          method: "GET",
+          relative_url: `act_${acc.account_id}/ads_volume?show_breakdown_by_actor=true`,
+        }));
 
-      for (let i = 0; i < data.length; i++) {
-        const result = data[i];
-        const page = pageChunk[i];
+        const form = new URLSearchParams();
+        form.set("access_token", accessToken);
+        form.set("batch", JSON.stringify(batch));
 
-        if (!result || result.code !== 200) continue;
+        const { ok, status, data } = await fetchJsonWithRetry(
+          FACEBOOK_GRAPH_API,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: form.toString(),
+          },
+          3
+        );
 
-        try {
-          const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-          const adsVolume = body?.ads_volume;
-
-          if (adsVolume) {
-            const key = String(page.page_id);
-            const current = pagesMap.get(key);
-            if (current) {
-              // ads_volume returns: { ads_running_or_in_review_count, limit_on_ads_running_or_in_review }
-              current.ads_running = adsVolume.ads_running_or_in_review_count || 0;
-              current.ads_limit = adsVolume.limit_on_ads_running_or_in_review || 250;
-              pagesMap.set(key, current);
-              adsLimitsEnriched++;
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing ads limits batch body:", e);
+        if (!ok || !Array.isArray(data)) {
+          console.error("Batch ads_volume request failed:", status, data?.error || data);
+          continue;
         }
+
+        for (let i = 0; i < data.length; i++) {
+          const result = data[i];
+
+          if (!result || result.code !== 200) continue;
+
+          try {
+            const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+            
+            // The response contains an array with breakdown by actor (page)
+            if (body?.data && Array.isArray(body.data)) {
+              for (const item of body.data) {
+                const actorId = item.actor_id;
+                const adsRunning = item.ads_running_or_in_review_count || 0;
+                const adsLimit = item.limit_on_ads_running_or_in_review || 250;
+
+                if (actorId) {
+                  // Aggregate ads across accounts (a page can have ads from multiple accounts)
+                  const existing = pageAdsVolumeMap.get(actorId);
+                  if (existing) {
+                    pageAdsVolumeMap.set(actorId, {
+                      ads_running: existing.ads_running + adsRunning,
+                      ads_limit: Math.max(existing.ads_limit, adsLimit),
+                    });
+                  } else {
+                    pageAdsVolumeMap.set(actorId, {
+                      ads_running: adsRunning,
+                      ads_limit: adsLimit,
+                    });
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing ads_volume batch body:", e);
+          }
+        }
+
+        await sleep(250);
       }
 
-      await sleep(250);
+      console.log(`Found ads volume data for ${pageAdsVolumeMap.size} pages`);
     }
 
-    console.log(`Enriched ${adsLimitsEnriched} pages with ads limits`);
+    // Apply ads_volume data to pages
+    for (const page of uniquePages) {
+      const adsData = pageAdsVolumeMap.get(page.page_id);
+      if (adsData) {
+        page.ads_running = adsData.ads_running;
+        page.ads_limit = adsData.ads_limit;
+      } else {
+        page.ads_running = 0;
+        page.ads_limit = 250;
+      }
+    }
 
     // Upsert pages in chunks
     const finalPages = Array.from(pagesMap.values());
