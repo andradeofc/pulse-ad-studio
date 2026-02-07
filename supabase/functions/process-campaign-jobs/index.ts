@@ -410,13 +410,21 @@ async function createFacebookAd(
         type: config.ctaType || 'SHOP_NOW',
         value: { link: finalDestinationUrl },
       },
+
+      // Destination URL (also used for "Substituir deep links do site do catálogo")
       link: finalDestinationUrl,
+
+      // Forces a single offsite link instead of per-item catalog links/deep-links
+      // (maps to the "Replace catalog website deep links" behavior in Ads Manager)
+      force_single_link: true,
+
       message: config.primaryText || '{{product.name}}',
       name: config.headline || '{{product.name}}',
       description: config.description || '{{product.price}}',
-      // Force single image/video format (not carousel)
-      // Valid values: carousel_images_multi_items, carousel_images_single_item, single_image, collection_video
-      format_option: 'single_image',
+
+      // Dynamic Media: "Priorizar vídeo" -> use single_video format option
+      // Valid values include: single_image, single_video, collection_video, carousel_images_multi_items, carousel_images_single_item
+      format_option: 'single_video',
     };
 
     const objectStorySpec: Record<string, any> = {
@@ -429,13 +437,17 @@ async function createFacebookAd(
       objectStorySpec.instagram_user_id = instagramUserId;
     }
 
-    // Degrees of Freedom Spec for:
-    // 1. media_type_automation: OPT_IN = "Mídia dinâmica" / "Priorizar vídeo" - prioritize video assets from catalog
+    // Dynamic Media (Meta):
+    // - media_type_automation OPT_IN => enables videos from the catalog to surface
+    // - video_crop_style AUTO       => "Corte de vídeo automático" (auto-crop when needed)
     // Reference: https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/dynamic-media/
     const degreesOfFreedomSpec: Record<string, any> = {
       creative_features_spec: {
         media_type_automation: {
-          enroll_status: 'OPT_IN', // Enable Dynamic Media (prioritize video)
+          customizations: {
+            video_crop_style: 'AUTO',
+          },
+          enroll_status: 'OPT_IN',
         },
       },
     };
