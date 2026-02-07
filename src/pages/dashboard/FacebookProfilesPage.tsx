@@ -11,6 +11,7 @@ import {
   Clock,
   ExternalLink,
   Loader2,
+  Key,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,7 @@ import {
   deleteFacebookProfile,
   updateFacebookProfileProxy,
   validateFacebookToken,
+  updateFacebookToken,
   type FacebookProfile,
 } from '@/services/facebookService';
 
@@ -57,12 +59,15 @@ export default function FacebookProfilesPage() {
   const [profiles, setProfiles] = useState<FacebookProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddTokenOpen, setIsAddTokenOpen] = useState(false);
+  const [isUpdateTokenOpen, setIsUpdateTokenOpen] = useState(false);
   const [isProxyOpen, setIsProxyOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [deleteProfileId, setDeleteProfileId] = useState<string | null>(null);
   
   const [tokenInput, setTokenInput] = useState('');
+  const [updateTokenInput, setUpdateTokenInput] = useState('');
   const [isValidating, setIsValidating] = useState(false);
+  const [isUpdatingToken, setIsUpdatingToken] = useState(false);
   const [isSyncing, setSyncing] = useState<string | null>(null);
   
   const [proxyForm, setProxyForm] = useState({
@@ -230,6 +235,48 @@ export default function FacebookProfilesPage() {
         description: errorMessage,
         variant: 'destructive',
       });
+    }
+  };
+
+  const openUpdateTokenModal = (profile: FacebookProfile) => {
+    setSelectedProfileId(profile.id);
+    setUpdateTokenInput('');
+    setIsUpdateTokenOpen(true);
+  };
+
+  const handleUpdateToken = async () => {
+    if (!selectedProfileId || !updateTokenInput.trim()) return;
+    
+    setIsUpdatingToken(true);
+    try {
+      const result = await updateFacebookToken(selectedProfileId, updateTokenInput);
+      
+      if (result.error) {
+        toast({
+          title: 'Erro',
+          description: result.details || result.error,
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      toast({
+        title: 'Token atualizado!',
+        description: `Sincronizado: ${result.synced.accounts} contas, ${result.synced.pixels} pixels, ${result.synced.pages} páginas`,
+      });
+      
+      setIsUpdateTokenOpen(false);
+      setUpdateTokenInput('');
+      await loadProfiles();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      toast({
+        title: 'Erro ao atualizar token',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdatingToken(false);
     }
   };
 
@@ -467,19 +514,20 @@ export default function FacebookProfilesPage() {
                     <Button 
                       variant="outline" 
                       className="flex-1"
+                      onClick={() => openUpdateTokenModal(profile)}
+                    >
+                      <Key className="w-4 h-4 mr-2" />
+                      Atualizar Token
+                    </Button>
+                    <Button 
+                      variant="outline" 
                       onClick={() => handleSync(profile.id)}
                       disabled={isSyncing === profile.id}
                     >
                       {isSyncing === profile.id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Sincronizando...
-                        </>
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <>
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Sincronizar
-                        </>
+                        <RefreshCw className="w-4 h-4" />
                       )}
                     </Button>
                     <Button 
@@ -574,6 +622,66 @@ export default function FacebookProfilesPage() {
             </Button>
             <Button onClick={handleUpdateProxy}>
               Salvar Configuração
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Token Modal */}
+      <Dialog open={isUpdateTokenOpen} onOpenChange={setIsUpdateTokenOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Atualizar Token de Acesso</DialogTitle>
+            <DialogDescription>
+              Cole o novo token de acesso para atualizar o perfil. Isso irá sincronizar automaticamente todas as contas, pixels e páginas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="updateToken">Novo Access Token</Label>
+              <Textarea
+                id="updateToken"
+                placeholder="Cole seu novo token de acesso aqui..."
+                value={updateTokenInput}
+                onChange={(e) => setUpdateTokenInput(e.target.value)}
+                className="min-h-[100px] font-mono text-sm"
+              />
+            </div>
+            <div className="p-4 bg-secondary/50 rounded-lg border border-border">
+              <h4 className="text-sm font-medium text-foreground mb-2">Permissões recomendadas:</h4>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-xs">ads_management</Badge>
+                <Badge variant="outline" className="text-xs">ads_read</Badge>
+                <Badge variant="outline" className="text-xs">pages_read_engagement</Badge>
+                <Badge variant="outline" className="text-xs">pages_show_list</Badge>
+                <Badge variant="outline" className="text-xs">pages_manage_ads</Badge>
+                <Badge variant="outline" className="text-xs">business_management</Badge>
+              </div>
+              <Button
+                variant="link"
+                className="px-0 mt-2 h-auto text-primary"
+                asChild
+              >
+                <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer">
+                  Abrir Graph API Explorer
+                  <ExternalLink className="w-3 h-3 ml-1" />
+                </a>
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsUpdateTokenOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleUpdateToken} disabled={!updateTokenInput || isUpdatingToken}>
+              {isUpdatingToken ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Atualizando...
+                </>
+              ) : (
+                'Atualizar e Sincronizar'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

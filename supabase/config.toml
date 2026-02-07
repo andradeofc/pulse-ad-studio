@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.facebook-sync-pages]
 verify_jwt = false
+
+[functions.facebook-update-token]
+verify_jwt = false

@@ -141,3 +141,17 @@ export async function updateFacebookProfileProxy(
 
   return data;
 }
+
+// Update token and sync all data (accounts, pixels, pages)
+export async function updateFacebookToken(profileId: string, accessToken: string) {
+  const { data, error } = await supabase.functions.invoke('facebook-update-token', {
+    body: { profileId, accessToken },
+  });
+
+  if (error) {
+    console.error('Error updating token:', error);
+    throw error;
+  }
+
+  return data;
+}
