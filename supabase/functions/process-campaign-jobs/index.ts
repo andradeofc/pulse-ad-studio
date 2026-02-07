@@ -415,7 +415,8 @@ async function createFacebookAd(
       name: config.headline || '{{product.name}}',
       description: config.description || '{{product.price}}',
       // Force single image/video format (not carousel)
-      format_option: 'single_media',
+      // Valid values: carousel_images_multi_items, carousel_images_single_item, single_image, collection_video
+      format_option: 'single_image',
       // Enable "Substituir deep links do site do catálogo" - use the destination URL
       // By omitting retailer_item_ids, Meta uses the link field instead of product deep links
     };
