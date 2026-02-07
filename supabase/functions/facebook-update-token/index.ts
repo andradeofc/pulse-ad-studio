@@ -156,13 +156,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Business Manager accounts
-    const businessesUrl = `${FACEBOOK_GRAPH_API}/me/businesses?fields=id,name&access_token=${accessToken}`;
+    // Business Manager accounts - fetch with pagination
+    const businessesUrl = `${FACEBOOK_GRAPH_API}/me/businesses?fields=id,name&limit=100&access_token=${accessToken}`;
     const businessesResponse = await fetch(businessesUrl);
+    const allBusinesses: any[] = [];
     
     if (businessesResponse.ok) {
-      const businessesData = await businessesResponse.json();
-      for (const business of businessesData.data || []) {
+      let businessesData = await businessesResponse.json();
+      allBusinesses.push(...(businessesData.data || []));
+      
+      // Handle pagination for businesses
+      while (businessesData.paging?.next) {
+        const nextResponse = await fetch(businessesData.paging.next);
+        if (!nextResponse.ok) break;
+        businessesData = await nextResponse.json();
+        allBusinesses.push(...(businessesData.data || []));
+      }
+      
+      console.log(`Found ${allBusinesses.length} Business Managers`);
+      
+      for (const business of allBusinesses) {
         // Owned accounts
         const ownedUrl = `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
         const ownedResponse = await fetch(ownedUrl);
@@ -239,19 +252,59 @@ Deno.serve(async (req) => {
 
     console.log(`Synced ${syncedPixels} pixels`);
 
-    // 6. Sync Pages
+    // 6. Sync Pages with pagination
     console.log("Syncing pages...");
     let syncedPages = 0;
 
-    // Personal pages
-    const pagesUrl = `${FACEBOOK_GRAPH_API}/me/accounts?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`;
-    const pagesResponse = await fetch(pagesUrl);
-    
-    if (pagesResponse.ok) {
-      const pagesData = await pagesResponse.json();
-      console.log(`Found ${pagesData.data?.length || 0} personal pages`);
+    // Helper function to fetch all pages with pagination
+    async function fetchAllPages(url: string): Promise<any[]> {
+      const allPages: any[] = [];
+      let response = await fetch(url);
       
-      for (const page of pagesData.data || []) {
+      while (response.ok) {
+        const data = await response.json();
+        allPages.push(...(data.data || []));
+        
+        if (data.paging?.next) {
+          response = await fetch(data.paging.next);
+        } else {
+          break;
+        }
+      }
+      
+      return allPages;
+    }
+
+    // Personal pages with pagination
+    const pagesUrl = `${FACEBOOK_GRAPH_API}/me/accounts?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`;
+    const personalPages = await fetchAllPages(pagesUrl);
+    console.log(`Found ${personalPages.length} personal pages`);
+    
+    for (const page of personalPages) {
+      await supabase.from("facebook_pages").upsert({
+        profile_id: profileId,
+        page_id: page.id,
+        name: page.name,
+        category: page.category,
+        access_token: page.access_token,
+        picture_url: page.picture?.data?.url,
+        followers_count: page.followers_count || 0,
+        is_published: page.is_published !== false,
+        tasks: page.tasks || [],
+        business_id: null,
+        business_name: null,
+      }, { onConflict: "profile_id,page_id" });
+      syncedPages++;
+    }
+
+    // Business pages - use already fetched businesses (allBusinesses)
+    for (const business of allBusinesses) {
+      // Owned pages with pagination
+      const ownedPagesUrl = `${FACEBOOK_GRAPH_API}/${business.id}/owned_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`;
+      const ownedPages = await fetchAllPages(ownedPagesUrl);
+      console.log(`Found ${ownedPages.length} owned pages in BM: ${business.name}`);
+      
+      for (const page of ownedPages) {
         await supabase.from("facebook_pages").upsert({
           profile_id: profileId,
           page_id: page.id,
@@ -262,64 +315,32 @@ Deno.serve(async (req) => {
           followers_count: page.followers_count || 0,
           is_published: page.is_published !== false,
           tasks: page.tasks || [],
-          business_id: null,
-          business_name: null,
+          business_id: business.id,
+          business_name: business.name,
         }, { onConflict: "profile_id,page_id" });
         syncedPages++;
       }
-    }
 
-    // Business pages
-    if (businessesResponse.ok) {
-      const businessesData = await businessesResponse.json();
-      for (const business of businessesData.data || []) {
-        // Owned pages
-        const ownedPagesUrl = `${FACEBOOK_GRAPH_API}/${business.id}/owned_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`;
-        const ownedPagesResponse = await fetch(ownedPagesUrl);
-        
-        if (ownedPagesResponse.ok) {
-          const ownedPagesData = await ownedPagesResponse.json();
-          for (const page of ownedPagesData.data || []) {
-            await supabase.from("facebook_pages").upsert({
-              profile_id: profileId,
-              page_id: page.id,
-              name: page.name,
-              category: page.category,
-              access_token: page.access_token,
-              picture_url: page.picture?.data?.url,
-              followers_count: page.followers_count || 0,
-              is_published: page.is_published !== false,
-              tasks: page.tasks || [],
-              business_id: business.id,
-              business_name: business.name,
-            }, { onConflict: "profile_id,page_id" });
-            syncedPages++;
-          }
-        }
-
-        // Client pages
-        const clientPagesUrl = `${FACEBOOK_GRAPH_API}/${business.id}/client_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`;
-        const clientPagesResponse = await fetch(clientPagesUrl);
-        
-        if (clientPagesResponse.ok) {
-          const clientPagesData = await clientPagesResponse.json();
-          for (const page of clientPagesData.data || []) {
-            await supabase.from("facebook_pages").upsert({
-              profile_id: profileId,
-              page_id: page.id,
-              name: page.name,
-              category: page.category,
-              access_token: page.access_token,
-              picture_url: page.picture?.data?.url,
-              followers_count: page.followers_count || 0,
-              is_published: page.is_published !== false,
-              tasks: page.tasks || [],
-              business_id: business.id,
-              business_name: business.name,
-            }, { onConflict: "profile_id,page_id" });
-            syncedPages++;
-          }
-        }
+      // Client pages with pagination
+      const clientPagesUrl = `${FACEBOOK_GRAPH_API}/${business.id}/client_pages?fields=id,name,category,access_token,picture,followers_count,is_published,tasks&limit=100&access_token=${accessToken}`;
+      const clientPages = await fetchAllPages(clientPagesUrl);
+      console.log(`Found ${clientPages.length} client pages in BM: ${business.name}`);
+      
+      for (const page of clientPages) {
+        await supabase.from("facebook_pages").upsert({
+          profile_id: profileId,
+          page_id: page.id,
+          name: page.name,
+          category: page.category,
+          access_token: page.access_token,
+          picture_url: page.picture?.data?.url,
+          followers_count: page.followers_count || 0,
+          is_published: page.is_published !== false,
+          tasks: page.tasks || [],
+          business_id: business.id,
+          business_name: business.name,
+        }, { onConflict: "profile_id,page_id" });
+        syncedPages++;
       }
     }
 
