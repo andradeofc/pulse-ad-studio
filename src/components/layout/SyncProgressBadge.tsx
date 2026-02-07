@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, X, Database, FileText, Target } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -8,22 +8,33 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthStore } from '@/stores/authStore';
 
+type SyncStage = 'idle' | 'syncing_accounts' | 'syncing_pages' | 'syncing_pixels' | 'completed' | 'error';
+
 interface SyncingProfile {
   id: string;
   name: string;
-  sync_status: string;
+  sync_status: SyncStage;
 }
 
 interface SyncProgressBadgeProps {
   isCollapsed?: boolean;
 }
 
+const stageConfig: Record<SyncStage, { label: string; icon: typeof Database; progress: number }> = {
+  idle: { label: '', icon: Database, progress: 0 },
+  syncing_accounts: { label: 'Sincronizando contas...', icon: Database, progress: 33 },
+  syncing_pages: { label: 'Sincronizando páginas...', icon: FileText, progress: 66 },
+  syncing_pixels: { label: 'Sincronizando pixels...', icon: Target, progress: 90 },
+  completed: { label: 'Sincronização concluída!', icon: CheckCircle, progress: 100 },
+  error: { label: 'Erro na sincronização', icon: AlertCircle, progress: 0 },
+};
+
 export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProps) {
   const { isAuthenticated } = useAuthStore();
   const [syncingProfiles, setSyncingProfiles] = useState<SyncingProfile[]>([]);
   const [recentlyCompleted, setRecentlyCompleted] = useState<SyncingProfile[]>([]);
   const [dismissed, setDismissed] = useState(false);
-  const [progress, setProgress] = useState(10);
+  const [currentStage, setCurrentStage] = useState<SyncStage>('idle');
 
   const checkSyncStatus = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -32,21 +43,35 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
       const { data, error } = await supabase
         .from('facebook_profiles')
         .select('id, name, sync_status')
-        .in('sync_status', ['syncing', 'completed', 'error']);
+        .neq('sync_status', 'idle');
 
       if (error) {
         console.error('Error checking sync status:', error);
         return;
       }
 
-      const syncing = (data || []).filter(p => p.sync_status === 'syncing');
-      const completed = (data || []).filter(p => p.sync_status === 'completed' || p.sync_status === 'error');
+      const syncing = (data || []).filter(p => 
+        p.sync_status === 'syncing_accounts' || 
+        p.sync_status === 'syncing_pages' || 
+        p.sync_status === 'syncing_pixels'
+      ) as SyncingProfile[];
+      
+      const completed = (data || []).filter(p => 
+        p.sync_status === 'completed' || 
+        p.sync_status === 'error'
+      ) as SyncingProfile[];
 
       setSyncingProfiles(syncing);
       
+      // Get the current stage from the first syncing profile
+      if (syncing.length > 0) {
+        setCurrentStage(syncing[0].sync_status as SyncStage);
+      }
+      
       // Track recently completed for showing success message briefly
-      if (completed.length > 0) {
+      if (completed.length > 0 && recentlyCompleted.length === 0) {
         setRecentlyCompleted(completed);
+        setCurrentStage(completed[0].sync_status as SyncStage);
         setDismissed(false);
         
         // Reset status after 5 seconds
@@ -58,12 +83,13 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
               .eq('id', profile.id);
           }
           setRecentlyCompleted([]);
+          setCurrentStage('idle');
         }, 5000);
       }
     } catch (error) {
       console.error('Error in sync status check:', error);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, recentlyCompleted.length]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -71,35 +97,11 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
     // Initial check
     checkSyncStatus();
 
-    // Poll every 2 seconds
-    const interval = setInterval(checkSyncStatus, 2000);
+    // Poll every 1.5 seconds for faster updates
+    const interval = setInterval(checkSyncStatus, 1500);
 
     return () => clearInterval(interval);
   }, [isAuthenticated, checkSyncStatus]);
-
-  // Progress simulation effect
-  useEffect(() => {
-    const isSyncing = syncingProfiles.length > 0;
-    
-    if (isSyncing) {
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) return prev;
-          return prev + Math.random() * 10;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
-      setProgress(100);
-    }
-  }, [syncingProfiles.length]);
-
-  // Reset progress when new sync starts
-  useEffect(() => {
-    if (syncingProfiles.length > 0) {
-      setProgress(10);
-    }
-  }, [syncingProfiles.length]);
 
   const handleDismiss = () => {
     setDismissed(true);
@@ -116,6 +118,9 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
   if (!shouldShow) {
     return null;
   }
+
+  const config = stageConfig[currentStage] || stageConfig.idle;
+  const StageIcon = isSyncing ? Loader2 : config.icon;
 
   return (
     <AnimatePresence>
@@ -149,37 +154,38 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
           )}
 
           <div className="flex items-center gap-2">
-            {isSyncing ? (
-              <Loader2 className="h-4 w-4 animate-spin text-primary flex-shrink-0" />
-            ) : allCompleted && !hasErrors ? (
-              <CheckCircle className="h-4 w-4 text-primary flex-shrink-0" />
-            ) : (
-              <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
-            )}
+            <StageIcon 
+              className={cn(
+                "h-4 w-4 flex-shrink-0",
+                isSyncing && "animate-spin text-primary",
+                allCompleted && !hasErrors && "text-primary",
+                hasErrors && "text-destructive"
+              )} 
+            />
 
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-foreground truncate">
-                  {isSyncing 
-                    ? `Sincronizando ${syncingProfiles.length} perfil(s)...`
-                    : allCompleted && !hasErrors
-                    ? 'Sincronização concluída!'
-                    : 'Erro na sincronização'
-                  }
+                  {isSyncing ? config.label : allCompleted && !hasErrors ? 'Sincronização concluída!' : 'Erro na sincronização'}
                 </p>
                 
                 {isSyncing && (
                   <div className="mt-2">
-                    <Progress value={progress} className="h-1" />
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Contas, pixels e páginas...
-                    </p>
+                    <Progress value={config.progress} className="h-1" />
+                    <div className="flex justify-between mt-1">
+                      <p className="text-[10px] text-muted-foreground">
+                        {syncingProfiles.length} perfil(s)
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {config.progress}%
+                      </p>
+                    </div>
                   </div>
                 )}
 
                 {allCompleted && !hasErrors && (
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    Dados atualizados com sucesso
+                    Todos os dados foram sincronizados
                   </p>
                 )}
               </div>
