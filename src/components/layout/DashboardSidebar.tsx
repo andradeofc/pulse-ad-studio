@@ -239,7 +239,7 @@ export function DashboardSidebar() {
       <Button
         variant="ghost"
         size="icon"
-        className="fixed top-4 left-4 z-50 lg:hidden"
+        className="fixed top-4 left-4 z-50 md:hidden"
         onClick={() => setIsMobileOpen(!isMobileOpen)}
       >
         {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -248,7 +248,7 @@ export function DashboardSidebar() {
       {/* Mobile Overlay */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
@@ -258,20 +258,18 @@ export function DashboardSidebar() {
         className={cn(
           "fixed left-0 top-0 z-40 h-screen bg-sidebar border-r border-sidebar-border flex flex-col transition-all duration-300",
           isCollapsed ? "w-16" : "w-64",
-          // Always visible on desktop (lg+), hidden on mobile unless open
-          "max-lg:translate-x-0 max-lg:hidden",
-          isMobileOpen ? "max-lg:flex" : "max-lg:hidden",
-          "lg:flex lg:translate-x-0"
+          // Off-canvas on mobile, always visible from md+
+          isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         <NavContent />
-        
+
         {/* Collapse Toggle (Desktop only) */}
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-md hover:bg-secondary"
+          className="hidden md:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-md hover:bg-secondary"
         >
           {isCollapsed ? (
             <ChevronRight className="w-3 h-3" />
@@ -281,12 +279,12 @@ export function DashboardSidebar() {
         </Button>
       </aside>
 
-      {/* Spacer for content - always visible on desktop to push main content */}
-      <div 
+      {/* Spacer for content - always visible from md+ to push main content */}
+      <div
         className={cn(
-          "flex-shrink-0 transition-all duration-300 lg:block hidden",
+          "hidden md:block flex-shrink-0 transition-all duration-300",
           isCollapsed ? "w-16" : "w-64"
-        )} 
+        )}
       />
     </>
   );
