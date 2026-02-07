@@ -121,29 +121,53 @@ export default function FacebookProfilesPage() {
         description: `Usuário: ${result.user?.name}. Adicionando perfil...`,
       });
 
-      // Add the profile
+      // Add the profile - now with background sync
       const addResult = await addFacebookProfile(tokenInput);
       
       if (addResult.success) {
-        toast({
-          title: 'Perfil adicionado!',
-          description: 'Sincronizando contas de anúncio...',
-        });
-        
-        // Sync ad accounts
-        await syncFacebookAdAccounts(addResult.profile.id);
-        
         await loadProfiles();
         setIsAddTokenOpen(false);
         setTokenInput('');
         
-        toast({
-          title: 'Concluído!',
-          description: 'Perfil e contas de anúncio sincronizados.',
-        });
+        // Check if sync is running in background
+        if (addResult.background) {
+          toast({
+            title: 'Perfil adicionado!',
+            description: 'Sincronização iniciada em background. Acompanhe o progresso na barra lateral.',
+          });
+        } else {
+          toast({
+            title: 'Concluído!',
+            description: 'Perfil e dados sincronizados.',
+          });
+        }
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      // Try to extract the error details from the response
+      let errorMessage = 'Erro desconhecido';
+      
+      if (error && typeof error === 'object' && 'context' in error) {
+        try {
+          const context = (error as any).context;
+          if (context?.json) {
+            const jsonData = await context.json();
+            if (jsonData.isRateLimit) {
+              toast({
+                title: 'Rate limit atingido',
+                description: jsonData.details || 'Aguarde alguns minutos e tente novamente.',
+                variant: 'destructive',
+              });
+              return;
+            }
+            errorMessage = jsonData.details || jsonData.error || errorMessage;
+          }
+        } catch {
+          errorMessage = error instanceof Error ? error.message : errorMessage;
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: 'Erro',
         description: errorMessage,
