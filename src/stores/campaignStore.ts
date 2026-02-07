@@ -81,6 +81,11 @@ export interface CampaignConfig {
   scheduleStart: Date | null;
   scheduleEnd: Date | null;
   
+  // Attribution Settings (adset level)
+  attributionClickDays: 1 | 7; // Click-through attribution window
+  attributionViewDays: 0 | 1; // View-through attribution window
+  attributionEngagedViewDays: 0 | 1; // Engaged video view attribution window (videos only)
+  
   // Step 4 - Ads
   antiSpyEnabled: boolean;
   selectedPages: string[];
@@ -161,6 +166,9 @@ const defaultConfig: CampaignConfig = {
   publisherPlatforms: ['facebook', 'instagram', 'messenger', 'audience_network'],
   scheduleStart: null,
   scheduleEnd: null,
+  attributionClickDays: 7,
+  attributionViewDays: 1,
+  attributionEngagedViewDays: 1,
   antiSpyEnabled: false,
   selectedPages: [],
   adName: '{{criativo}}',

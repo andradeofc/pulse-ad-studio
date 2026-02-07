@@ -314,6 +314,42 @@ async function createFacebookAdset(
     targeting: JSON.stringify(targetingObj),
   };
 
+  // Attribution Settings (conversion window)
+  // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-campaign
+  const attributionSpec: Array<{ event_type: string; window_days: number }> = [];
+  
+  // Click-through attribution (1 or 7 days)
+  const clickDays = config.attributionClickDays ?? 7;
+  attributionSpec.push({ event_type: 'CLICK_THROUGH', window_days: clickDays });
+  
+  // View-through attribution (0 or 1 day)
+  const viewDays = config.attributionViewDays ?? 1;
+  if (viewDays > 0) {
+    attributionSpec.push({ event_type: 'VIEW_THROUGH', window_days: viewDays });
+  }
+  
+  // Engaged video view attribution (0 or 1 day) - for video ads
+  const engagedViewDays = config.attributionEngagedViewDays ?? 1;
+  if (engagedViewDays > 0) {
+    attributionSpec.push({ event_type: 'ENGAGED_VIDEO_VIEW', window_days: engagedViewDays });
+  }
+  
+  if (attributionSpec.length > 0) {
+    params.attribution_spec = JSON.stringify(attributionSpec);
+  }
+
+  // Start time (schedule) - ISO 8601 format
+  if (config.scheduleStart) {
+    // Accept both Date objects (from frontend) and ISO strings
+    const startDate = typeof config.scheduleStart === 'string' 
+      ? new Date(config.scheduleStart) 
+      : config.scheduleStart;
+    
+    if (startDate instanceof Date && !isNaN(startDate.getTime())) {
+      params.start_time = startDate.toISOString();
+    }
+  }
+
   // ABO: set adset budget
   if (!config.useCBO) {
     params.daily_budget = Math.round((config.adsetBudget || 10) * 100);
