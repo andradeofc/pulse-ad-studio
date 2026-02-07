@@ -27,10 +27,13 @@ export default function LoginPage() {
         description: 'Bem-vindo de volta ao AdsPulse.',
       });
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Verifique suas credenciais.';
       toast({
         title: 'Erro ao entrar',
-        description: 'Verifique suas credenciais.',
+        description: errorMessage === 'Invalid login credentials' 
+          ? 'Email ou senha incorretos.' 
+          : errorMessage,
         variant: 'destructive',
       });
     }

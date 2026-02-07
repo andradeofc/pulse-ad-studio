@@ -30,18 +30,30 @@ export default function RegisterPage() {
       });
       return;
     }
+
+    if (password.length < 6) {
+      toast({
+        title: 'Senha muito curta',
+        description: 'A senha deve ter pelo menos 6 caracteres.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     try {
       await register(name, email, password);
       toast({
         title: 'Conta criada!',
-        description: 'Bem-vindo ao AdsPulse.',
+        description: 'Verifique seu email para confirmar a conta.',
       });
-      navigate('/dashboard');
-    } catch (error) {
+      navigate('/login');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Tente novamente mais tarde.';
       toast({
         title: 'Erro ao criar conta',
-        description: 'Tente novamente mais tarde.',
+        description: errorMessage === 'User already registered' 
+          ? 'Este email já está cadastrado.' 
+          : errorMessage,
         variant: 'destructive',
       });
     }
