@@ -230,7 +230,7 @@ export function NamingModal({ open, onOpenChange, context, value, onApply }: Nam
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0 gap-0 bg-card border-border">
+      <DialogContent className="max-w-4xl h-[85vh] max-h-[700px] p-0 gap-0 bg-card border-border flex flex-col overflow-hidden">
         {/* Header */}
         <DialogHeader className="p-4 pb-3 border-b border-border">
           <div className="flex items-center gap-3">
@@ -275,10 +275,10 @@ export function NamingModal({ open, onOpenChange, context, value, onApply }: Nam
         </div>
 
         {/* Main Content */}
-        <div className="grid grid-cols-5 gap-0 flex-1 overflow-hidden">
+        <div className="grid grid-cols-5 gap-0 flex-1 min-h-0 overflow-hidden">
           {/* Left Column - Variables */}
-          <div className="col-span-2 border-r border-border">
-            <ScrollArea className="h-[450px]">
+          <div className="col-span-2 border-r border-border overflow-hidden">
+            <ScrollArea className="h-full">
               <div className="p-4 space-y-6">
                 {/* Copy Button */}
                 <Button variant="outline" size="sm" onClick={handleCopy} className="w-full">
@@ -380,8 +380,8 @@ export function NamingModal({ open, onOpenChange, context, value, onApply }: Nam
           </div>
 
           {/* Right Column - Template & Preview */}
-          <div className="col-span-3">
-            <ScrollArea className="h-[450px]">
+          <div className="col-span-3 overflow-hidden">
+            <ScrollArea className="h-full">
               <div className="p-4 space-y-4">
                 {/* Template */}
                 <div>
