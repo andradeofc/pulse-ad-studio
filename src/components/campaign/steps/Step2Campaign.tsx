@@ -411,6 +411,7 @@ export function Step2Campaign() {
                     updateConfig({ catalogId, catalogDbId, productSetId: '' });
                   }}
                   businessManagerId={config.selectedBusinessManagerId}
+                  selectedAccounts={config.selectedAccounts}
                 />
                 <p className="text-xs text-muted-foreground">
                   Catálogos do BM "{config.selectedBusinessManagerName}". O conjunto de produtos será selecionado na próxima etapa.
