@@ -21,24 +21,19 @@ export function Step5Review() {
   };
 
   const objectiveLabels: Record<string, string> = {
-    sales: 'Vendas',
-    leads: 'Leads',
-    traffic: 'Tráfego',
-    engagement: 'Engajamento',
-    awareness: 'Reconhecimento',
-    app_installs: 'Downloads de App',
-  };
-
-  const campaignTypeLabels: Record<string, string> = {
-    cbo: 'CBO (Orçamento de Campanha)',
-    abo: 'ABO (Orçamento de Conjunto)',
-    catalog: 'Catálogo (Dynamic Ads)',
+    OUTCOME_SALES: 'Vendas',
+    OUTCOME_LEADS: 'Leads',
+    OUTCOME_TRAFFIC: 'Tráfego',
+    OUTCOME_ENGAGEMENT: 'Engajamento',
+    OUTCOME_AWARENESS: 'Reconhecimento',
+    OUTCOME_APP_PROMOTION: 'Downloads de App',
   };
 
   const bidStrategyLabels: Record<string, string> = {
-    volume: 'Maior Volume',
-    cost: 'Meta de Custo',
-    roas: 'Meta de ROAS',
+    LOWEST_COST_WITHOUT_CAP: 'Maior Volume',
+    COST_CAP: 'Meta de Custo',
+    LOWEST_COST_WITH_BID_CAP: 'Limite de Lance',
+    LOWEST_COST_WITH_MIN_ROAS: 'Meta de ROAS',
   };
 
   return (
@@ -73,9 +68,17 @@ export function Step5Review() {
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Tipo</span>
                 <Badge className="bg-primary/20 text-primary border-primary/30">
-                  {campaignTypeLabels[config.campaignType]}
+                  {config.useCBO ? 'CBO (Orçamento de Campanha)' : 'ABO (Orçamento de Conjunto)'}
                 </Badge>
               </div>
+              {config.useCatalog && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Catálogo</span>
+                  <Badge variant="secondary" className="bg-pink-500/20 text-pink-400 border-pink-500/30">
+                    Dynamic Ads
+                  </Badge>
+                </div>
+              )}
               {config.isPaused && (
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Status Inicial</span>

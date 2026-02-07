@@ -20,8 +20,10 @@ export interface CampaignConfig {
   selectedAccounts: string[];
   isPaused: boolean;
   campaignName: string;
-  objective: string;
-  campaignType: 'cbo' | 'abo' | 'catalog';
+  objective: 'OUTCOME_SALES' | 'OUTCOME_LEADS' | 'OUTCOME_TRAFFIC' | 'OUTCOME_ENGAGEMENT' | 'OUTCOME_AWARENESS' | 'OUTCOME_APP_PROMOTION';
+  specialAdCategory: 'NONE' | 'HOUSING' | 'EMPLOYMENT' | 'FINANCIAL_PRODUCTS_SERVICES' | 'ISSUES_ELECTIONS_POLITICS';
+  useCBO: boolean; // true = Campaign Budget Optimization, false = Ad Set Budget
+  useCatalog: boolean; // true = Dynamic Ads with product catalog
   budget: number;
   budgetByCurrency: Record<string, number>; // e.g., { USD: 50, BRL: 200 }
   budgetPeriod: 'daily' | 'lifetime';
@@ -89,8 +91,10 @@ const defaultConfig: CampaignConfig = {
   selectedAccounts: [],
   isPaused: true,
   campaignName: '[CP{{sequencial:01}}][{{budget}}][{{estrutura}}][{{conta_apelido}}]',
-  objective: 'sales',
-  campaignType: 'cbo',
+  objective: 'OUTCOME_SALES',
+  specialAdCategory: 'NONE',
+  useCBO: true,
+  useCatalog: false,
   budget: 50,
   budgetByCurrency: {},
   budgetPeriod: 'daily',
@@ -186,11 +190,13 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     const { config } = get();
     const totalCampaigns = get().getTotalCampaigns();
     
-    if (config.campaignType === 'abo') {
+    if (!config.useCBO) {
+      // ABO mode: budget is per ad set
       const totalAdsets = get().getTotalAdsets();
       return totalAdsets * config.adsetBudget;
     }
     
+    // CBO mode: budget is per campaign
     return totalCampaigns * config.budget;
   },
 }));

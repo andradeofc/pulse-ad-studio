@@ -21,33 +21,37 @@ import { NamingModal } from '../NamingModal';
 import { AdAccountSelector } from '../AdAccountSelector';
 
 const objectives = [
-  { value: 'sales', label: 'Vendas' },
-  { value: 'leads', label: 'Leads' },
-  { value: 'traffic', label: 'Tráfego' },
-  { value: 'engagement', label: 'Engajamento' },
-  { value: 'awareness', label: 'Reconhecimento' },
-  { value: 'app_installs', label: 'Downloads de App' },
+  { value: 'OUTCOME_SALES', label: 'Vendas', description: 'Conversões e compras no site' },
+  { value: 'OUTCOME_LEADS', label: 'Leads', description: 'Formulários e cadastros' },
+  { value: 'OUTCOME_TRAFFIC', label: 'Tráfego', description: 'Visitas ao site ou app' },
+  { value: 'OUTCOME_ENGAGEMENT', label: 'Engajamento', description: 'Curtidas, comentários, compartilhamentos' },
+  { value: 'OUTCOME_AWARENESS', label: 'Reconhecimento', description: 'Alcance e impressões' },
+  { value: 'OUTCOME_APP_PROMOTION', label: 'Downloads de App', description: 'Instalações de aplicativo' },
 ];
 
-const campaignTypes = [
+const specialAdCategories = [
+  { value: 'NONE', label: 'Nenhuma', description: 'Anúncios comuns sem restrições' },
+  { value: 'HOUSING', label: 'Habitação', description: 'Imóveis, hipotecas, seguros residenciais' },
+  { value: 'EMPLOYMENT', label: 'Emprego', description: 'Vagas de trabalho, recrutamento' },
+  { value: 'FINANCIAL_PRODUCTS_SERVICES', label: 'Serviços Financeiros', description: 'Crédito, empréstimos, investimentos' },
+  { value: 'ISSUES_ELECTIONS_POLITICS', label: 'Política', description: 'Eleições, causas sociais' },
+];
+
+// Budget optimization options (CBO vs ABO)
+const budgetOptimizationOptions = [
   {
-    value: 'cbo',
+    value: true,
     title: 'Orçamento de Campanha (CBO)',
-    description: 'O Facebook otimiza a distribuição do orçamento entre conjuntos',
+    description: 'O Facebook otimiza a distribuição do orçamento entre conjuntos automaticamente',
     icon: Layers,
+    apiNote: 'is_campaign_budget_optimization: true',
   },
   {
-    value: 'abo',
+    value: false,
     title: 'Orçamento de Conjunto (ABO)',
-    description: 'Cada conjunto tem seu próprio orçamento definido',
+    description: 'Cada conjunto tem seu próprio orçamento definido manualmente',
     icon: Grid3X3,
-  },
-  {
-    value: 'catalog',
-    title: 'Catálogo (Dynamic Ads)',
-    description: 'Anúncios dinâmicos com produtos do catálogo do Facebook (Ideal para maior aprovação)',
-    icon: Sparkles,
-    badge: 'Dynamic Product Ads',
+    apiNote: 'is_campaign_budget_optimization: false',
   },
 ];
 
@@ -235,7 +239,7 @@ export function Step2Campaign() {
           <Label>Objetivo</Label>
           <Select
             value={config.objective}
-            onValueChange={(value) => updateConfig({ objective: value })}
+            onValueChange={(value) => updateConfig({ objective: value as 'OUTCOME_SALES' | 'OUTCOME_LEADS' | 'OUTCOME_TRAFFIC' | 'OUTCOME_ENGAGEMENT' | 'OUTCOME_AWARENESS' | 'OUTCOME_APP_PROMOTION' })}
           >
             <SelectTrigger className="bg-secondary/50">
               <SelectValue placeholder="Selecione o objetivo" />
@@ -243,58 +247,80 @@ export function Step2Campaign() {
             <SelectContent>
               {objectives.map((obj) => (
                 <SelectItem key={obj.value} value={obj.value}>
-                  {obj.label}
+                  <div className="flex flex-col">
+                    <span>{obj.label}</span>
+                    <span className="text-xs text-muted-foreground">{obj.description}</span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+
+        {/* Special Ad Category */}
+        <div className="space-y-2">
+          <Label>Categoria Especial de Anúncio</Label>
+          <Select
+            value={config.specialAdCategory}
+            onValueChange={(value) => updateConfig({ specialAdCategory: value as 'NONE' | 'HOUSING' | 'EMPLOYMENT' | 'FINANCIAL_PRODUCTS_SERVICES' | 'ISSUES_ELECTIONS_POLITICS' })}
+          >
+            <SelectTrigger className="bg-secondary/50">
+              <SelectValue placeholder="Selecione a categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              {specialAdCategories.map((cat) => (
+                <SelectItem key={cat.value} value={cat.value}>
+                  <div className="flex flex-col">
+                    <span>{cat.label}</span>
+                    <span className="text-xs text-muted-foreground">{cat.description}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Obrigatório pela API do Facebook. Anúncios em categorias especiais têm restrições de segmentação.
+          </p>
+        </div>
       </section>
 
-      {/* Campaign Type Section */}
+      {/* Budget Optimization Section (CBO vs ABO) */}
       <section className="space-y-4">
         <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          Tipo de Campanha
+          Otimização de Orçamento
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {campaignTypes.map((type) => (
-            <motion.div key={type.value} whileHover={{ scale: 1.02 }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {budgetOptimizationOptions.map((option) => (
+            <motion.div key={String(option.value)} whileHover={{ scale: 1.02 }}>
               <Card
                 className={cn(
                   "cursor-pointer transition-all h-full",
-                  config.campaignType === type.value
+                  config.useCBO === option.value
                     ? "border-primary ring-2 ring-primary/20 bg-primary/5"
                     : "border-border hover:border-primary/50"
                 )}
-                onClick={() => updateConfig({ campaignType: type.value as 'cbo' | 'abo' | 'catalog' })}
+                onClick={() => updateConfig({ useCBO: option.value })}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className={cn(
                       "w-10 h-10 rounded-lg flex items-center justify-center",
-                      config.campaignType === type.value
+                      config.useCBO === option.value
                         ? "bg-primary/20"
                         : "bg-secondary"
                     )}>
-                      <type.icon className={cn(
+                      <option.icon className={cn(
                         "w-5 h-5",
-                        config.campaignType === type.value
+                        config.useCBO === option.value
                           ? "text-primary"
                           : "text-muted-foreground"
                       )} />
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-foreground text-sm">{type.title}</p>
-                        {type.badge && (
-                          <Badge variant="secondary" className="text-xs bg-pink-500/20 text-pink-400 border-pink-500/30">
-                            {type.badge}
-                          </Badge>
-                        )}
-                      </div>
+                      <p className="font-medium text-foreground text-sm">{option.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {type.description}
+                        {option.description}
                       </p>
                     </div>
                   </div>
@@ -302,6 +328,36 @@ export function Step2Campaign() {
               </Card>
             </motion.div>
           ))}
+        </div>
+
+        {/* Dynamic Ads / Catalog Toggle */}
+        <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center",
+              config.useCatalog ? "bg-primary/20" : "bg-secondary"
+            )}>
+              <Sparkles className={cn(
+                "w-5 h-5",
+                config.useCatalog ? "text-primary" : "text-muted-foreground"
+              )} />
+            </div>
+            <div>
+              <Label className="text-foreground">Dynamic Ads (Catálogo)</Label>
+              <p className="text-sm text-muted-foreground">
+                Anúncios dinâmicos com produtos do catálogo
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-xs bg-pink-500/20 text-pink-400 border-pink-500/30">
+              DPA
+            </Badge>
+            <Switch
+              checked={config.useCatalog}
+              onCheckedChange={(checked) => updateConfig({ useCatalog: checked })}
+            />
+          </div>
         </div>
       </section>
 
