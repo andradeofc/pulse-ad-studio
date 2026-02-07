@@ -121,35 +121,56 @@ Deno.serve(async (req) => {
       console.log(`[sync-catalogs] Fetching catalogs for account ${accountId} (${account.name})`);
 
       try {
-        // Fetch product catalogs associated with this ad account
-        const catalogsUrl = `https://graph.facebook.com/v21.0/${accountId}/product_catalogs?fields=id,name,product_count,vertical,business&limit=500&access_token=${accessToken}`;
-        const catalogsRes = await fetch(catalogsUrl);
-        const catalogsData = await catalogsRes.json();
+        const fetchCatalogs = async (url: string, source: string, businessOverride?: { id: string | null; name: string | null }) => {
+          const res = await fetch(url);
+          const data = await res.json();
 
-        if (catalogsData.error) {
-          console.error(`[sync-catalogs] Error fetching catalogs for account ${accountId}:`, catalogsData.error);
-          continue;
-        }
+          if (!res.ok) {
+            console.error(`[sync-catalogs] HTTP ${res.status} fetching catalogs from ${source}:`, data);
+            return 0;
+          }
 
-        const catalogs: FacebookCatalog[] = catalogsData.data || [];
-        console.log(`[sync-catalogs] Found ${catalogs.length} catalogs for account ${account.name}`);
+          if (data?.error) {
+            console.error(`[sync-catalogs] API error fetching catalogs from ${source}:`, data.error);
+            return 0;
+          }
 
-        for (const catalog of catalogs) {
-          // Use catalog_id as key to deduplicate
-          if (!catalogsMap.has(catalog.id)) {
-            const businessInfo = (catalog as any).business;
+          const catalogs: FacebookCatalog[] = data?.data || [];
+          console.log(`[sync-catalogs] Found ${catalogs.length} catalogs from ${source}`);
+
+          for (const catalog of catalogs) {
+            if (!catalog?.id || catalogsMap.has(catalog.id)) continue;
+
+            const businessInfo = (catalog as any)?.business;
+            const businessId = businessOverride?.id ?? businessInfo?.id ?? account.business_id ?? null;
+            const businessName = businessOverride?.name ?? businessInfo?.name ?? account.business_name ?? null;
+
             catalogsMap.set(catalog.id, {
               profile_id: account.profile_id,
               catalog_id: catalog.id,
               name: catalog.name,
-              business_id: businessInfo?.id || account.business_id || null,
-              business_name: businessInfo?.name || account.business_name || null,
+              business_id: businessId,
+              business_name: businessName,
               product_count: catalog.product_count || 0,
               vertical: catalog.vertical || 'commerce',
               updated_at: new Date().toISOString(),
             });
           }
+
+          return catalogs.length;
+        };
+
+        // 1) Try catalogs associated directly to this ad account
+        const byAccountUrl = `https://graph.facebook.com/v21.0/${accountId}/product_catalogs?fields=id,name,product_count,vertical,business&limit=500&access_token=${accessToken}`;
+        const byAccountCount = await fetchCatalogs(byAccountUrl, `ad account ${accountId}`);
+
+        // 2) Fallback: fetch catalogs owned by the Business Manager linked to the selected ad account
+        // (Catalogs are business assets; ad accounts only have access/association to them.)
+        if (byAccountCount === 0 && account.business_id) {
+          const byBusinessUrl = `https://graph.facebook.com/v21.0/${account.business_id}/owned_product_catalogs?fields=id,name,product_count,vertical&limit=500&access_token=${accessToken}`;
+          await fetchCatalogs(byBusinessUrl, `business ${account.business_id}`, { id: account.business_id, name: account.business_name });
         }
+
       } catch (err) {
         console.error(`[sync-catalogs] Error processing account ${accountId}:`, err);
       }
