@@ -109,6 +109,50 @@ export type Database = {
           },
         ]
       }
+      facebook_pixels: {
+        Row: {
+          account_id: string | null
+          account_name: string | null
+          business_id: string | null
+          business_name: string | null
+          created_at: string
+          id: string
+          name: string
+          pixel_id: string
+          profile_id: string
+        }
+        Insert: {
+          account_id?: string | null
+          account_name?: string | null
+          business_id?: string | null
+          business_name?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          pixel_id: string
+          profile_id: string
+        }
+        Update: {
+          account_id?: string | null
+          account_name?: string | null
+          business_id?: string | null
+          business_name?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          pixel_id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_pixels_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facebook_profiles: {
         Row: {
           access_token: string
