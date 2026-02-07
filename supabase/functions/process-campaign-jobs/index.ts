@@ -151,6 +151,10 @@ async function createFacebookAdset(
 
     billing_event: 'IMPRESSIONS',
     optimization_goal: 'OFFSITE_CONVERSIONS',
+
+    // Explicit bidding strategy. Fixes cases where FB assumes a strategy that requires bid_amount/bid_constraints.
+    bid_strategy: config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
+
     targeting: JSON.stringify({
       geo_locations: config.geoLocations || { countries: ['BR'] },
       age_min: config.ageMin || 18,
