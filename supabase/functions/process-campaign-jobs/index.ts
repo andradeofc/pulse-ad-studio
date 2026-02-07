@@ -33,39 +33,136 @@ interface Job {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Get Page-backed Instagram Account ID for a Facebook Page
-// This is required for Instagram placements - uses "Use Selected Page" option
-async function getPageBackedInstagramAccountId(
-  accessToken: string,
+// Cache per-request to avoid repeated Graph calls
+const igActorIdCache = new Map<string, string | null>();
+const pageTokenCache = new Map<string, string | null>();
+
+// Get a Page Access Token using the user's access token (fallback when DB token is missing)
+async function getPageAccessTokenFromUserToken(
+  userAccessToken: string,
   pageId: string,
 ): Promise<string | null> {
+  if (pageTokenCache.has(pageId)) return pageTokenCache.get(pageId) ?? null;
+
   try {
-    // Query the page's instagram_accounts edge to get the Page-backed Instagram Account
-    const url = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_accounts{id,username}&access_token=${accessToken}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    
-    if (json.instagram_accounts?.data?.length > 0) {
-      const igAccountId = json.instagram_accounts.data[0].id;
-      console.log(`[process-jobs] Found Instagram account ${igAccountId} for page ${pageId}`);
-      return igAccountId;
+    let url: string | null = `${GRAPH_BASE_URL}/me/accounts?fields=id,access_token&limit=500&access_token=${userAccessToken}`;
+
+    for (let i = 0; i < 5 && url; i++) {
+      const { ok, json } = await fetchWithRetry(url, { method: 'GET' });
+
+      if (!ok || json?.error) {
+        const fbError = json?.error;
+        console.warn(
+          `[process-jobs] Could not fetch page tokens from /me/accounts: ${fbError?.message || 'unknown error'}${
+            fbError?.code !== undefined ? ` | code=${fbError.code}` : ''
+          }${fbError?.error_subcode !== undefined ? ` | subcode=${fbError.error_subcode}` : ''}`,
+        );
+        break;
+      }
+
+      const match = (json?.data || []).find((p: any) => p?.id === pageId && p?.access_token);
+      if (match?.access_token) {
+        pageTokenCache.set(pageId, match.access_token);
+        return match.access_token;
+      }
+
+      url = json?.paging?.next || null;
     }
-    
-    // Fallback: try page_backed_instagram_accounts endpoint
-    const fallbackUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${accessToken}`;
-    const fallbackRes = await fetch(fallbackUrl);
-    const fallbackJson = await fallbackRes.json();
-    
-    if (fallbackJson.data?.length > 0) {
-      const igAccountId = fallbackJson.data[0].id;
-      console.log(`[process-jobs] Found Page-backed Instagram account ${igAccountId} for page ${pageId}`);
-      return igAccountId;
-    }
-    
-    console.log(`[process-jobs] No Instagram account found for page ${pageId}`);
+
+    pageTokenCache.set(pageId, null);
     return null;
   } catch (err) {
-    console.error(`[process-jobs] Error fetching Instagram account for page ${pageId}:`, err);
+    console.warn(`[process-jobs] Error while fetching page access token via /me/accounts:`, err);
+    pageTokenCache.set(pageId, null);
+    return null;
+  }
+}
+
+// Resolve the correct Instagram Actor ID for a Page ("Use selected Page" behavior)
+// For ads, instagram_actor_id must be an IGUser id (often a Page-backed IG account).
+async function resolveInstagramActorIdForPage(params: {
+  userAccessToken: string;
+  pageId: string;
+  pageAccessTokenFromDb?: string | null;
+}): Promise<string | null> {
+  const { userAccessToken, pageId, pageAccessTokenFromDb } = params;
+
+  if (igActorIdCache.has(pageId)) return igActorIdCache.get(pageId) ?? null;
+
+  try {
+    const pageAccessToken =
+      pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId));
+
+    // 1) Preferred: Page-backed IG account(s) for this Page (requires Page access token)
+    if (pageAccessToken) {
+      const pbiaUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?fields=id,username&access_token=${pageAccessToken}`;
+      const pbiaRes = await fetchWithRetry(pbiaUrl, { method: 'GET' });
+
+      if (pbiaRes.ok && !pbiaRes.json?.error && Array.isArray(pbiaRes.json?.data) && pbiaRes.json.data.length > 0) {
+        const igId = pbiaRes.json.data[0].id as string;
+        console.log(`[process-jobs] Resolved Page-backed Instagram account ${igId} for page ${pageId}`);
+        igActorIdCache.set(pageId, igId);
+        return igId;
+      }
+
+      if (pbiaRes.json?.error) {
+        const e = pbiaRes.json.error;
+        console.warn(
+          `[process-jobs] page_backed_instagram_accounts error: ${e?.message || 'unknown'}${
+            e?.code !== undefined ? ` | code=${e.code}` : ''
+          }${e?.error_subcode !== undefined ? ` | subcode=${e.error_subcode}` : ''}`,
+        );
+      }
+
+      // 2) Next: instagram_accounts edge (requires Page access token)
+      const iaUrl = `${GRAPH_BASE_URL}/${pageId}/instagram_accounts?fields=id,username&access_token=${pageAccessToken}`;
+      const iaRes = await fetchWithRetry(iaUrl, { method: 'GET' });
+
+      if (iaRes.ok && !iaRes.json?.error && Array.isArray(iaRes.json?.data) && iaRes.json.data.length > 0) {
+        const igId = iaRes.json.data[0].id as string;
+        console.log(`[process-jobs] Resolved Instagram account ${igId} for page ${pageId}`);
+        igActorIdCache.set(pageId, igId);
+        return igId;
+      }
+
+      if (iaRes.json?.error) {
+        const e = iaRes.json.error;
+        console.warn(
+          `[process-jobs] instagram_accounts error: ${e?.message || 'unknown'}${
+            e?.code !== undefined ? ` | code=${e.code}` : ''
+          }${e?.error_subcode !== undefined ? ` | subcode=${e.error_subcode}` : ''}`,
+        );
+      }
+    } else {
+      console.warn(`[process-jobs] No Page access token available for page ${pageId}; cannot query instagram_accounts endpoints.`);
+    }
+
+    // 3) Last fallback: try reading instagram_business_account via user token (may work depending on permissions)
+    const ibaUrl = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${userAccessToken}`;
+    const ibaRes = await fetchWithRetry(ibaUrl, { method: 'GET' });
+
+    if (ibaRes.ok && !ibaRes.json?.error && ibaRes.json?.instagram_business_account?.id) {
+      const igId = ibaRes.json.instagram_business_account.id as string;
+      console.log(`[process-jobs] Resolved instagram_business_account ${igId} for page ${pageId}`);
+      igActorIdCache.set(pageId, igId);
+      return igId;
+    }
+
+    if (ibaRes.json?.error) {
+      const e = ibaRes.json.error;
+      console.warn(
+        `[process-jobs] instagram_business_account error: ${e?.message || 'unknown'}${
+          e?.code !== undefined ? ` | code=${e.code}` : ''
+        }${e?.error_subcode !== undefined ? ` | subcode=${e.error_subcode}` : ''}`,
+      );
+    }
+
+    console.log(`[process-jobs] Could not resolve an Instagram actor for page ${pageId}`);
+    igActorIdCache.set(pageId, null);
+    return null;
+  } catch (err) {
+    console.error(`[process-jobs] Error resolving Instagram actor for page ${pageId}:`, err);
+    igActorIdCache.set(pageId, null);
     return null;
   }
 }
@@ -181,8 +278,17 @@ async function createFacebookAdset(
   campaignId: string,
   config: Record<string, any>,
   name: string,
+  placementTargeting?: Record<string, any>,
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+
+  const targetingObj: Record<string, any> = {
+    geo_locations: config.geoLocations || { countries: ['BR'] },
+    age_min: config.ageMin || 18,
+    age_max: config.ageMax || 65,
+    locales: config.locales || [24],
+    ...(placementTargeting || {}),
+  };
 
   const params: Record<string, any> = {
     access_token: accessToken,
@@ -199,12 +305,7 @@ async function createFacebookAdset(
     // Explicit bidding strategy. Fixes cases where FB assumes a strategy that requires bid_amount/bid_constraints.
     bid_strategy: config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
 
-    targeting: JSON.stringify({
-      geo_locations: config.geoLocations || { countries: ['BR'] },
-      age_min: config.ageMin || 18,
-      age_max: config.ageMax || 65,
-      locales: config.locales || [24],
-    }),
+    targeting: JSON.stringify(targetingObj),
   };
 
   // ABO: set adset budget
@@ -284,15 +385,12 @@ async function createFacebookAd(
   config: Record<string, any>,
   name: string,
   pageId: string,
+  instagramActorId: string | null,
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
   // For catalog ads, we use a template creative
   if (config.useCatalog && config.catalogId) {
-    // Get the Page-backed Instagram Account ID for Instagram placements
-    // This implements "Use Selected Page" option in Facebook Ads Manager
-    const instagramActorId = await getPageBackedInstagramAccountId(accessToken, pageId);
-    
     // Create ad creative for dynamic ads
     // Facebook DPA requires specific structure for template_data
     const objectStorySpec: Record<string, any> = {
@@ -308,8 +406,8 @@ async function createFacebookAd(
         description: config.description || '{{product.price}}',
       },
     };
-    
-    // Add instagram_actor_id only if we found a valid Instagram account
+
+    // For Instagram placements, Meta requires a valid IGUser id here (Page-backed IG account).
     if (instagramActorId) {
       objectStorySpec.instagram_actor_id = instagramActorId;
     }
@@ -532,32 +630,49 @@ Deno.serve(async (req) => {
 
     const accessToken = profile.access_token;
 
-    // Get page ID for ads
+    // Get page ID (and Page access token) for ads
     // Note: config.selectedPages may contain either the database UUID or the Facebook page_id
     // We try to find by database id first, then fallback to page_id
     let pageId = '';
+    let pageAccessTokenFromDb: string | null = null;
+
     if (config.selectedPages && config.selectedPages.length > 0) {
       const selectedPageValue = config.selectedPages[0];
-      
+
       // First try to find by database UUID
       let { data: page } = await supabase
         .from('facebook_pages')
-        .select('page_id')
+        .select('page_id, access_token')
         .eq('id', selectedPageValue)
         .single();
-      
+
       // If not found, try by Facebook page_id directly
       if (!page) {
         const { data: pageByFbId } = await supabase
           .from('facebook_pages')
-          .select('page_id')
+          .select('page_id, access_token')
           .eq('page_id', selectedPageValue)
           .single();
         page = pageByFbId;
       }
-      
+
       pageId = page?.page_id || '';
+      pageAccessTokenFromDb = page?.access_token || null;
       console.log(`[process-jobs] Resolved pageId: ${pageId} from selectedPages: ${selectedPageValue}`);
+    }
+
+    const instagramActorIdForJob = pageId
+      ? await resolveInstagramActorIdForPage({
+          userAccessToken: accessToken,
+          pageId,
+          pageAccessTokenFromDb,
+        })
+      : null;
+
+    // If we can't resolve an Instagram actor, force placements to Facebook only to avoid #1772103.
+    const adsetPlacementTargeting = instagramActorIdForJob ? undefined : { publisher_platforms: ['facebook'] };
+    if (!instagramActorIdForJob) {
+      console.warn(`[process-jobs] No Instagram actor resolved; forcing placements to Facebook only for this job.`);
     }
 
     // Process items in order: campaigns → adsets → ads
@@ -625,7 +740,7 @@ Deno.serve(async (req) => {
         .update({ status: 'processing' })
         .eq('id', adset.id);
 
-      const result = await createFacebookAdset(accessToken, adAccount.account_id, parentFbId, config, adset.name);
+      const result = await createFacebookAdset(accessToken, adAccount.account_id, parentFbId, config, adset.name, adsetPlacementTargeting);
 
       if (result.success && result.id) {
         idMap.set(adset.id, result.id);
@@ -679,7 +794,7 @@ Deno.serve(async (req) => {
         .update({ status: 'processing' })
         .eq('id', ad.id);
 
-      const result = await createFacebookAd(accessToken, adAccount.account_id, parentFbId, config, ad.name, pageId);
+      const result = await createFacebookAd(accessToken, adAccount.account_id, parentFbId, config, ad.name, pageId, instagramActorIdForJob);
 
       if (result.success && result.id) {
         idMap.set(ad.id, result.id);
