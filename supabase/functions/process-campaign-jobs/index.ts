@@ -91,8 +91,8 @@ async function createFacebookCampaign(
     params.bid_strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
   } else {
     // ABO: Facebook requires is_adset_budget_sharing_enabled when not using CBO
-    // This allows adsets to share up to 20% of budget for optimization
-    params.is_adset_budget_sharing_enabled = config.shareAdsetBudget !== false;
+    // Setting to false avoids the need for bid_strategy at campaign level
+    params.is_adset_budget_sharing_enabled = false;
   }
 
   const formData = new URLSearchParams();
