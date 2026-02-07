@@ -167,3 +167,46 @@ export function useCreateCampaignJob() {
     },
   });
 }
+
+export function useProcessCampaignJob() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      const { data, error } = await supabase.functions.invoke('process-campaign-jobs', {
+        body: { job_id: jobId },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-job-items'] });
+
+      if (data?.success) {
+        toast({
+          title: 'Processamento concluído!',
+          description: `${data.processed} item(s) processado(s) com sucesso.`,
+        });
+      } else {
+        toast({
+          title: 'Processamento finalizado com erros',
+          description: data?.error || 'Alguns itens falharam. Verifique os detalhes.',
+          variant: 'destructive',
+        });
+      }
+    },
+    onError: (error: any) => {
+      queryClient.invalidateQueries({ queryKey: ['campaign-jobs'] });
+      toast({
+        title: 'Erro no processamento',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}

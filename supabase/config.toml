@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.facebook-sync-business-managers]
 verify_jwt = false
+
+[functions.process-campaign-jobs]
+verify_jwt = false
