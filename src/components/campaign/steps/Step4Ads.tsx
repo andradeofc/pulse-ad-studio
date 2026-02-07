@@ -1,4 +1,5 @@
-import { RefreshCw, Shield } from 'lucide-react';
+import { useState } from 'react';
+import { Sparkles, Shield, Edit3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { PageSelector } from '@/components/campaign/PageSelector';
+import { NamingModal } from '@/components/campaign/NamingModal';
 
 const ctaOptions = [
   { value: 'LEARN_MORE', label: 'Saiba Mais' },
@@ -31,6 +33,11 @@ const ctaOptions = [
 export function Step4Ads() {
   const { config, updateConfig, getTotalAds } = useCampaignStore();
   const totalAds = getTotalAds();
+  const [namingModalOpen, setNamingModalOpen] = useState(false);
+
+  const handleApplyNaming = (template: string) => {
+    updateConfig({ adName: template });
+  };
 
   return (
     <div className="space-y-8">
@@ -111,21 +118,36 @@ export function Step4Ads() {
         </h3>
 
         <div className="flex gap-2">
-          <Input
-            value={config.adName}
-            onChange={(e) => updateConfig({ adName: e.target.value })}
-            placeholder="{{criativo}}"
-            className="bg-secondary/50 font-mono text-sm"
-          />
-          <Button variant="outline">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Gerar
+          <div 
+            className="flex-1 relative cursor-pointer group"
+            onClick={() => setNamingModalOpen(true)}
+          >
+            <Input
+              value={config.adName}
+              readOnly
+              placeholder="Clique para configurar nomenclatura..."
+              className="bg-secondary/50 font-mono text-sm cursor-pointer pr-10 hover:border-primary/50 transition-colors"
+            />
+            <Edit3 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+          </div>
+          <Button variant="outline" onClick={() => setNamingModalOpen(true)}>
+            <Sparkles className="w-4 h-4 mr-2" />
+            Configurar
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Se vazio, usa o nome do arquivo criativo
+          Clique no campo ou no botão para abrir o editor de nomenclatura com variáveis dinâmicas
         </p>
       </section>
+
+      {/* Naming Modal */}
+      <NamingModal
+        open={namingModalOpen}
+        onOpenChange={setNamingModalOpen}
+        context="ad"
+        value={config.adName}
+        onApply={handleApplyNaming}
+      />
 
       {/* Multi-Advertiser Section */}
       <section className="space-y-4">
