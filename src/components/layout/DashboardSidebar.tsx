@@ -258,8 +258,10 @@ export function DashboardSidebar() {
         className={cn(
           "fixed left-0 top-0 z-40 h-screen bg-sidebar border-r border-sidebar-border flex flex-col transition-all duration-300",
           isCollapsed ? "w-16" : "w-64",
-          "lg:translate-x-0",
-          isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          // Always visible on desktop (lg+), hidden on mobile unless open
+          "max-lg:translate-x-0 max-lg:hidden",
+          isMobileOpen ? "max-lg:flex" : "max-lg:hidden",
+          "lg:flex lg:translate-x-0"
         )}
       >
         <NavContent />
@@ -279,12 +281,11 @@ export function DashboardSidebar() {
         </Button>
       </aside>
 
-      {/* Spacer for content - pushes main content to the right */}
+      {/* Spacer for content - always visible on desktop to push main content */}
       <div 
         className={cn(
-          "flex-shrink-0 transition-all duration-300",
-          isCollapsed ? "w-16" : "w-64",
-          "hidden lg:block"
+          "flex-shrink-0 transition-all duration-300 lg:block hidden",
+          isCollapsed ? "w-16" : "w-64"
         )} 
       />
     </>
