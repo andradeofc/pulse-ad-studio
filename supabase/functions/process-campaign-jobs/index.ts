@@ -418,6 +418,10 @@ async function createFacebookAd(
       message: config.primaryText || '{{product.name}}',
       name: config.headline || '{{product.name}}',
       description: config.description || '{{product.price}}',
+
+      // Force single image/video format (not carousel)
+      // Dynamic Media (degrees_of_freedom_spec) will prioritize video when available
+      format_option: 'single_image',
     };
 
     const objectStorySpec: Record<string, any> = {
