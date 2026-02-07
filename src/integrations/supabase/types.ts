@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      creatives: {
+        Row: {
+          created_at: string
+          duration: number | null
+          file_path: string
+          height: number | null
+          id: string
+          name: string
+          size: number
+          thumbnail_url: string | null
+          type: string
+          updated_at: string
+          url: string
+          user_id: string
+          width: number | null
+        }
+        Insert: {
+          created_at?: string
+          duration?: number | null
+          file_path: string
+          height?: number | null
+          id?: string
+          name: string
+          size: number
+          thumbnail_url?: string | null
+          type: string
+          updated_at?: string
+          url: string
+          user_id: string
+          width?: number | null
+        }
+        Update: {
+          created_at?: string
+          duration?: number | null
+          file_path?: string
+          height?: number | null
+          id?: string
+          name?: string
+          size?: number
+          thumbnail_url?: string | null
+          type?: string
+          updated_at?: string
+          url?: string
+          user_id?: string
+          width?: number | null
+        }
+        Relationships: []
+      }
       facebook_ad_accounts: {
         Row: {
           account_id: string
