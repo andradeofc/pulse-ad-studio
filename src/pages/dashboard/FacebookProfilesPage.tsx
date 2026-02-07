@@ -260,27 +260,75 @@ export default function FacebookProfilesPage() {
         return;
       }
       
+      setIsUpdateTokenOpen(false);
+      setUpdateTokenInput('');
+      
       // Check if sync is running in background
       if (result.background) {
-        toast({
-          title: 'Token atualizado!',
-          description: 'Sincronização iniciada em background. Os dados aparecerão em alguns segundos.',
+        // Show persistent sync toast
+        const syncToastId = toast({
+          title: (
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Sincronizando dados...</span>
+            </div>
+          ) as unknown as string,
+          description: 'Aguarde enquanto sincronizamos suas contas, pixels e páginas.',
+          duration: Infinity, // Persistent until dismissed
         });
         
-        // Reload profiles after a short delay to show updated data
-        setIsUpdateTokenOpen(false);
-        setUpdateTokenInput('');
-        await loadProfiles();
+        // Poll for sync completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const profiles = await fetchFacebookProfiles();
+            const profile = profiles.find(p => p.id === selectedProfileId);
+            
+            if (profile) {
+              const syncStatus = (profile as any).sync_status;
+              
+              if (syncStatus === 'completed') {
+                clearInterval(pollInterval);
+                syncToastId.dismiss();
+                
+                toast({
+                  title: (
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary" />
+                      <span>Sincronização concluída!</span>
+                    </div>
+                  ) as unknown as string,
+                  description: 'Todos os dados foram sincronizados com sucesso.',
+                });
+                
+                setProfiles(profiles);
+              } else if (syncStatus === 'error') {
+                clearInterval(pollInterval);
+                syncToastId.dismiss();
+                
+                toast({
+                  title: 'Erro na sincronização',
+                  description: 'Ocorreu um erro durante a sincronização. Tente novamente.',
+                  variant: 'destructive',
+                });
+                
+                setProfiles(profiles);
+              } else {
+                // Still syncing, update profiles list
+                setProfiles(profiles);
+              }
+            }
+          } catch (error) {
+            console.error('Error polling sync status:', error);
+          }
+        }, 2000); // Poll every 2 seconds
         
-        // Reload again after 5 seconds to catch background sync results
+        // Safety timeout - stop polling after 3 minutes
         setTimeout(() => {
+          clearInterval(pollInterval);
+          syncToastId.dismiss();
           loadProfiles();
-        }, 5000);
+        }, 180000);
         
-        // And once more after 15 seconds for larger accounts
-        setTimeout(() => {
-          loadProfiles();
-        }, 15000);
       } else {
         toast({
           title: 'Token atualizado!',
@@ -289,8 +337,6 @@ export default function FacebookProfilesPage() {
             : 'Dados sincronizados com sucesso.',
         });
         
-        setIsUpdateTokenOpen(false);
-        setUpdateTokenInput('');
         await loadProfiles();
       }
     } catch (error: unknown) {

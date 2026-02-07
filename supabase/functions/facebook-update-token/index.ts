@@ -48,6 +48,12 @@ async function performFullSync(
 
   console.log("Background sync started...");
 
+  // Mark sync as started
+  await supabase
+    .from("facebook_profiles")
+    .update({ sync_status: "syncing" })
+    .eq("id", profileId);
+
   try {
     // ========== 1. SYNC AD ACCOUNTS ==========
     console.log("Syncing ad accounts...");
@@ -283,6 +289,7 @@ async function performFullSync(
       .update({
         last_synced_at: new Date().toISOString(),
         page_token_valid: true,
+        sync_status: "completed",
       })
       .eq("id", profileId);
 
@@ -295,7 +302,10 @@ async function performFullSync(
     // Mark profile with error status
     await supabase
       .from("facebook_profiles")
-      .update({ last_synced_at: new Date().toISOString() })
+      .update({ 
+        last_synced_at: new Date().toISOString(),
+        sync_status: "error",
+      })
       .eq("id", profileId);
   }
 }
