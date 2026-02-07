@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Users, Edit3, Sparkles, AlertCircle } from 'lucide-react';
+import { RefreshCw, Users, Edit3, Sparkles, AlertCircle, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +21,7 @@ import { NamingModal } from '../NamingModal';
 import { PixelSelector } from '../PixelSelector';
 import { GeoLocationSelector, getCountryByCode } from '../GeoLocationSelector';
 import { LocaleSelector, getLocaleById } from '../LocaleSelector';
+import { ProductSetSelector } from '../ProductSetSelector';
 
 const distributionOptions = [
   {
@@ -491,6 +492,52 @@ export function Step3Adsets() {
           Busque pelo nome ou ID do pixel. Clique no botão de sincronizar para atualizar a lista do Facebook.
         </p>
       </section>
+
+      {/* Product Set Section - Shown when Dynamic Ads is enabled */}
+      {config.useCatalog && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Conjunto de Produtos
+            </h3>
+            <Badge variant="secondary" className="text-xs bg-pink-500/20 text-pink-400 border-pink-500/30">
+              DPA
+            </Badge>
+            <Badge variant="outline" className="text-xs font-mono">
+              product_set_id
+            </Badge>
+          </div>
+
+          <div className="p-4 bg-pink-500/5 rounded-lg border border-pink-500/20 space-y-4">
+            {config.catalogId ? (
+              <>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Layers className="w-4 h-4" />
+                  <span>Catálogo selecionado: <strong className="text-foreground">{config.catalogId}</strong></span>
+                </div>
+                <ProductSetSelector
+                  catalogDbId={config.catalogDbId}
+                  catalogId={config.catalogId}
+                  value={config.productSetId}
+                  onChange={(productSetId) => updateConfig({ productSetId })}
+                />
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <Layers className="w-8 h-8 text-muted-foreground/50 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  Selecione um catálogo na etapa anterior (Campanha) para escolher o conjunto de produtos.
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <p className="text-xs text-muted-foreground">
+            O conjunto de produtos define quais itens do catálogo serão exibidos nos anúncios dinâmicos.
+            Será enviado como <code className="px-1 py-0.5 bg-secondary rounded">promoted_object.product_set_id</code> na API.
+          </p>
+        </section>
+      )}
 
       {/* Audience Section - API Compatible */}
       <section className="space-y-4">
