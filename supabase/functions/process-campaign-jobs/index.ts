@@ -253,24 +253,31 @@ async function createFacebookAd(
   // For catalog ads, we use a template creative
   if (config.useCatalog && config.catalogId) {
     // Create ad creative for dynamic ads
-    const creativeParams = {
+    // Facebook DPA requires specific structure for template_data
+    const objectStorySpec: Record<string, any> = {
+      page_id: pageId,
+      template_data: {
+        call_to_action: {
+          type: config.ctaType || 'SHOP_NOW',
+          value: { link: config.destinationUrl || 'https://example.com' },
+        },
+        link: config.destinationUrl || 'https://example.com',
+        message: config.primaryText || '{{product.name}}',
+        name: config.headline || '{{product.name}}',
+        description: config.description || '{{product.price}}',
+      },
+    };
+
+    const creativeParams: Record<string, any> = {
       access_token: accessToken,
       name: `Creative_${name}`,
-      object_story_spec: JSON.stringify({
-        page_id: pageId,
-        template_data: {
-          call_to_action: {
-            type: config.ctaType || 'SHOP_NOW',
-            value: { link: config.destinationUrl || 'https://example.com' },
-          },
-          link: config.destinationUrl || 'https://example.com',
-          message: config.primaryText || '{{product.name}}',
-          name: config.headline || '{{product.name}}',
-          description: config.description || '{{product.price}}',
-        },
-      }),
-      product_set_id: config.productSetId || '',
+      object_story_spec: JSON.stringify(objectStorySpec),
+      product_set_id: config.productSetId,
     };
+
+    // Log creative params for debugging
+    const logCreativeParams = { ...creativeParams, access_token: '[REDACTED]' };
+    console.log(`[process-jobs] Creative params:`, JSON.stringify(logCreativeParams, null, 2));
 
     const creativeFormData = new URLSearchParams();
     for (const [key, value] of Object.entries(creativeParams)) {
@@ -284,19 +291,40 @@ async function createFacebookAd(
     });
 
     if (!creativeResult.ok || creativeResult.json.error) {
-      return { success: false, error: creativeResult.json.error?.message || 'Failed to create ad creative' };
+      const fbError = creativeResult.json?.error;
+      console.error('[process-jobs] Facebook creative error:', JSON.stringify(fbError ?? creativeResult.json, null, 2));
+      
+      const msg = fbError?.message || 'Failed to create ad creative';
+      const code = fbError?.code;
+      const subcode = fbError?.error_subcode;
+      const userMsg = fbError?.error_user_msg;
+      
+      const details = [
+        msg,
+        code !== undefined ? `code=${code}` : null,
+        subcode !== undefined ? `subcode=${subcode}` : null,
+        userMsg ? `user_msg=${userMsg}` : null,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+      
+      return { success: false, error: details };
     }
 
     const creativeId = creativeResult.json.id;
+    console.log(`[process-jobs] Creative created: ${creativeId}`);
 
     // Create the ad
-    const adParams = {
+    const adParams: Record<string, any> = {
       access_token: accessToken,
       name,
       adset_id: adsetId,
       creative: JSON.stringify({ creative_id: creativeId }),
       status: config.isPaused ? 'PAUSED' : 'ACTIVE',
     };
+
+    const logAdParams = { ...adParams, access_token: '[REDACTED]' };
+    console.log(`[process-jobs] Ad params:`, JSON.stringify(logAdParams, null, 2));
 
     const adFormData = new URLSearchParams();
     for (const [key, value] of Object.entries(adParams)) {
@@ -310,9 +338,27 @@ async function createFacebookAd(
     });
 
     if (!ok || json.error) {
-      return { success: false, error: json.error?.message || 'Failed to create ad' };
+      const fbError = json?.error;
+      console.error('[process-jobs] Facebook ad error:', JSON.stringify(fbError ?? json, null, 2));
+      
+      const msg = fbError?.message || 'Failed to create ad';
+      const code = fbError?.code;
+      const subcode = fbError?.error_subcode;
+      const userMsg = fbError?.error_user_msg;
+      
+      const details = [
+        msg,
+        code !== undefined ? `code=${code}` : null,
+        subcode !== undefined ? `subcode=${subcode}` : null,
+        userMsg ? `user_msg=${userMsg}` : null,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+      
+      return { success: false, error: details };
     }
 
+    console.log(`[process-jobs] Ad created: ${json.id}`);
     return { success: true, id: json.id };
   } else {
     // For non-catalog ads, we need a creative with image/video
