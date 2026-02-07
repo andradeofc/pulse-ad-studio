@@ -411,19 +411,15 @@ async function createFacebookAd(
         value: { link: finalDestinationUrl },
       },
 
-      // Destination URL (also used for "Substituir deep links do site do catálogo")
+      // Destination URL — deep link override is handled by applink_treatment at creative level
       link: finalDestinationUrl,
-
-      // Forces a single offsite link instead of per-item catalog links/deep-links
-      // (maps to the "Replace catalog website deep links" behavior in Ads Manager)
-      force_single_link: true,
 
       message: config.primaryText || '{{product.name}}',
       name: config.headline || '{{product.name}}',
       description: config.description || '{{product.price}}',
 
       // Dynamic Media: "Priorizar vídeo" -> use single_video format option
-      // Valid values include: single_image, single_video, collection_video, carousel_images_multi_items, carousel_images_single_item
+      // (cannot combine with force_single_link per API restriction)
       format_option: 'single_video',
     };
 
