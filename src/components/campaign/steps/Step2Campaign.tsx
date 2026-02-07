@@ -52,9 +52,37 @@ const campaignTypes = [
 ];
 
 const bidStrategies = [
-  { value: 'volume', label: 'Maior Volume', description: 'Máximo de resultados', available: true },
-  { value: 'cost', label: 'Meta de Custo', description: 'Custo por resultado', available: false },
-  { value: 'roas', label: 'Meta de ROAS', description: 'Retorno em anúncios', available: false },
+  { 
+    value: 'LOWEST_COST_WITHOUT_CAP', 
+    label: 'Maior Volume', 
+    description: 'Máximo de resultados pelo menor custo possível',
+    requiresInput: false 
+  },
+  { 
+    value: 'COST_CAP', 
+    label: 'Meta de Custo', 
+    description: 'Define um custo máximo por resultado',
+    requiresInput: true,
+    inputType: 'costCap',
+    inputLabel: 'Custo máximo por resultado'
+  },
+  { 
+    value: 'LOWEST_COST_WITH_BID_CAP', 
+    label: 'Limite de Lance', 
+    description: 'Define um limite máximo para cada lance',
+    requiresInput: true,
+    inputType: 'bidCap',
+    inputLabel: 'Lance máximo'
+  },
+  { 
+    value: 'LOWEST_COST_WITH_MIN_ROAS', 
+    label: 'Meta de ROAS', 
+    description: 'Define um retorno mínimo sobre gastos',
+    requiresInput: true,
+    inputType: 'roasGoal',
+    inputLabel: 'ROAS mínimo',
+    inputSuffix: 'x'
+  },
 ];
 
 // Currency symbols and minimum budgets
@@ -408,31 +436,97 @@ export function Step2Campaign() {
           Estratégia de Lance
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {bidStrategies.map((strategy) => (
             <Card
               key={strategy.value}
               className={cn(
                 "cursor-pointer transition-all",
-                !strategy.available && "opacity-50 cursor-not-allowed",
                 config.bidStrategy === strategy.value
                   ? "border-primary ring-2 ring-primary/20 bg-primary/5"
                   : "border-border hover:border-primary/50"
               )}
-              onClick={() => strategy.available && updateConfig({ bidStrategy: strategy.value as 'volume' | 'cost' | 'roas' })}
+              onClick={() => updateConfig({ 
+                bidStrategy: strategy.value as 'LOWEST_COST_WITHOUT_CAP' | 'COST_CAP' | 'LOWEST_COST_WITH_BID_CAP' | 'LOWEST_COST_WITH_MIN_ROAS' 
+              })}
             >
               <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="font-medium text-foreground text-sm">{strategy.label}</p>
-                  {!strategy.available && (
-                    <Badge variant="secondary" className="text-xs">Em breve</Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">{strategy.description}</p>
+                <p className="font-medium text-foreground text-sm">{strategy.label}</p>
+                <p className="text-xs text-muted-foreground mt-1">{strategy.description}</p>
               </CardContent>
             </Card>
           ))}
         </div>
+
+        {/* Additional inputs based on strategy */}
+        {config.bidStrategy === 'COST_CAP' && (
+          <div className="space-y-2 p-4 bg-secondary/50 rounded-lg border border-border">
+            <Label>Custo máximo por resultado ({currencyInfo.symbol})</Label>
+            <div className="relative max-w-xs">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                {currencyInfo.symbol}
+              </span>
+              <Input
+                type="number"
+                value={config.costCap ?? ''}
+                onChange={(e) => updateConfig({ costCap: parseFloat(e.target.value) || null })}
+                min={0.01}
+                step={0.01}
+                placeholder="Ex: 15.00"
+                className="bg-background pl-10"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              O Facebook tentará manter o custo médio por resultado abaixo deste valor.
+            </p>
+          </div>
+        )}
+
+        {config.bidStrategy === 'LOWEST_COST_WITH_BID_CAP' && (
+          <div className="space-y-2 p-4 bg-secondary/50 rounded-lg border border-border">
+            <Label>Lance máximo ({currencyInfo.symbol})</Label>
+            <div className="relative max-w-xs">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                {currencyInfo.symbol}
+              </span>
+              <Input
+                type="number"
+                value={config.bidCap ?? ''}
+                onChange={(e) => updateConfig({ bidCap: parseFloat(e.target.value) || null })}
+                min={0.01}
+                step={0.01}
+                placeholder="Ex: 10.00"
+                className="bg-background pl-10"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              O Facebook nunca dará um lance acima deste valor nos leilões.
+            </p>
+          </div>
+        )}
+
+        {config.bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS' && (
+          <div className="space-y-2 p-4 bg-secondary/50 rounded-lg border border-border">
+            <Label>ROAS mínimo desejado</Label>
+            <div className="relative max-w-xs">
+              <Input
+                type="number"
+                value={config.roasGoal ?? ''}
+                onChange={(e) => updateConfig({ roasGoal: parseFloat(e.target.value) || null })}
+                min={0.01}
+                step={0.1}
+                placeholder="Ex: 2.5"
+                className="bg-background pr-8"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                x
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ex: 2.5x significa que para cada {currencyInfo.symbol}1 gasto, você espera {currencyInfo.symbol}2.50 em retorno.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Naming Modal */}
