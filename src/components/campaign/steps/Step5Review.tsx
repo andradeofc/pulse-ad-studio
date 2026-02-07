@@ -1,11 +1,32 @@
-import { motion } from 'framer-motion';
-import { Check, Video, Image, ExternalLink, Facebook } from 'lucide-react';
+import { Check, Video, Image, ExternalLink, Facebook, Shield, Users, Globe, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { getCountryByCode } from '../GeoLocationSelector';
 import { getLocaleById } from '../LocaleSelector';
+
+// CTA labels map - synced with Step4Ads
+const ctaLabels: Record<string, string> = {
+  LEARN_MORE: 'Saiba Mais',
+  SHOP_NOW: 'Comprar Agora',
+  SIGN_UP: 'Cadastre-se',
+  DOWNLOAD: 'Baixar',
+  SUBSCRIBE: 'Inscrever-se',
+  WATCH_MORE: 'Assistir Mais',
+  CONTACT_US: 'Fale Conosco',
+  APPLY_NOW: 'Solicitar Agora',
+  GET_OFFER: 'Obter Oferta',
+  GET_QUOTE: 'Solicitar Orçamento',
+  BUY_NOW: 'Comprar',
+  ORDER_NOW: 'Pedir Agora',
+  BOOK_TRAVEL: 'Reservar',
+  SEE_MORE: 'Ver Mais',
+  SEND_MESSAGE: 'Enviar Mensagem',
+  WHATSAPP_MESSAGE: 'WhatsApp',
+  CALL_NOW: 'Ligar Agora',
+  GET_DIRECTIONS: 'Como Chegar',
+};
 
 export function Step5Review() {
   const { config, getTotalCampaigns, getTotalAdsets, getTotalAds, getTotalBudget } = useCampaignStore();
@@ -31,11 +52,25 @@ export function Step5Review() {
     OUTCOME_APP_PROMOTION: 'Downloads de App',
   };
 
+  const specialAdCategoryLabels: Record<string, string> = {
+    NONE: 'Nenhuma',
+    HOUSING: 'Habitação',
+    EMPLOYMENT: 'Emprego',
+    FINANCIAL_PRODUCTS_SERVICES: 'Serviços Financeiros',
+    ISSUES_ELECTIONS_POLITICS: 'Política',
+  };
+
   const bidStrategyLabels: Record<string, string> = {
     LOWEST_COST_WITHOUT_CAP: 'Maior Volume',
     COST_CAP: 'Meta de Custo',
     LOWEST_COST_WITH_BID_CAP: 'Limite de Lance',
     LOWEST_COST_WITH_MIN_ROAS: 'Meta de ROAS',
+  };
+
+  const distributionLabels: Record<string, string> = {
+    campaign: 'Por Campanha',
+    adset: 'Por Conjunto',
+    ad: 'Por Anúncio',
   };
 
   // Helper to get gender display
@@ -61,6 +96,31 @@ export function Step5Review() {
       .join(', ');
   };
 
+  // Build API-compatible ad creative object for preview
+  const buildAdCreativePreview = () => {
+    return {
+      object_story_spec: {
+        page_id: config.selectedPages[0] || '<PAGE_ID>',
+        link_data: {
+          message: config.primaryText || undefined,
+          name: config.headline || undefined,
+          description: config.description || undefined,
+          link: config.destinationUrl || '<URL>',
+          call_to_action: {
+            type: config.ctaType,
+            value: {
+              link: config.destinationUrl || '<URL>',
+            },
+          },
+        },
+      },
+      url_tags: config.urlParams || undefined,
+      contextual_multi_ads: {
+        enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
+      },
+    };
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -77,23 +137,31 @@ export function Step5Review() {
           <Card className="glass-card">
             <CardHeader className="pb-4">
               <CardTitle className="text-base flex items-center gap-2">
-                <Check className="w-5 h-5 text-primary" />
+                <Target className="w-5 h-5 text-primary" />
                 Configuração da Campanha
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Nome</span>
-                <span className="text-sm text-foreground font-mono">{config.campaignName}</span>
+                <span className="text-sm text-foreground font-mono text-right max-w-[200px] truncate" title={config.campaignName}>
+                  {config.campaignName}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Objetivo</span>
                 <Badge variant="secondary">{objectiveLabels[config.objective]}</Badge>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Tipo</span>
+                <span className="text-sm text-muted-foreground">Categoria Especial</span>
+                <Badge variant="outline" className={config.specialAdCategory !== 'NONE' ? 'border-ads-warning text-ads-warning' : ''}>
+                  {specialAdCategoryLabels[config.specialAdCategory]}
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Tipo de Orçamento</span>
                 <Badge className="bg-primary/20 text-primary border-primary/30">
-                  {config.useCBO ? 'CBO (Orçamento de Campanha)' : 'ABO (Orçamento de Conjunto)'}
+                  {config.useCBO ? 'CBO' : 'ABO'}
                 </Badge>
               </div>
               {config.useCatalog && (
@@ -104,12 +172,50 @@ export function Step5Review() {
                   </Badge>
                 </div>
               )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Contas Selecionadas</span>
+                <Badge variant="outline">{config.selectedAccounts.length || 0}</Badge>
+              </div>
               {config.isPaused && (
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Status Inicial</span>
                   <Badge variant="outline" className="text-ads-warning border-ads-warning">
                     Pausada
                   </Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Ad Set Config */}
+          <Card className="glass-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary" />
+                Configuração do Conjunto
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm text-muted-foreground">Nome</span>
+                <span className="text-sm text-foreground font-mono text-right max-w-[200px] truncate" title={config.adsetName}>
+                  {config.adsetName}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Distribuição</span>
+                <Badge variant="outline">{distributionLabels[config.distribution]}</Badge>
+              </div>
+              {config.pixelId && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Pixel</span>
+                  <span className="text-sm text-foreground font-mono">{config.pixelId}</span>
+                </div>
+              )}
+              {config.advantagePlus && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Advantage+</span>
+                  <Badge className="bg-ads-info/20 text-ads-info border-ads-info/30">Ativado</Badge>
                 </div>
               )}
             </CardContent>
@@ -136,6 +242,24 @@ export function Step5Review() {
                 <span className="text-sm text-muted-foreground">Estratégia de Lance</span>
                 <span className="text-sm text-foreground">{bidStrategyLabels[config.bidStrategy]}</span>
               </div>
+              {config.bidStrategy === 'COST_CAP' && config.costCap && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Custo Máximo</span>
+                  <span className="text-sm text-foreground">{formatCurrency(config.costCap)}</span>
+                </div>
+              )}
+              {config.bidStrategy === 'LOWEST_COST_WITH_BID_CAP' && config.bidCap && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Lance Máximo</span>
+                  <span className="text-sm text-foreground">{formatCurrency(config.bidCap)}</span>
+                </div>
+              )}
+              {config.bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS' && config.roasGoal && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Meta de ROAS</span>
+                  <span className="text-sm text-foreground">{config.roasGoal}x</span>
+                </div>
+              )}
               <div className="p-3 bg-destructive/10 rounded-lg border border-destructive/20">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-destructive">
@@ -153,7 +277,7 @@ export function Step5Review() {
           <Card className="glass-card">
             <CardHeader className="pb-4">
               <CardTitle className="text-base flex items-center gap-2">
-                <Check className="w-5 h-5 text-primary" />
+                <Globe className="w-5 h-5 text-primary" />
                 Público-Alvo
               </CardTitle>
             </CardHeader>
@@ -176,9 +300,12 @@ export function Step5Review() {
                 <span className="text-sm text-muted-foreground">Idiomas</span>
                 <span className="text-sm text-foreground">{getLocaleNames()}</span>
               </div>
-              {config.advantagePlus && (
-                <Badge className="badge-info w-fit">Advantage+ ativado</Badge>
-              )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Posicionamento</span>
+                <Badge variant="outline">
+                  {config.autoPlacement ? 'Automático' : 'Manual'}
+                </Badge>
+              </div>
             </CardContent>
           </Card>
 
@@ -187,7 +314,7 @@ export function Step5Review() {
             <CardHeader className="pb-4">
               <CardTitle className="text-base flex items-center gap-2">
                 <Check className="w-5 h-5 text-primary" />
-                Estrutura
+                Estrutura Final
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -211,6 +338,64 @@ export function Step5Review() {
 
         {/* Right Column - Ad Preview */}
         <div className="space-y-6">
+          {/* Ad Config Summary */}
+          <Card className="glass-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Check className="w-5 h-5 text-primary" />
+                Configuração do Anúncio
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm text-muted-foreground">Nome</span>
+                <span className="text-sm text-foreground font-mono text-right max-w-[200px] truncate" title={config.adName}>
+                  {config.adName}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Multi-Advertiser</span>
+                <Badge 
+                  variant="outline" 
+                  className={`font-mono ${config.multiAdvertiser ? 'bg-ads-success/20 text-ads-success border-ads-success/30' : 'bg-destructive/20 text-destructive border-destructive/30'}`}
+                >
+                  {config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT'}
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">CTA</span>
+                <Badge variant="outline">{ctaLabels[config.ctaType] || config.ctaType}</Badge>
+              </div>
+              {config.destinationUrl && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">URL</span>
+                  <a 
+                    href={config.destinationUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline flex items-center gap-1 max-w-[180px] truncate"
+                  >
+                    {new URL(config.destinationUrl).hostname}
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                  </a>
+                </div>
+              )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Páginas</span>
+                <Badge variant="outline">{config.selectedPages.length || 0}</Badge>
+              </div>
+              {config.urlParams && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">URL Tags</span>
+                  <span className="text-xs text-muted-foreground font-mono text-right max-w-[180px] truncate" title={config.urlParams}>
+                    {config.urlParams.substring(0, 30)}...
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Facebook Ad Preview */}
           <Card className="glass-card">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">Preview do Anúncio</CardTitle>
@@ -229,7 +414,7 @@ export function Step5Review() {
                   </div>
                 </div>
 
-                {/* Text */}
+                {/* Text - API: message */}
                 <div className="px-3 pb-3">
                   <p className="text-sm">
                     {config.primaryText || 'Seu texto principal aparecerá aqui...'}
@@ -239,7 +424,13 @@ export function Step5Review() {
                 {/* Media */}
                 <div className="aspect-video bg-gray-100 flex items-center justify-center relative">
                   {config.selectedCreatives.length > 0 ? (
-                    config.selectedCreatives[0].type === 'video' ? (
+                    config.selectedCreatives[0].thumbnailUrl ? (
+                      <img 
+                        src={config.selectedCreatives[0].thumbnailUrl} 
+                        alt={config.selectedCreatives[0].name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : config.selectedCreatives[0].type === 'video' ? (
                       <Video className="w-12 h-12 text-gray-400" />
                     ) : (
                       <Image className="w-12 h-12 text-gray-400" />
@@ -255,7 +446,7 @@ export function Step5Review() {
                   )}
                 </div>
 
-                {/* Link Preview */}
+                {/* Link Preview - API: name, description */}
                 <div className="p-3 bg-gray-100 border-t border-gray-200">
                   <p className="text-xs text-gray-500 uppercase mb-1">
                     {config.destinationUrl ? new URL(config.destinationUrl).hostname : 'seusite.com'}
@@ -268,17 +459,10 @@ export function Step5Review() {
                   </p>
                 </div>
 
-                {/* CTA Button */}
+                {/* CTA Button - API: call_to_action.type */}
                 <div className="p-3 border-t border-gray-200">
                   <Button className="w-full bg-blue-500 hover:bg-blue-600 text-white rounded-md">
-                    {config.ctaType === 'LEARN_MORE' && 'Saiba Mais'}
-                    {config.ctaType === 'SHOP_NOW' && 'Comprar Agora'}
-                    {config.ctaType === 'SIGN_UP' && 'Cadastre-se'}
-                    {config.ctaType === 'DOWNLOAD' && 'Baixar'}
-                    {config.ctaType === 'SUBSCRIBE' && 'Inscrever-se'}
-                    {config.ctaType === 'WATCH_MORE' && 'Assistir Mais'}
-                    {config.ctaType === 'CONTACT_US' && 'Fale Conosco'}
-                    {config.ctaType === 'APPLY_NOW' && 'Solicitar Agora'}
+                    {ctaLabels[config.ctaType] || 'Saiba Mais'}
                   </Button>
                 </div>
               </div>
@@ -324,14 +508,30 @@ export function Step5Review() {
             <Card className="glass-card border-primary/30">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <Badge className="badge-active">Anti-Spy Ativo</Badge>
+                  <Shield className="w-5 h-5 text-primary" />
+                  <Badge className="bg-primary/20 text-primary border-primary/30">Anti-Spy Ativo</Badge>
                   <span className="text-sm text-muted-foreground">
-                    Distribuição automática em múltiplas páginas
+                    {config.selectedPages.length} páginas selecionadas
                   </span>
                 </div>
               </CardContent>
             </Card>
           )}
+
+          {/* API Ad Creative Preview */}
+          <Card className="glass-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Check className="w-5 h-5 text-primary" />
+                Ad Creative Spec (API)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap bg-secondary/50 p-3 rounded-lg max-h-[300px] overflow-y-auto">
+{JSON.stringify(buildAdCreativePreview(), null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
 
           {/* API Targeting Preview */}
           <Card className="glass-card">
