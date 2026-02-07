@@ -428,18 +428,16 @@ export function NamingModal({ open, onOpenChange, context, value, onApply }: Nam
                 {/* Template with highlights */}
                 <div>
                   <Label className="text-sm font-medium text-foreground">TEMPLATE (com variáveis)</Label>
-                  <div className="mt-2 p-3 rounded-lg bg-background border border-border">
-                    <code className="text-sm break-all">
-                      {template.split(/(\{\{[^}]+\}\})/).map((part, i) => 
-                        part.startsWith('{{') ? (
-                          <span key={i} className="px-1 py-0.5 mx-0.5 rounded bg-primary/20 text-primary font-medium">
-                            {part}
-                          </span>
-                        ) : (
-                          <span key={i} className="text-muted-foreground">{part}</span>
-                        )
-                      )}
-                    </code>
+                  <div className="mt-2 p-3 rounded-lg bg-background border border-border font-mono text-sm break-all whitespace-pre-wrap">
+                    {template.split(/(\{\{[^}]+\}\})/).map((part, i) => 
+                      part.startsWith('{{') ? (
+                        <span key={i} className="px-1 py-0.5 rounded bg-primary/20 text-primary font-medium">
+                          {part}
+                        </span>
+                      ) : (
+                        <span key={i} className="text-muted-foreground">{part}</span>
+                      )
+                    )}
                   </div>
                 </div>
 
