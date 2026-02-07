@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
 
     console.log(`Synced ${syncedAccounts.length} ad accounts`);
 
-    // 5. Sync Pixels
+    // 5. Sync Pixels (batch to avoid timeouts)
     console.log("Syncing pixels...");
     let syncedPixels = 0;
 
@@ -229,24 +229,81 @@ Deno.serve(async (req) => {
       .select("account_id, name, business_id, business_name")
       .eq("profile_id", profileId);
 
-    for (const account of adAccounts || []) {
-      const pixelsUrl = `${FACEBOOK_GRAPH_API}/act_${account.account_id}/adspixels?fields=id,name&access_token=${accessToken}`;
-      const pixelsResponse = await fetch(pixelsUrl);
-      
-      if (pixelsResponse.ok) {
-        const pixelsData = await pixelsResponse.json();
-        for (const pixel of pixelsData.data || []) {
-          await supabase.from("facebook_pixels").upsert({
-            profile_id: profileId,
-            pixel_id: pixel.id,
-            name: pixel.name,
-            account_id: account.account_id,
-            account_name: account.name,
-            business_id: account.business_id,
-            business_name: account.business_name,
-          }, { onConflict: "profile_id,pixel_id" });
-          syncedPixels++;
+    const accounts = adAccounts || [];
+
+    const chunk = <T,>(arr: T[], size: number): T[][] => {
+      const out: T[][] = [];
+      for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+      return out;
+    };
+
+    const pixelRows: any[] = [];
+    const accountChunks = chunk(accounts, 50);
+
+    for (const accountChunk of accountChunks) {
+      const batch = accountChunk.map((acc: any) => ({
+        method: "GET",
+        // Limit high enough to avoid pagination in most accounts
+        relative_url: `act_${acc.account_id}/adspixels?fields=id,name&limit=500`,
+      }));
+
+      const form = new URLSearchParams();
+      form.set("access_token", accessToken);
+      form.set("batch", JSON.stringify(batch));
+
+      const batchResponse = await fetch(FACEBOOK_GRAPH_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+
+      if (!batchResponse.ok) {
+        console.error("Batch pixels request failed:", await batchResponse.text());
+        continue;
+      }
+
+      const batchResults = await batchResponse.json();
+
+      for (let i = 0; i < batchResults.length; i++) {
+        const result = batchResults[i];
+        const acc = accountChunk[i];
+
+        if (!result || result.code !== 200) {
+          console.error("Pixels batch item error:", result);
+          continue;
         }
+
+        try {
+          const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+          for (const pixel of body?.data || []) {
+            pixelRows.push({
+              profile_id: profileId,
+              pixel_id: pixel.id,
+              name: pixel.name,
+              account_id: acc.account_id,
+              account_name: acc.name,
+              business_id: acc.business_id,
+              business_name: acc.business_name,
+            });
+          }
+        } catch (e) {
+          console.error("Error parsing pixels batch body:", e);
+        }
+      }
+    }
+
+    // Upsert pixels in chunks to avoid payload limits
+    const pixelChunks = chunk(pixelRows, 500);
+    for (const rows of pixelChunks) {
+      if (rows.length === 0) continue;
+      const { error: pixelsUpsertError } = await supabase
+        .from("facebook_pixels")
+        .upsert(rows, { onConflict: "profile_id,pixel_id" });
+
+      if (pixelsUpsertError) {
+        console.error("Error upserting pixels batch:", pixelsUpsertError);
+      } else {
+        syncedPixels += rows.length;
       }
     }
 
