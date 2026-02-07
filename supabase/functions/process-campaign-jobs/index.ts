@@ -288,6 +288,12 @@ async function createFacebookAdset(
     age_max: config.ageMax || 65,
     locales: config.locales || [24],
     ...(placementTargeting || {}),
+    // REQUIRED by Meta API: targeting_automation must explicitly set advantage_audience
+    // 1 = Advantage+ Audience enabled (Meta expands targeting)
+    // 0 = Advantage+ Audience disabled (use exact targeting provided)
+    targeting_automation: {
+      advantage_audience: config.advantagePlus ? 1 : 0,
+    },
   };
 
   const params: Record<string, any> = {
