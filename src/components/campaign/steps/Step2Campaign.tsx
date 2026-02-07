@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Layers, Grid3X3, RefreshCw, Edit3 } from 'lucide-react';
+import { Sparkles, Layers, Grid3X3, Edit3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { cn } from '@/lib/utils';
 import { NamingModal } from '../NamingModal';
+import { AdAccountSelector } from '../AdAccountSelector';
 
 const objectives = [
   { value: 'sales', label: 'Vendas' },
@@ -53,13 +54,6 @@ const bidStrategies = [
   { value: 'volume', label: 'Maior Volume', description: 'Máximo de resultados', available: true },
   { value: 'cost', label: 'Meta de Custo', description: 'Custo por resultado', available: false },
   { value: 'roas', label: 'Meta de ROAS', description: 'Retorno em anúncios', available: false },
-];
-
-// Mock ad accounts
-const mockAdAccounts = [
-  { id: '1', accountId: 'act_1234567890', name: 'Conta Principal BRL', status: 'active', currency: 'BRL', timezone: 'America/Sao_Paulo' },
-  { id: '2', accountId: 'act_0987654321', name: 'Conta Internacional USD', status: 'active', currency: 'USD', timezone: 'America/New_York' },
-  { id: '3', accountId: 'act_5566778899', name: 'Nova Conta EUR', status: 'pending', currency: 'EUR', timezone: 'Europe/Lisbon' },
 ];
 
 export function Step2Campaign() {
@@ -101,28 +95,14 @@ export function Step2Campaign() {
 
         {/* Ad Account Selection */}
         <div className="space-y-2">
-          <Label>Conta de Anúncio</Label>
-          <Select
-            value={config.selectedAccounts[0] || ''}
-            onValueChange={(value) => updateConfig({ selectedAccounts: [value] })}
-          >
-            <SelectTrigger className="bg-secondary/50">
-              <SelectValue placeholder="Selecione uma conta" />
-            </SelectTrigger>
-            <SelectContent>
-              {mockAdAccounts
-                .filter((a) => a.status === 'active')
-                .map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">#{account.accountId.slice(-6)}</span>
-                      <span>{account.name}</span>
-                      <Badge variant="outline" className="text-xs">{account.currency}</Badge>
-                    </div>
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+          <Label>
+            {config.multiAccountMode ? 'Contas de Anúncio' : 'Conta de Anúncio'}
+          </Label>
+          <AdAccountSelector
+            multiSelect={config.multiAccountMode}
+            selectedAccounts={config.selectedAccounts}
+            onSelectionChange={(accountIds) => updateConfig({ selectedAccounts: accountIds })}
+          />
         </div>
 
         {/* Paused Toggle */}
