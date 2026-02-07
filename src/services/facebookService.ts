@@ -28,6 +28,8 @@ export interface FacebookAdAccount {
   currency: string | null;
   timezone: string | null;
   status: string;
+  business_id: string | null;
+  business_name: string | null;
   created_at: string;
 }
 

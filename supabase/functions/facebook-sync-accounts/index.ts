@@ -68,43 +68,11 @@ serve(async (req) => {
 
     console.log("Syncing ad accounts for profile:", profile.id);
 
-    // 2. Fetch ad accounts from Facebook
-    const adAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${profile.access_token}`;
-    
-    const adAccountsResponse = await fetch(adAccountsUrl);
-    
-    if (!adAccountsResponse.ok) {
-      const errorData = await adAccountsResponse.json();
-      console.error("Facebook API error:", errorData);
-      
-      // If token expired, update profile status
-      if (errorData.error?.code === 190) {
-        await supabase
-          .from("facebook_profiles")
-          .update({ status: "expired" })
-          .eq("id", profileId);
-        
-        return new Response(
-          JSON.stringify({ error: "Token expired", tokenExpired: true }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
-      return new Response(
-        JSON.stringify({ error: errorData.error?.message || "Failed to fetch ad accounts" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const syncedAccounts: any[] = [];
+    const accessToken = profile.access_token;
 
-    const adAccountsData = await adAccountsResponse.json();
-    const adAccounts = adAccountsData.data || [];
-    
-    console.log(`Found ${adAccounts.length} ad accounts`);
-
-    // 3. Upsert ad accounts
-    const syncedAccounts = [];
-    
-    for (const account of adAccounts) {
+    // Helper function to upsert ad account
+    const upsertAdAccount = async (account: any, businessId: string | null, businessName: string | null) => {
       const accountStatus = account.account_status === 1 ? "active" : 
                            account.account_status === 2 ? "disabled" : 
                            account.account_status === 3 ? "unsettled" : "unknown";
@@ -119,6 +87,8 @@ serve(async (req) => {
             currency: account.currency,
             timezone: account.timezone_name,
             status: accountStatus,
+            business_id: businessId,
+            business_name: businessName,
           },
           { onConflict: "profile_id,account_id" }
         )
@@ -130,6 +100,87 @@ serve(async (req) => {
       } else {
         syncedAccounts.push(data);
       }
+    };
+
+    // 2. Fetch personal ad accounts
+    console.log("Fetching personal ad accounts...");
+    const personalAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+    
+    const personalResponse = await fetch(personalAccountsUrl);
+    
+    if (!personalResponse.ok) {
+      const errorData = await personalResponse.json();
+      console.error("Facebook API error (personal accounts):", errorData);
+      
+      if (errorData.error?.code === 190) {
+        await supabase
+          .from("facebook_profiles")
+          .update({ status: "expired" })
+          .eq("id", profileId);
+        
+        return new Response(
+          JSON.stringify({ error: "Token expired", tokenExpired: true }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } else {
+      const personalData = await personalResponse.json();
+      const personalAccounts = personalData.data || [];
+      console.log(`Found ${personalAccounts.length} personal ad accounts`);
+      
+      for (const account of personalAccounts) {
+        await upsertAdAccount(account, null, "Pessoal");
+      }
+    }
+
+    // 3. Fetch Business Managers
+    console.log("Fetching Business Managers...");
+    const businessesUrl = `${FACEBOOK_GRAPH_API}/me/businesses?fields=id,name&access_token=${accessToken}`;
+    
+    const businessesResponse = await fetch(businessesUrl);
+    
+    if (businessesResponse.ok) {
+      const businessesData = await businessesResponse.json();
+      const businesses = businessesData.data || [];
+      console.log(`Found ${businesses.length} Business Managers`);
+
+      for (const business of businesses) {
+        // Fetch owned ad accounts for this BM
+        console.log(`Fetching ad accounts for BM: ${business.name} (${business.id})`);
+        
+        const ownedAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+        const ownedResponse = await fetch(ownedAccountsUrl);
+        
+        if (ownedResponse.ok) {
+          const ownedData = await ownedResponse.json();
+          const ownedAccounts = ownedData.data || [];
+          console.log(`Found ${ownedAccounts.length} owned accounts in BM ${business.name}`);
+          
+          for (const account of ownedAccounts) {
+            await upsertAdAccount(account, business.id, business.name);
+          }
+        } else {
+          console.error(`Error fetching owned accounts for BM ${business.id}:`, await ownedResponse.text());
+        }
+
+        // Fetch client ad accounts for this BM
+        const clientAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+        const clientResponse = await fetch(clientAccountsUrl);
+        
+        if (clientResponse.ok) {
+          const clientData = await clientResponse.json();
+          const clientAccounts = clientData.data || [];
+          console.log(`Found ${clientAccounts.length} client accounts in BM ${business.name}`);
+          
+          for (const account of clientAccounts) {
+            await upsertAdAccount(account, business.id, business.name);
+          }
+        } else {
+          console.error(`Error fetching client accounts for BM ${business.id}:`, await clientResponse.text());
+        }
+      }
+    } else {
+      console.log("Could not fetch Business Managers (user may not have any)");
     }
 
     // 4. Update profile last_synced_at
@@ -138,7 +189,7 @@ serve(async (req) => {
       .update({ last_synced_at: new Date().toISOString() })
       .eq("id", profileId);
 
-    console.log(`Synced ${syncedAccounts.length} ad accounts`);
+    console.log(`Synced ${syncedAccounts.length} total ad accounts`);
 
     return new Response(
       JSON.stringify({

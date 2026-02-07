@@ -17,6 +17,8 @@ export type Database = {
       facebook_ad_accounts: {
         Row: {
           account_id: string
+          business_id: string | null
+          business_name: string | null
           created_at: string
           currency: string | null
           id: string
@@ -27,6 +29,8 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          business_id?: string | null
+          business_name?: string | null
           created_at?: string
           currency?: string | null
           id?: string
@@ -37,6 +41,8 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          business_id?: string | null
+          business_name?: string | null
           created_at?: string
           currency?: string | null
           id?: string
