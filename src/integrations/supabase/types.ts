@@ -235,6 +235,7 @@ export type Database = {
           proxy_port: number | null
           proxy_username: string | null
           status: string
+          sync_status: string | null
           token_expires_at: string | null
           updated_at: string
           user_id: string
@@ -255,6 +256,7 @@ export type Database = {
           proxy_port?: number | null
           proxy_username?: string | null
           status?: string
+          sync_status?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id: string
@@ -275,6 +277,7 @@ export type Database = {
           proxy_port?: number | null
           proxy_username?: string | null
           status?: string
+          sync_status?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id?: string
