@@ -1,1 +1,16 @@
 project_id = "fwnkqcguvigyzlasexmr"
+
+[functions.facebook-validate-token]
+verify_jwt = false
+
+[functions.facebook-add-profile]
+verify_jwt = false
+
+[functions.facebook-sync-accounts]
+verify_jwt = false
+
+[functions.facebook-delete-profile]
+verify_jwt = false
+
+[functions.facebook-update-proxy]
+verify_jwt = false

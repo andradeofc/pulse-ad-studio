@@ -14,13 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      facebook_ad_accounts: {
+        Row: {
+          account_id: string
+          created_at: string
+          currency: string | null
+          id: string
+          name: string
+          profile_id: string
+          status: string | null
+          timezone: string | null
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          currency?: string | null
+          id?: string
+          name: string
+          profile_id: string
+          status?: string | null
+          timezone?: string | null
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          currency?: string | null
+          id?: string
+          name?: string
+          profile_id?: string
+          status?: string | null
+          timezone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facebook_ad_accounts_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facebook_profiles: {
+        Row: {
+          access_token: string
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          facebook_id: string
+          id: string
+          last_synced_at: string | null
+          name: string
+          page_token_valid: boolean | null
+          permissions: string[] | null
+          proxy_host: string | null
+          proxy_password: string | null
+          proxy_port: number | null
+          proxy_username: string | null
+          status: string
+          token_expires_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          facebook_id: string
+          id?: string
+          last_synced_at?: string | null
+          name: string
+          page_token_valid?: boolean | null
+          permissions?: string[] | null
+          proxy_host?: string | null
+          proxy_password?: string | null
+          proxy_port?: number | null
+          proxy_username?: string | null
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          facebook_id?: string
+          id?: string
+          last_synced_at?: string | null
+          name?: string
+          page_token_valid?: boolean | null
+          permissions?: string[] | null
+          proxy_host?: string | null
+          proxy_password?: string | null
+          proxy_port?: number | null
+          proxy_username?: string | null
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      user_owns_facebook_profile: {
+        Args: { profile_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
