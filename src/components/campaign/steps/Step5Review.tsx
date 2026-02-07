@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
+import { getCountryByCode } from '../GeoLocationSelector';
+import { getLocaleById } from '../LocaleSelector';
 
 export function Step5Review() {
   const { config, getTotalCampaigns, getTotalAdsets, getTotalAds, getTotalBudget } = useCampaignStore();
@@ -34,6 +36,29 @@ export function Step5Review() {
     COST_CAP: 'Meta de Custo',
     LOWEST_COST_WITH_BID_CAP: 'Limite de Lance',
     LOWEST_COST_WITH_MIN_ROAS: 'Meta de ROAS',
+  };
+
+  // Helper to get gender display
+  const getGenderDisplay = () => {
+    if (config.genders.length === 0) return 'Todos';
+    if (config.genders.includes(1) && config.genders.includes(2)) return 'Todos';
+    if (config.genders.includes(1)) return 'Masculino';
+    if (config.genders.includes(2)) return 'Feminino';
+    return 'Todos';
+  };
+
+  // Get country names from codes
+  const getCountryNames = () => {
+    return config.geoLocations.countries
+      .map(code => getCountryByCode(code)?.name || code)
+      .join(', ');
+  };
+
+  // Get locale names from IDs
+  const getLocaleNames = () => {
+    return config.locales
+      .map(id => getLocaleById(id)?.name || `ID: ${id}`)
+      .join(', ');
   };
 
   return (
@@ -100,9 +125,11 @@ export function Step5Review() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Orçamento por Campanha</span>
+                <span className="text-sm text-muted-foreground">
+                  Orçamento por {config.useCBO ? 'Campanha' : 'Conjunto'}
+                </span>
                 <span className="text-sm text-foreground font-semibold">
-                  {formatCurrency(config.budget)} / {config.budgetPeriod === 'daily' ? 'dia' : 'vitalício'}
+                  {formatCurrency(config.useCBO ? config.budget : config.adsetBudget)} / {config.budgetPeriod === 'daily' ? 'dia' : 'vitalício'}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -133,7 +160,7 @@ export function Step5Review() {
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Localizações</span>
-                <span className="text-sm text-foreground">{config.locations.join(', ')}</span>
+                <span className="text-sm text-foreground">{getCountryNames()}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Idade</span>
@@ -143,13 +170,11 @@ export function Step5Review() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Gênero</span>
-                <span className="text-sm text-foreground">
-                  {config.gender === 'all' ? 'Todos' : config.gender === 'male' ? 'Masculino' : 'Feminino'}
-                </span>
+                <span className="text-sm text-foreground">{getGenderDisplay()}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Idiomas</span>
-                <span className="text-sm text-foreground">{config.languages.join(', ')}</span>
+                <span className="text-sm text-foreground">{getLocaleNames()}</span>
               </div>
               {config.advantagePlus && (
                 <Badge className="badge-info w-fit">Advantage+ ativado</Badge>
@@ -307,6 +332,29 @@ export function Step5Review() {
               </CardContent>
             </Card>
           )}
+
+          {/* API Targeting Preview */}
+          <Card className="glass-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Check className="w-5 h-5 text-primary" />
+                Targeting Spec (API)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap bg-secondary/50 p-3 rounded-lg">
+{JSON.stringify({
+  geo_locations: config.geoLocations,
+  age_min: config.ageMin,
+  age_max: config.advantagePlus ? undefined : config.ageMax,
+  genders: config.genders.length > 0 ? config.genders : undefined,
+  locales: config.locales.length > 0 ? config.locales : undefined,
+  targeting_optimization: config.advantagePlus ? 'expansion_all' : undefined,
+  publisher_platforms: config.autoPlacement ? undefined : config.publisherPlatforms,
+}, null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

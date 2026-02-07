@@ -38,6 +38,7 @@ export interface CampaignConfig {
   adsetsPerCampaign: number;
   adsPerAdset: number;
   adsetBudget: number;
+  adsetBudgetByCurrency: Record<string, number>; // ABO budget per currency
   adsetBudgetPeriod: 'daily' | 'lifetime';
   shareAdsetBudget: boolean;
   adsetName: string;
@@ -47,12 +48,31 @@ export interface CampaignConfig {
   catalogImage: string;
   duplicateProducts: number;
   advantagePlus: boolean;
-  locations: string[];
+  // Targeting - API compatible fields
+  geoLocations: {
+    countries: string[]; // ISO country codes: ['BR', 'US', 'PT']
+    regions?: { key: string; name: string }[]; // Region targeting
+    cities?: { key: string; name: string; radius?: number; distance_unit?: 'mile' | 'kilometer' }[];
+  };
+  locales: number[]; // Locale IDs from Facebook API (e.g., 24 = Portuguese (Brazil))
   ageMin: number;
   ageMax: number;
-  gender: 'all' | 'male' | 'female';
-  languages: string[];
+  genders: number[]; // Facebook API: [] = all, [1] = male, [2] = female
+  // Detailed targeting
+  flexibleSpec: {
+    interests?: { id: string; name: string }[];
+    behaviors?: { id: string; name: string }[];
+    demographics?: { id: string; name: string }[];
+  }[];
+  exclusions: {
+    interests?: { id: string; name: string }[];
+    behaviors?: { id: string; name: string }[];
+    custom_audiences?: { id: string; name: string }[];
+  };
+  customAudiences: { id: string; name: string }[];
+  excludedCustomAudiences: { id: string; name: string }[];
   autoPlacement: boolean;
+  publisherPlatforms: ('facebook' | 'instagram' | 'messenger' | 'audience_network')[];
   scheduleStart: Date | null;
   scheduleEnd: Date | null;
   
@@ -107,6 +127,7 @@ const defaultConfig: CampaignConfig = {
   adsetsPerCampaign: 1,
   adsPerAdset: 1,
   adsetBudget: 10,
+  adsetBudgetByCurrency: {},
   adsetBudgetPeriod: 'daily',
   shareAdsetBudget: false,
   adsetName: '{{criativo}}_CJ{{conjunto}}',
@@ -116,12 +137,19 @@ const defaultConfig: CampaignConfig = {
   catalogImage: '',
   duplicateProducts: 5,
   advantagePlus: true,
-  locations: ['Brasil'],
+  geoLocations: {
+    countries: ['BR'], // ISO codes
+  },
+  locales: [24], // Portuguese (Brazil)
   ageMin: 18,
   ageMax: 65,
-  gender: 'all',
-  languages: ['Português (Brasil)'],
+  genders: [], // All genders
+  flexibleSpec: [],
+  exclusions: {},
+  customAudiences: [],
+  excludedCustomAudiences: [],
   autoPlacement: true,
+  publisherPlatforms: ['facebook', 'instagram', 'messenger', 'audience_network'],
   scheduleStart: null,
   scheduleEnd: null,
   antiSpyEnabled: false,
