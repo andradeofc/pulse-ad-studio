@@ -269,21 +269,24 @@ export function DashboardSidebar() {
           variant="ghost"
           size="icon"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-md"
+          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-md hover:bg-secondary"
         >
           {isCollapsed ? (
             <ChevronRight className="w-3 h-3" />
           ) : (
-            <ChevronDown className="w-3 h-3 rotate-90" />
+            <ChevronRight className="w-3 h-3 rotate-180" />
           )}
         </Button>
       </aside>
 
-      {/* Spacer for content */}
-      <div className={cn(
-        "hidden lg:block flex-shrink-0 transition-all duration-300",
-        isCollapsed ? "w-16" : "w-64"
-      )} />
+      {/* Spacer for content - pushes main content to the right */}
+      <div 
+        className={cn(
+          "flex-shrink-0 transition-all duration-300",
+          isCollapsed ? "w-16" : "w-64",
+          "hidden lg:block"
+        )} 
+      />
     </>
   );
 }
