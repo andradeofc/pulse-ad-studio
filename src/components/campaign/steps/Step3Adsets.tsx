@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Plus, X, MapPin, Globe, Users, Edit3, Sparkles } from 'lucide-react';
+import { RefreshCw, Users, Edit3, Sparkles, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,9 +15,12 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { NamingModal } from '../NamingModal';
 import { PixelSelector } from '../PixelSelector';
+import { GeoLocationSelector, getCountryByCode } from '../GeoLocationSelector';
+import { LocaleSelector, getLocaleById } from '../LocaleSelector';
 
 const distributionOptions = [
   {
@@ -40,9 +43,58 @@ const distributionOptions = [
   },
 ];
 
+// Currency symbols and minimum budgets
+const currencyConfig: Record<string, { symbol: string; minBudget: number }> = {
+  BRL: { symbol: 'R$', minBudget: 6 },
+  USD: { symbol: '$', minBudget: 1 },
+  EUR: { symbol: '€', minBudget: 1 },
+  GBP: { symbol: '£', minBudget: 1 },
+};
+
+interface AdAccountData {
+  id: string;
+  currency: string | null;
+  name: string;
+}
+
 export function Step3Adsets() {
   const { config, updateConfig, getTotalCampaigns, getTotalAdsets, getTotalAds } = useCampaignStore();
   const creativesCount = config.selectedCreatives.length || 1;
+  const [selectedAccountsData, setSelectedAccountsData] = useState<AdAccountData[]>([]);
+
+  // Fetch selected accounts data for currency info
+  useEffect(() => {
+    const fetchAccountsData = async () => {
+      if (config.selectedAccounts.length === 0) {
+        setSelectedAccountsData([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('facebook_ad_accounts')
+        .select('id, currency, name')
+        .in('id', config.selectedAccounts);
+
+      if (!error && data) {
+        setSelectedAccountsData(data);
+      }
+    };
+
+    fetchAccountsData();
+  }, [config.selectedAccounts]);
+
+  // Get unique currencies from selected accounts
+  const selectedCurrencies = useMemo(() => {
+    const currencies = [...new Set(selectedAccountsData.map(a => a.currency || 'BRL'))];
+    return currencies;
+  }, [selectedAccountsData]);
+
+  // Get primary currency
+  const primaryCurrency = selectedCurrencies[0] || 'BRL';
+  const currencyInfo = currencyConfig[primaryCurrency] || { symbol: primaryCurrency, minBudget: 1 };
+
+  // Check if there are mixed currencies
+  const hasMixedCurrencies = selectedCurrencies.length > 1;
 
   // Get the effective values based on distribution and creative count
   const getEffectiveValue = (field: 'campaigns' | 'adsets' | 'ads') => {
@@ -76,16 +128,13 @@ export function Step3Adsets() {
     return false;
   };
 
-  const removeLocation = (location: string) => {
-    updateConfig({
-      locations: config.locations.filter((l) => l !== location),
-    });
-  };
-
-  const removeLanguage = (language: string) => {
-    updateConfig({
-      languages: config.languages.filter((l) => l !== language),
-    });
+  // Helper to get gender display
+  const getGenderDisplay = () => {
+    if (config.genders.length === 0) return 'Todos';
+    if (config.genders.includes(1) && config.genders.includes(2)) return 'Todos';
+    if (config.genders.includes(1)) return 'Masculino';
+    if (config.genders.includes(2)) return 'Feminino';
+    return 'Todos';
   };
 
   return (
@@ -253,36 +302,121 @@ export function Step3Adsets() {
       {!config.useCBO && (
         <section className="space-y-4">
           <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Orçamento por Conjunto
+            Orçamento por Conjunto (ABO)
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Orçamento/Conjunto (R$)</Label>
-              <Input
-                type="number"
-                value={config.adsetBudget}
-                onChange={(e) => updateConfig({ adsetBudget: parseFloat(e.target.value) || 0 })}
-                min={6}
-                className="bg-secondary/50"
-              />
+          {/* Mixed currencies - individual inputs per currency */}
+          {hasMixedCurrencies ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-500">
+                    Contas com moedas diferentes selecionadas
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Defina o orçamento por conjunto para cada moeda separadamente.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {selectedCurrencies.map((currency) => {
+                  const currInfo = currencyConfig[currency] || { symbol: currency, minBudget: 1 };
+                  const accountsInCurrency = selectedAccountsData.filter(a => (a.currency || 'BRL') === currency);
+                  const budgetValue = config.adsetBudgetByCurrency[currency] ?? config.adsetBudget;
+                  
+                  return (
+                    <div key={currency} className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        Orçamento/Conjunto ({currInfo.symbol})
+                        <Badge variant="outline" className="text-xs">
+                          {accountsInCurrency.length} conta(s)
+                        </Badge>
+                      </Label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                          {currInfo.symbol}
+                        </span>
+                        <Input
+                          type="number"
+                          value={budgetValue}
+                          onChange={(e) => {
+                            const newValue = parseFloat(e.target.value) || 0;
+                            updateConfig({ 
+                              adsetBudgetByCurrency: {
+                                ...config.adsetBudgetByCurrency,
+                                [currency]: newValue
+                              }
+                            });
+                          }}
+                          min={currInfo.minBudget}
+                          step={1}
+                          className="bg-secondary/50 pl-10"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Mínimo: {currInfo.symbol} {currInfo.minBudget.toFixed(2)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Período</Label>
+                <Select
+                  value={config.adsetBudgetPeriod}
+                  onValueChange={(value) => updateConfig({ adsetBudgetPeriod: value as 'daily' | 'lifetime' })}
+                >
+                  <SelectTrigger className="bg-secondary/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Diário</SelectItem>
+                    <SelectItem value="lifetime">Vitalício</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Período</Label>
-              <Select
-                value={config.adsetBudgetPeriod}
-                onValueChange={(value) => updateConfig({ adsetBudgetPeriod: value as 'daily' | 'lifetime' })}
-              >
-                <SelectTrigger className="bg-secondary/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="daily">Diário</SelectItem>
-                  <SelectItem value="lifetime">Vitalício</SelectItem>
-                </SelectContent>
-              </Select>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Orçamento/Conjunto ({currencyInfo.symbol})</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    {currencyInfo.symbol}
+                  </span>
+                  <Input
+                    type="number"
+                    value={config.adsetBudget}
+                    onChange={(e) => updateConfig({ adsetBudget: parseFloat(e.target.value) || 0 })}
+                    min={currencyInfo.minBudget}
+                    className="bg-secondary/50 pl-10"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Mínimo: {currencyInfo.symbol} {currencyInfo.minBudget.toFixed(2)}
+                  {config.selectedAccounts.length === 0 && ' · Selecione uma conta para ver a moeda correta'}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Período</Label>
+                <Select
+                  value={config.adsetBudgetPeriod}
+                  onValueChange={(value) => updateConfig({ adsetBudgetPeriod: value as 'daily' | 'lifetime' })}
+                >
+                  <SelectTrigger className="bg-secondary/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Diário</SelectItem>
+                    <SelectItem value="lifetime">Vitalício</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border">
             <div>
@@ -358,11 +492,14 @@ export function Step3Adsets() {
         </p>
       </section>
 
-      {/* Audience Section */}
+      {/* Audience Section - API Compatible */}
       <section className="space-y-4">
-        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          Público-Alvo
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            Público-Alvo
+          </h3>
+          <Badge variant="outline" className="text-xs">API Facebook</Badge>
+        </div>
 
         {/* Advantage+ Toggle */}
         <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg border border-primary/20">
@@ -381,32 +518,27 @@ export function Step3Adsets() {
           />
         </div>
 
-        {/* Locations */}
+        {/* Geo Locations - API compatible */}
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
-            <MapPin className="w-4 h-4" />
             Localizações
+            <Badge variant="outline" className="text-xs font-mono">geo_locations.countries</Badge>
           </Label>
-          <div className="flex flex-wrap gap-2 p-3 bg-secondary/50 rounded-lg border border-border min-h-[48px]">
-            {config.locations.map((location) => (
-              <Badge key={location} variant="secondary" className="flex items-center gap-1">
-                🇧🇷 {location}
-                <button onClick={() => removeLocation(location)} className="ml-1 hover:text-destructive">
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            ))}
-            <Button variant="ghost" size="sm" className="h-6 text-xs text-primary">
-              <Plus className="w-3 h-3 mr-1" />
-              Adicionar
-            </Button>
-          </div>
+          <GeoLocationSelector
+            value={config.geoLocations.countries}
+            onChange={(countries) => updateConfig({ 
+              geoLocations: { ...config.geoLocations, countries } 
+            })}
+          />
         </div>
 
         {/* Age Range */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Idade Mínima</Label>
+            <Label className="flex items-center gap-2">
+              Idade Mínima
+              <Badge variant="outline" className="text-xs font-mono">age_min</Badge>
+            </Label>
             <Select
               value={config.ageMin.toString()}
               onValueChange={(value) => updateConfig({ ageMin: parseInt(value) })}
@@ -422,7 +554,10 @@ export function Step3Adsets() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Idade Máxima</Label>
+            <Label className="flex items-center gap-2">
+              Idade Máxima
+              <Badge variant="outline" className="text-xs font-mono">age_max</Badge>
+            </Label>
             <Select
               value={config.ageMax.toString()}
               onValueChange={(value) => updateConfig({ ageMax: parseInt(value) })}
@@ -443,52 +578,68 @@ export function Step3Adsets() {
           </div>
         </div>
 
-        {/* Gender */}
+        {/* Gender - API compatible */}
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Gênero
+            <Badge variant="outline" className="text-xs font-mono">genders</Badge>
           </Label>
           <div className="flex gap-2">
-            {(['all', 'male', 'female'] as const).map((gender) => (
+            {([
+              { value: [], label: 'Todos' },
+              { value: [1], label: 'Masculino' },
+              { value: [2], label: 'Feminino' },
+            ]).map((option) => (
               <Button
-                key={gender}
-                variant={config.gender === gender ? 'default' : 'outline'}
+                key={option.label}
+                variant={JSON.stringify(config.genders) === JSON.stringify(option.value) ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => updateConfig({ gender })}
-                className={config.gender === gender ? 'glow-primary' : ''}
+                onClick={() => updateConfig({ genders: option.value })}
+                className={JSON.stringify(config.genders) === JSON.stringify(option.value) ? 'glow-primary' : ''}
               >
-                {gender === 'all' ? 'Todos' : gender === 'male' ? 'Masculino' : 'Feminino'}
+                {option.label}
               </Button>
             ))}
           </div>
+          <p className="text-xs text-muted-foreground">
+            API: [] = Todos, [1] = Masculino, [2] = Feminino
+          </p>
         </div>
 
-        {/* Languages */}
+        {/* Locales - API compatible */}
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
-            <Globe className="w-4 h-4" />
             Idiomas
+            <Badge variant="outline" className="text-xs font-mono">locales</Badge>
           </Label>
-          <div className="flex flex-wrap gap-2 p-3 bg-secondary/50 rounded-lg border border-border min-h-[48px]">
-            {config.languages.map((language) => (
-              <Badge key={language} variant="secondary" className="flex items-center gap-1">
-                {language}
-                <button onClick={() => removeLanguage(language)} className="ml-1 hover:text-destructive">
-                  <X className="w-3 h-3" />
-                </button>
-              </Badge>
-            ))}
-            <Button variant="ghost" size="sm" className="h-6 text-xs text-primary">
-              <Plus className="w-3 h-3 mr-1" />
-              Adicionar
-            </Button>
-          </div>
+          <LocaleSelector
+            value={config.locales}
+            onChange={(locales) => updateConfig({ locales })}
+          />
         </div>
 
         {/* Audience Summary */}
         <div className="p-3 bg-secondary/30 rounded-lg text-sm text-muted-foreground">
-          📍 {config.locations.length} local(is) · 👤 {config.ageMin}+ · 🔲 {config.gender === 'all' ? 'Todos' : config.gender === 'male' ? 'Masculino' : 'Feminino'} · 🌐 {config.languages.length} idioma(s)
+          📍 {config.geoLocations.countries.length} país(es) · 
+          👤 {config.ageMin}-{config.ageMax}+ · 
+          🔲 {getGenderDisplay()} · 
+          🌐 {config.locales.length} idioma(s)
+        </div>
+
+        {/* API Preview */}
+        <div className="p-4 bg-secondary/50 rounded-lg border border-border">
+          <Label className="text-xs text-muted-foreground mb-2 block">Preview da Targeting Spec (API)</Label>
+          <pre className="text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
+{JSON.stringify({
+  geo_locations: config.geoLocations,
+  age_min: config.ageMin,
+  age_max: config.advantagePlus ? undefined : config.ageMax,
+  genders: config.genders.length > 0 ? config.genders : undefined,
+  locales: config.locales.length > 0 ? config.locales : undefined,
+  targeting_optimization: config.advantagePlus ? 'expansion_all' : undefined,
+}, null, 2)}
+          </pre>
         </div>
       </section>
 
@@ -510,6 +661,34 @@ export function Step3Adsets() {
             onCheckedChange={(checked) => updateConfig({ autoPlacement: checked })}
           />
         </div>
+
+        {!config.autoPlacement && (
+          <div className="p-4 bg-secondary/50 rounded-lg border border-border space-y-3">
+            <Label className="text-sm">Plataformas</Label>
+            <div className="flex flex-wrap gap-2">
+              {(['facebook', 'instagram', 'messenger', 'audience_network'] as const).map((platform) => (
+                <Badge
+                  key={platform}
+                  variant={config.publisherPlatforms.includes(platform) ? 'default' : 'outline'}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    const isSelected = config.publisherPlatforms.includes(platform);
+                    updateConfig({
+                      publisherPlatforms: isSelected
+                        ? config.publisherPlatforms.filter(p => p !== platform)
+                        : [...config.publisherPlatforms, platform]
+                    });
+                  }}
+                >
+                  {platform === 'facebook' && '📘 Facebook'}
+                  {platform === 'instagram' && '📷 Instagram'}
+                  {platform === 'messenger' && '💬 Messenger'}
+                  {platform === 'audience_network' && '🌐 Audience Network'}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
