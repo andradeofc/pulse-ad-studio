@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { cn } from '@/lib/utils';
 import { NamingModal } from '../NamingModal';
+import { PixelSelector } from '../PixelSelector';
 
 const distributionOptions = [
   {
@@ -37,12 +38,6 @@ const distributionOptions = [
     description: 'Todos criativos como anúncios no mesmo conjunto',
     hint: 'Criativos = Anúncios por conjunto',
   },
-];
-
-// Mock pixels
-const mockPixels = [
-  { id: '1', name: 'Pixel Principal', language: 'PT-BR', bm: 'BM 01', date: '2024-01-15' },
-  { id: '2', name: 'Pixel Conversões', language: 'EN', bm: 'BM 02', date: '2024-01-20' },
 ];
 
 export function Step3Adsets() {
@@ -353,32 +348,14 @@ export function Step3Adsets() {
           <Badge variant="destructive" className="text-xs">Obrigatório</Badge>
         </div>
 
-        <div className="flex gap-2">
-          <Select
-            value={config.pixelId}
-            onValueChange={(value) => updateConfig({ pixelId: value })}
-          >
-            <SelectTrigger className="bg-secondary/50 flex-1">
-              <SelectValue placeholder="Selecione um pixel" />
-            </SelectTrigger>
-            <SelectContent>
-              {mockPixels.map((pixel) => (
-                <SelectItem key={pixel.id} value={pixel.id}>
-                  <div className="flex items-center gap-2">
-                    <span>{pixel.name}</span>
-                    <span className="text-muted-foreground">|</span>
-                    <span className="text-muted-foreground">{pixel.language}</span>
-                    <span className="text-muted-foreground">|</span>
-                    <span className="text-muted-foreground">{pixel.bm}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon">
-            <Plus className="w-4 h-4" />
-          </Button>
-        </div>
+        <PixelSelector
+          value={config.pixelId}
+          onChange={(pixelId) => updateConfig({ pixelId })}
+        />
+        
+        <p className="text-xs text-muted-foreground">
+          Busque pelo nome ou ID do pixel. Clique no botão de sincronizar para atualizar a lista do Facebook.
+        </p>
       </section>
 
       {/* Audience Section */}
