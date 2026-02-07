@@ -441,14 +441,31 @@ Deno.serve(async (req) => {
     const accessToken = profile.access_token;
 
     // Get page ID for ads
+    // Note: config.selectedPages may contain either the database UUID or the Facebook page_id
+    // We try to find by database id first, then fallback to page_id
     let pageId = '';
     if (config.selectedPages && config.selectedPages.length > 0) {
-      const { data: page } = await supabase
+      const selectedPageValue = config.selectedPages[0];
+      
+      // First try to find by database UUID
+      let { data: page } = await supabase
         .from('facebook_pages')
         .select('page_id')
-        .eq('id', config.selectedPages[0])
+        .eq('id', selectedPageValue)
         .single();
+      
+      // If not found, try by Facebook page_id directly
+      if (!page) {
+        const { data: pageByFbId } = await supabase
+          .from('facebook_pages')
+          .select('page_id')
+          .eq('page_id', selectedPageValue)
+          .single();
+        page = pageByFbId;
+      }
+      
       pageId = page?.page_id || '';
+      console.log(`[process-jobs] Resolved pageId: ${pageId} from selectedPages: ${selectedPageValue}`);
     }
 
     // Process items in order: campaigns → adsets → ads
