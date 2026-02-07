@@ -169,20 +169,29 @@ async function createFacebookAdset(
   }
 
   // Promoted object (combine Pixel + Catalog when available)
+  // For OUTCOME_SALES with OFFSITE_CONVERSIONS, pixel_id is REQUIRED to track conversions.
   const promotedObject: Record<string, any> = {};
-  if (config.pixelId) {
-    promotedObject.pixel_id = config.pixelId;
-    promotedObject.custom_event_type = 'PURCHASE';
+
+  // Validation: OFFSITE_CONVERSIONS requires a Pixel
+  if (!config.pixelId) {
+    console.error('[process-jobs] Missing pixelId for OFFSITE_CONVERSIONS optimization');
+    return {
+      success: false,
+      error: 'Para o objetivo VENDAS com otimização de conversões no site, é necessário selecionar um Pixel. Por favor, edite a campanha e selecione um Pixel no Step 3 (Conjuntos).',
+    };
   }
+
+  promotedObject.pixel_id = config.pixelId;
+  promotedObject.custom_event_type = 'PURCHASE';
+
   if (config.catalogId) {
     promotedObject.product_catalog_id = config.catalogId;
   }
   if (config.productSetId) {
     promotedObject.product_set_id = config.productSetId;
   }
-  if (Object.keys(promotedObject).length > 0) {
-    params.promoted_object = JSON.stringify(promotedObject);
-  }
+
+  params.promoted_object = JSON.stringify(promotedObject);
 
   const logParams = { ...params, access_token: '[REDACTED]' };
   console.log(`[process-jobs] Adset params:`, JSON.stringify(logParams, null, 2));
