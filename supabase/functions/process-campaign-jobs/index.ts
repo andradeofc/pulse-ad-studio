@@ -184,11 +184,14 @@ async function createFacebookAdset(
   promotedObject.pixel_id = config.pixelId;
   promotedObject.custom_event_type = 'PURCHASE';
 
-  if (config.catalogId) {
-    promotedObject.product_catalog_id = config.catalogId;
-  }
-  if (config.productSetId) {
-    promotedObject.product_set_id = config.productSetId;
+  // Only include catalog fields when useCatalog is explicitly enabled (DPA mode)
+  if (config.useCatalog) {
+    if (config.catalogId) {
+      promotedObject.product_catalog_id = config.catalogId;
+    }
+    if (config.productSetId) {
+      promotedObject.product_set_id = config.productSetId;
+    }
   }
 
   params.promoted_object = JSON.stringify(promotedObject);
