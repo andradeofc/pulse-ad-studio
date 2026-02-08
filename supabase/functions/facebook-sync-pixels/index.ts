@@ -56,10 +56,10 @@ Deno.serve(async (req) => {
 
     console.log(`Syncing pixels for user: ${user.id}`);
 
-    // Get all Facebook profiles for this user
+    // Get all Facebook profiles for this user (without access_token - it's now stored securely)
     const { data: profiles, error: profilesError } = await supabase
       .from("facebook_profiles")
-      .select("id, access_token, proxy_host, proxy_port, proxy_username, proxy_password")
+      .select("id, proxy_host, proxy_port, proxy_username, proxy_password")
       .eq("user_id", user.id)
       .eq("status", "active");
 
@@ -77,6 +77,10 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Found ${profiles.length} active profiles`);
+
+    // Create service role client to fetch credentials securely
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
 
     let totalPixels = 0;
 
@@ -102,10 +106,35 @@ Deno.serve(async (req) => {
 
         console.log(`Found ${adAccounts.length} ad accounts for profile ${profile.id}`);
 
+        // Get access token securely
+        const { data: credentials } = await supabaseService
+          .from("facebook_credentials")
+          .select("access_token")
+          .eq("profile_id", profile.id)
+          .single();
+
+        // Fallback to facebook_profiles.access_token if credentials not found
+        let accessToken: string | null = null;
+        if (credentials?.access_token) {
+          accessToken = credentials.access_token;
+        } else {
+          const { data: fallbackProfile } = await supabaseService
+            .from("facebook_profiles")
+            .select("access_token")
+            .eq("id", profile.id)
+            .single();
+          accessToken = fallbackProfile?.access_token || null;
+        }
+
+        if (!accessToken) {
+          console.warn(`No access token found for profile ${profile.id}`);
+          continue;
+        }
+
         // Fetch pixels from each ad account
         for (const account of adAccounts) {
           try {
-            const pixelsUrl = `https://graph.facebook.com/v21.0/act_${account.account_id}/adspixels?fields=id,name&access_token=${profile.access_token}`;
+            const pixelsUrl = `https://graph.facebook.com/v21.0/act_${account.account_id}/adspixels?fields=id,name&access_token=${accessToken}`;
             
             console.log(`Fetching pixels for account ${account.account_id}`);
             

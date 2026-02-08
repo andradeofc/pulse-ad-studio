@@ -190,21 +190,34 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Get access token
-      const { data: profile } = await supabase
-        .from('facebook_profiles')
+      // Get access token securely
+      const { data: credentials } = await supabase
+        .from('facebook_credentials')
         .select('access_token')
-        .eq('id', account.profile_id)
+        .eq('profile_id', account.profile_id)
         .single();
 
-      if (!profile?.access_token) {
+      // Fallback to facebook_profiles.access_token if credentials not found
+      let accessToken: string | null = null;
+      if (credentials?.access_token) {
+        accessToken = credentials.access_token;
+      } else {
+        const { data: fallbackProfile } = await supabase
+          .from('facebook_profiles')
+          .select('access_token')
+          .eq('id', account.profile_id)
+          .single();
+        accessToken = fallbackProfile?.access_token || null;
+      }
+
+      if (!accessToken) {
         console.log(`[queue-processor] Job ${job.id} no access token`);
         results.push({ jobId: job.id, status: 'skipped', message: 'No access token' });
         continue;
       }
 
       // Check rate limit before processing
-      const rateCheck = await checkAccountRateLimit(profile.access_token, account.account_id);
+      const rateCheck = await checkAccountRateLimit(accessToken, account.account_id);
       
       // Update tracking
       await updateRateLimitTracking(supabase, job.user_id, account.account_id, rateCheck.usagePercent);

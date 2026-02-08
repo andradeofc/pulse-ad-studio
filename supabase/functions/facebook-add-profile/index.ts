@@ -665,6 +665,10 @@ Deno.serve(async (req) => {
 
     let profile;
 
+    // Create service role client for secure credential storage
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
+
     if (existingProfile) {
       // Update existing profile
       console.log("Updating existing profile:", existingProfile.id);
@@ -674,7 +678,7 @@ Deno.serve(async (req) => {
           name: userData.name,
           email: userData.email || null,
           avatar_url: userData.picture?.data?.url || null,
-          access_token: accessToken,
+          access_token: accessToken, // Keep for backward compatibility during migration
           status: "active",
           permissions,
           token_expires_at: expiresAt,
@@ -689,6 +693,22 @@ Deno.serve(async (req) => {
         throw error;
       }
       profile = data;
+
+      // Store token securely in facebook_credentials (service role bypasses RLS)
+      const { error: credError } = await supabaseService
+        .from("facebook_credentials")
+        .upsert({
+          profile_id: existingProfile.id,
+          access_token: accessToken,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "profile_id" });
+
+      if (credError) {
+        console.error("Error storing secure credentials:", credError);
+        // Don't throw - backward compatible via facebook_profiles.access_token
+      } else {
+        console.log("Secure credentials stored successfully");
+      }
     } else {
       // Create new profile
       console.log("Creating new profile for user:", userId);
@@ -700,7 +720,7 @@ Deno.serve(async (req) => {
           name: userData.name,
           email: userData.email || null,
           avatar_url: userData.picture?.data?.url || null,
-          access_token: accessToken,
+          access_token: accessToken, // Keep for backward compatibility during migration
           status: "active",
           permissions,
           token_expires_at: expiresAt,
@@ -714,6 +734,21 @@ Deno.serve(async (req) => {
         throw error;
       }
       profile = data;
+
+      // Store token securely in facebook_credentials (service role bypasses RLS)
+      const { error: credError } = await supabaseService
+        .from("facebook_credentials")
+        .insert({
+          profile_id: profile.id,
+          access_token: accessToken,
+        });
+
+      if (credError) {
+        console.error("Error storing secure credentials:", credError);
+        // Don't throw - backward compatible via facebook_profiles.access_token
+      } else {
+        console.log("Secure credentials stored successfully");
+      }
     }
 
     console.log("Profile saved successfully:", profile.id);

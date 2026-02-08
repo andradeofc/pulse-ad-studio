@@ -910,14 +910,32 @@ Deno.serve(async (req) => {
     // Get page info (shared across all accounts, resolved once)
     // First we need to get access token from first account's profile for page resolution
     const firstAccountProfileId = allAdAccounts[0].profile_id;
-    const { data: firstProfile } = await supabase
-      .from('facebook_profiles')
+    
+    // Get access token securely from facebook_credentials (service role has access)
+    const { data: credentials } = await supabase
+      .from('facebook_credentials')
       .select('access_token')
-      .eq('id', firstAccountProfileId)
-      .eq('user_id', user.id)
+      .eq('profile_id', firstAccountProfileId)
       .single();
 
-    const firstAccessToken = firstProfile?.access_token;
+    // Fallback to facebook_profiles.access_token if credentials not found (migration period)
+    let firstAccessToken: string | null = null;
+    if (credentials?.access_token) {
+      firstAccessToken = credentials.access_token;
+      console.log(`[process-jobs] Using secure credentials for profile ${firstAccountProfileId}`);
+    } else {
+      // Fallback during migration - need to check profile ownership
+      const { data: fallbackProfile } = await supabase
+        .from('facebook_profiles')
+        .select('access_token')
+        .eq('id', firstAccountProfileId)
+        .single();
+      
+      if (fallbackProfile?.access_token) {
+        firstAccessToken = fallbackProfile.access_token;
+        console.warn(`[process-jobs] Using fallback token for profile ${firstAccountProfileId}`);
+      }
+    }
 
     // Get page ID (and Page access token) for ads
     // Note: config.selectedPages may contain either the database UUID or the Facebook page_id
@@ -988,33 +1006,49 @@ Deno.serve(async (req) => {
       const currentAccount = allAdAccounts[accountIndex];
       console.log(`[process-jobs] Processing account ${accountIndex + 1}/${accountsToProcess}: ${currentAccount.name} (${currentAccount.account_id})`);
 
-      // Get access token for this account's profile
-      const { data: profile, error: profError } = await supabase
-        .from('facebook_profiles')
+      // Get access token securely from facebook_credentials (service role has access)
+      const { data: credentials } = await supabase
+        .from('facebook_credentials')
         .select('access_token')
-        .eq('id', currentAccount.profile_id)
-        .eq('user_id', user.id)
+        .eq('profile_id', currentAccount.profile_id)
         .single();
 
-      if (profError || !profile) {
-        console.error(`[process-jobs] Profile not found for account ${currentAccount.name}`);
+      // Fallback to facebook_profiles.access_token if credentials not found (migration period)
+      let accessToken: string | null = null;
+      if (credentials?.access_token) {
+        accessToken = credentials.access_token;
+        console.log(`[process-jobs] Using secure credentials for account ${currentAccount.name}`);
+      } else {
+        // Fallback during migration
+        const { data: fallbackProfile } = await supabase
+          .from('facebook_profiles')
+          .select('access_token')
+          .eq('id', currentAccount.profile_id)
+          .single();
+        
+        if (fallbackProfile?.access_token) {
+          accessToken = fallbackProfile.access_token;
+          console.warn(`[process-jobs] Using fallback token for account ${currentAccount.name}`);
+        }
+      }
+
+      if (!accessToken) {
+        console.error(`[process-jobs] No access token found for account ${currentAccount.name}`);
         // Mark all items for this account as failed
         for (const item of items) {
           await supabase
             .from('campaign_job_items')
             .update({ 
               status: 'failed', 
-              error_message: `Profile not found for account ${currentAccount.name}` 
+              error_message: `No access token found for account ${currentAccount.name}` 
             })
             .eq('id', item.id);
           processedItems++;
         }
         hasError = true;
-        lastError = `Profile not found for account ${currentAccount.name}`;
+        lastError = `No access token found for account ${currentAccount.name}`;
         continue;
       }
-
-      const accessToken = profile.access_token;
 
       // Map of local ID to Facebook ID (per account)
       const idMap = new Map<string, string>();

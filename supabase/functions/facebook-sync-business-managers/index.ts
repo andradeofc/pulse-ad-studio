@@ -52,11 +52,12 @@ Deno.serve(async (req) => {
     }
 
     // If no profileId, sync all profiles for user
+    // Get profiles (without access_token - it's now stored securely)
     let profiles;
     if (profileId) {
       const { data, error } = await supabase
         .from('facebook_profiles')
-        .select('id, access_token')
+        .select('id')
         .eq('id', profileId)
         .eq('user_id', user.id)
         .eq('status', 'active');
@@ -66,7 +67,7 @@ Deno.serve(async (req) => {
     } else {
       const { data, error } = await supabase
         .from('facebook_profiles')
-        .select('id, access_token')
+        .select('id')
         .eq('user_id', user.id)
         .eq('status', 'active');
       
@@ -90,7 +91,30 @@ Deno.serve(async (req) => {
     for (const profile of profiles) {
       console.log(`[sync-business-managers] Fetching BMs for profile ${profile.id}`);
       
-      const accessToken = profile.access_token;
+      // Get access token securely (service role already in use)
+      const { data: credentials } = await supabase
+        .from('facebook_credentials')
+        .select('access_token')
+        .eq('profile_id', profile.id)
+        .single();
+
+      // Fallback to facebook_profiles.access_token if credentials not found
+      let accessToken: string | null = null;
+      if (credentials?.access_token) {
+        accessToken = credentials.access_token;
+      } else {
+        const { data: fallbackProfile } = await supabase
+          .from('facebook_profiles')
+          .select('access_token')
+          .eq('id', profile.id)
+          .single();
+        accessToken = fallbackProfile?.access_token || null;
+      }
+
+      if (!accessToken) {
+        console.warn(`[sync-business-managers] No access token found for profile ${profile.id}`);
+        continue;
+      }
       
       // Fetch all businesses the user has access to via /me/businesses
       const businessesUrl = `https://graph.facebook.com/v21.0/me/businesses?fields=id,name,primary_page,timezone_id,verification_status&limit=500&access_token=${accessToken}`;

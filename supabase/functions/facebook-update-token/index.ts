@@ -678,7 +678,7 @@ Deno.serve(async (req) => {
     const { error: updateError } = await supabase
       .from("facebook_profiles")
       .update({
-        access_token: accessToken,
+        access_token: accessToken, // Keep for backward compatibility during migration
         token_expires_at: tokenExpiresAt,
         permissions: permissions,
         status: "active",
@@ -689,6 +689,25 @@ Deno.serve(async (req) => {
 
     if (updateError) {
       throw updateError;
+    }
+
+    // Store token securely in facebook_credentials (service role bypasses RLS)
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
+    
+    const { error: credError } = await supabaseService
+      .from("facebook_credentials")
+      .upsert({
+        profile_id: profileId,
+        access_token: accessToken,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "profile_id" });
+
+    if (credError) {
+      console.error("Error storing secure credentials:", credError);
+      // Don't throw - backward compatible via facebook_profiles.access_token
+    } else {
+      console.log("Secure credentials stored successfully");
     }
 
     console.log("Token updated, starting staged background sync...");
