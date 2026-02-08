@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Check, Loader2, AlertTriangle, AlertCircle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useCampaignStore } from '@/stores/campaignStore';
@@ -132,12 +133,10 @@ export default function CreateCampaignPage() {
     
     try {
       // Fetch account details for all selected accounts
-      const { data: accountsData } = await import('@/integrations/supabase/client').then(m => 
-        m.supabase
-          .from('facebook_ad_accounts')
-          .select('id, account_id, name')
-          .in('id', config.selectedAccounts)
-      );
+      const { data: accountsData } = await supabase
+        .from('facebook_ad_accounts')
+        .select('id, account_id, name')
+        .in('id', config.selectedAccounts);
       
       const accountsMap = new Map(
         (accountsData || []).map(acc => [acc.id, { accountId: acc.account_id, accountName: acc.name }])
