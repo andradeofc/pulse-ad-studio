@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { useThemeInitializer } from "@/hooks/useTheme";
 
 // Layouts
 import { PublicLayout } from "@/components/layout/PublicLayout";
@@ -35,6 +36,9 @@ const queryClient = new QueryClient();
 
 const App = () => {
   const initialize = useAuthStore((state) => state.initialize);
+  
+  // Initialize theme from localStorage
+  useThemeInitializer();
 
   useEffect(() => {
     initialize();
