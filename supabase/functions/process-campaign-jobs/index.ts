@@ -1864,6 +1864,27 @@ Deno.serve(async (req) => {
 
       const currentAccountId = normalizeAccountId(currentAccount.account_id);
 
+      // ============= CRITICAL DEBUG: FILTER DIAGNOSIS =============
+      console.log(`\n[DEBUG-FILTER] ==========================================`);
+      console.log(`[DEBUG-FILTER] Account: ${currentAccount.account_id}`);
+      console.log(`[DEBUG-FILTER] currentAccountId normalized: "${currentAccountId}"`);
+      console.log(`[DEBUG-FILTER] Total campaigns in pool: ${campaigns.length}`);
+      console.log(`[DEBUG-FILTER] Total adsets in pool: ${adsets.length}`);
+      console.log(`[DEBUG-FILTER] Total ads in pool: ${ads.length}`);
+      console.log(`[DEBUG-FILTER] itemsHaveAccountId: ${itemsHaveAccountId}`);
+
+      // Log ALL campaign accountIds to diagnose filter mismatch
+      const campaignAccountIds = campaigns.map(c => ({
+        id: c.id.substring(0, 8),
+        rawAccountId: (c.config as any)?.accountId,
+        normalized: getItemAccountId(c),
+        matches: getItemAccountId(c) === currentAccountId
+      }));
+      console.log(`[DEBUG-FILTER] Campaign accountIds breakdown:`);
+      campaignAccountIds.forEach(ca => {
+        console.log(`  - ${ca.id}: raw="${ca.rawAccountId}" norm="${ca.normalized}" matches=${ca.matches}`);
+      });
+
       const campaignsForAccount =
         itemsHaveAccountId && currentAccountId
           ? campaigns.filter((c) => getItemAccountId(c) === currentAccountId)
@@ -1878,6 +1899,12 @@ Deno.serve(async (req) => {
         itemsHaveAccountId && currentAccountId
           ? ads.filter((a) => getItemAccountId(a) === currentAccountId)
           : ads;
+
+      console.log(`[DEBUG-FILTER] AFTER FILTER:`);
+      console.log(`[DEBUG-FILTER] campaignsForAccount count: ${campaignsForAccount.length}`);
+      console.log(`[DEBUG-FILTER] adsetsForAccount count: ${adsetsForAccount.length}`);
+      console.log(`[DEBUG-FILTER] adsForAccount count: ${adsForAccount.length}`);
+      console.log(`[DEBUG-FILTER] ==========================================\n`);
 
       // ============= DETAILED LOGGING FOR DEBUGGING =============
       console.log(`\n========================================`);
