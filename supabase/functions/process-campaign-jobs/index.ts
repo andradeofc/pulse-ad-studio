@@ -1618,9 +1618,35 @@ Deno.serve(async (req) => {
     const adsets = items.filter((i) => i.item_type === 'adset' && i.status === 'pending' && !i.facebook_id);
     const ads = items.filter((i) => i.item_type === 'ad' && i.status === 'pending' && !i.facebook_id);
     
-    // Also collect already completed items to populate ID maps for parent references
-    const completedCampaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'completed' && i.facebook_id);
-    const completedAdsets = items.filter((i) => i.item_type === 'adset' && i.status === 'completed' && i.facebook_id);
+    // CRITICAL: Collect items with facebook_id regardless of status (completed OR failed with facebook_id)
+    // This handles the case where an item was created successfully but marked as failed due to timeout
+    // We need their facebook_ids to properly reference them as parents for child items
+    const completedCampaigns = items.filter((i) => i.item_type === 'campaign' && i.facebook_id);
+    const completedAdsets = items.filter((i) => i.item_type === 'adset' && i.facebook_id);
+    
+    // Fix incorrectly failed items that have facebook_id - they were actually created successfully
+    const incorrectlyFailedCampaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'failed' && i.facebook_id);
+    const incorrectlyFailedAdsets = items.filter((i) => i.item_type === 'adset' && i.status === 'failed' && i.facebook_id);
+    
+    if (incorrectlyFailedCampaigns.length > 0 || incorrectlyFailedAdsets.length > 0) {
+      console.log(`[process-jobs] Fixing ${incorrectlyFailedCampaigns.length} campaigns and ${incorrectlyFailedAdsets.length} adsets incorrectly marked as failed`);
+      
+      // Fix campaigns
+      for (const c of incorrectlyFailedCampaigns) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'completed', error_message: null })
+          .eq('id', c.id);
+      }
+      
+      // Fix adsets
+      for (const a of incorrectlyFailedAdsets) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'completed', error_message: null })
+          .eq('id', a.id);
+      }
+    }
 
     const normalizeAccountId = (value: unknown): string | null => {
       if (typeof value !== 'string') return null;
