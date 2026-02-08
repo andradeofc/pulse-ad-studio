@@ -741,46 +741,53 @@ Deno.serve(async (req) => {
     // Get page ID (and Page access token) for ads
     // Note: config.selectedPages may contain either the database UUID or the Facebook page_id
     // We try to find by database id first, then fallback to page_id
-    let pageId = '';
-    let pageAccessTokenFromDb: string | null = null;
+    // For Anti-Spy mode, we store all resolved pages for round-robin distribution
+    const resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null }> = [];
 
     if (config.selectedPages && config.selectedPages.length > 0) {
-      const selectedPageValue = config.selectedPages[0];
-
-      // First try to find by database UUID
-      let { data: page } = await supabase
-        .from('facebook_pages')
-        .select('page_id, access_token')
-        .eq('id', selectedPageValue)
-        .single();
-
-      // If not found, try by Facebook page_id directly
-      if (!page) {
-        const { data: pageByFbId } = await supabase
+      for (const selectedPageValue of config.selectedPages) {
+        // First try to find by database UUID
+        let { data: page } = await supabase
           .from('facebook_pages')
           .select('page_id, access_token')
-          .eq('page_id', selectedPageValue)
+          .eq('id', selectedPageValue)
           .single();
-        page = pageByFbId;
-      }
 
-      pageId = page?.page_id || '';
-      pageAccessTokenFromDb = page?.access_token || null;
-      console.log(`[process-jobs] Resolved pageId: ${pageId} from selectedPages: ${selectedPageValue}`);
+        // If not found, try by Facebook page_id directly
+        if (!page) {
+          const { data: pageByFbId } = await supabase
+            .from('facebook_pages')
+            .select('page_id, access_token')
+            .eq('page_id', selectedPageValue)
+            .single();
+          page = pageByFbId;
+        }
+
+        if (page?.page_id) {
+          const instagramActorId = await resolveInstagramActorIdForPage({
+            userAccessToken: accessToken,
+            pageId: page.page_id,
+            pageAccessTokenFromDb: page.access_token || null,
+          });
+          
+          resolvedPages.push({
+            pageId: page.page_id,
+            accessToken: page.access_token || null,
+            instagramActorId,
+          });
+          console.log(`[process-jobs] Resolved page: ${page.page_id}, Instagram: ${instagramActorId || 'none'}`);
+        }
+      }
     }
 
-    const instagramUserIdForJob = pageId
-      ? await resolveInstagramActorIdForPage({
-          userAccessToken: accessToken,
-          pageId,
-          pageAccessTokenFromDb,
-        })
-      : null;
+    // Fallback for backwards compatibility: use first page if available
+    const defaultPageId = resolvedPages.length > 0 ? resolvedPages[0].pageId : '';
+    const defaultInstagramUserId = resolvedPages.length > 0 ? resolvedPages[0].instagramActorId : null;
 
-    // We do NOT force placements. If Meta requires an Instagram identity and we can't resolve it,
-    // the creative creation will fail and the error will be reported back to the job.
-    if (!instagramUserIdForJob) {
-      console.warn(`[process-jobs] No Instagram user id resolved for page ${pageId}.`);
+    if (resolvedPages.length === 0) {
+      console.warn(`[process-jobs] No pages resolved from selectedPages.`);
+    } else if (config.antiSpyEnabled && resolvedPages.length > 1) {
+      console.log(`[process-jobs] Anti-Spy enabled with ${resolvedPages.length} pages for round-robin distribution`);
     }
 
     // Process items in order: campaigns → adsets → ads
@@ -870,7 +877,8 @@ Deno.serve(async (req) => {
       await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
     }
 
-    // Process ads
+    // Process ads with Anti-Spy round-robin page distribution
+    let adIndex = 0;
     for (const ad of ads) {
       const parentFbId = ad.parent_id ? idMap.get(ad.parent_id) : null;
 
@@ -884,7 +892,20 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      if (!pageId) {
+      // Anti-Spy: distribute pages round-robin across ads
+      let currentPageId = defaultPageId;
+      let currentInstagramUserId = defaultInstagramUserId;
+      
+      if (config.antiSpyEnabled && resolvedPages.length > 1) {
+        // Round-robin: each ad gets a different page
+        const pageIndex = adIndex % resolvedPages.length;
+        const selectedPage = resolvedPages[pageIndex];
+        currentPageId = selectedPage.pageId;
+        currentInstagramUserId = selectedPage.instagramActorId;
+        console.log(`[process-jobs] Anti-Spy: Ad ${adIndex + 1} using page ${currentPageId} (index ${pageIndex})`);
+      }
+
+      if (!currentPageId) {
         await supabase
           .from('campaign_job_items')
           .update({ status: 'failed', error_message: 'No page selected for ad' })
@@ -892,17 +913,18 @@ Deno.serve(async (req) => {
         processedItems++;
         hasError = true;
         lastError = 'No page selected';
+        adIndex++;
         continue;
       }
 
-      console.log(`[process-jobs] Creating ad: ${ad.name}`);
+      console.log(`[process-jobs] Creating ad: ${ad.name} with page: ${currentPageId}`);
 
       await supabase
         .from('campaign_job_items')
         .update({ status: 'processing' })
         .eq('id', ad.id);
 
-      const result = await createFacebookAd(accessToken, adAccount.account_id, parentFbId, config, ad.name, pageId, instagramUserIdForJob);
+      const result = await createFacebookAd(accessToken, adAccount.account_id, parentFbId, config, ad.name, currentPageId, currentInstagramUserId);
 
       if (result.success && result.id) {
         idMap.set(ad.id, result.id);
@@ -918,6 +940,8 @@ Deno.serve(async (req) => {
           .update({ status: 'failed', error_message: result.error })
           .eq('id', ad.id);
       }
+
+      adIndex++;
 
       processedItems++;
       const progress = Math.round((processedItems / totalItems) * 100);
