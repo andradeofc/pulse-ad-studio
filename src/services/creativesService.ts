@@ -204,6 +204,21 @@ export async function fetchCreatives(): Promise<CreativeMetadata[]> {
 }
 
 /**
+ * Update a creative's name
+ */
+export async function renameCreative(id: string, newName: string): Promise<CreativeMetadata> {
+  const { data, error } = await supabase
+    .from('creatives')
+    .update({ name: newName })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as CreativeMetadata;
+}
+
+/**
  * Delete a creative
  */
 export async function deleteCreative(id: string, filePath: string): Promise<void> {
