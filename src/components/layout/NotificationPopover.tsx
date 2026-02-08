@@ -1,4 +1,4 @@
-import { Bell, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
+import { Bell, AlertTriangle, CheckCircle2, Info, Megaphone } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -7,34 +7,54 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useQuery } from '@tanstack/react-query';
+import { Separator } from '@/components/ui/separator';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { differenceInDays, parseISO, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useAuthStore } from '@/stores/authStore';
 
-interface Notification {
+interface SystemNotification {
   id: string;
-  type: 'warning' | 'error' | 'info';
+  type: 'warning' | 'error' | 'info' | 'success';
+  title?: string;
   message: string;
   action: string;
   href: string;
   createdAt?: Date;
+  source: 'system';
 }
+
+interface AdminNotification {
+  id: string;
+  type: 'warning' | 'error' | 'info' | 'success' | 'urgent';
+  title: string;
+  message: string;
+  createdAt: Date;
+  source: 'admin';
+  read: boolean;
+}
+
+type Notification = SystemNotification | AdminNotification;
 
 export function NotificationPopover() {
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
 
-  const { data: notifications = [] } = useQuery({
-    queryKey: ['header-notifications'],
+  // Fetch system notifications (tokens, jobs)
+  const { data: systemNotifications = [] } = useQuery({
+    queryKey: ['system-notifications'],
     queryFn: async () => {
-      const alertsList: Notification[] = [];
+      const alertsList: SystemNotification[] = [];
 
       // Check for expiring tokens
       const { data: profiles } = await supabase
         .from('facebook_profiles')
         .select('id, name, token_expires_at, status, updated_at')
-        .order('token_expires_at', { ascending: true });
+        .order('token_expires_at', { ascending: true })
+        .limit(10);
 
       if (profiles) {
         for (const profile of profiles) {
@@ -46,6 +66,7 @@ export function NotificationPopover() {
               action: 'Renovar',
               href: '/perfis-facebook',
               createdAt: new Date(profile.updated_at),
+              source: 'system',
             });
           } else if (profile.token_expires_at) {
             const daysUntilExpiry = differenceInDays(parseISO(profile.token_expires_at), new Date());
@@ -57,6 +78,7 @@ export function NotificationPopover() {
                 action: 'Renovar',
                 href: '/perfis-facebook',
                 createdAt: new Date(profile.updated_at),
+                source: 'system',
               });
             }
           }
@@ -69,7 +91,7 @@ export function NotificationPopover() {
         .select('id, name, updated_at')
         .eq('status', 'failed')
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(3);
 
       if (failedJobs) {
         for (const job of failedJobs) {
@@ -80,6 +102,7 @@ export function NotificationPopover() {
             action: 'Ver detalhes',
             href: '/fila-processamento',
             createdAt: new Date(job.updated_at),
+            source: 'system',
           });
         }
       }
@@ -94,7 +117,7 @@ export function NotificationPopover() {
         .eq('status', 'completed')
         .gte('completed_at', today.toISOString())
         .order('completed_at', { ascending: false })
-        .limit(5);
+        .limit(3);
 
       if (completedJobs && completedJobs.length > 0) {
         for (const job of completedJobs) {
@@ -105,67 +128,130 @@ export function NotificationPopover() {
             action: 'Ver fila',
             href: '/fila-processamento',
             createdAt: job.completed_at ? new Date(job.completed_at) : new Date(),
+            source: 'system',
           });
         }
       }
 
-      // Check for processing jobs
-      const { data: processingJobs } = await supabase
-        .from('campaign_jobs')
-        .select('id, name, updated_at')
-        .eq('status', 'processing')
-        .order('updated_at', { ascending: false })
-        .limit(3);
+      return alertsList;
+    },
+    refetchInterval: 60000, // Refetch every 60 seconds
+    staleTime: 30000,
+  });
 
-      if (processingJobs) {
-        for (const job of processingJobs) {
-          alertsList.push({
-            id: `processing-${job.id}`,
-            type: 'info',
-            message: `Job "${job.name}" em processamento`,
-            action: 'Acompanhar',
-            href: '/fila-processamento',
-            createdAt: new Date(job.updated_at),
-          });
-        }
-      }
+  // Fetch admin notifications
+  const { data: adminNotifications = [] } = useQuery({
+    queryKey: ['admin-broadcast-notifications', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
 
-      // Sort by date (most recent first)
-      return alertsList.sort((a, b) => {
+      const now = new Date().toISOString();
+
+      // Get active notifications that haven't expired
+      const { data: notifications, error } = await supabase
+        .from('admin_notifications')
+        .select('id, title, message, notification_type, sent_at, created_at')
+        .not('sent_at', 'is', null)
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+        .order('sent_at', { ascending: false })
+        .limit(10);
+
+      if (error || !notifications) return [];
+
+      // Get read status for current user
+      const { data: reads } = await supabase
+        .from('user_notification_reads')
+        .select('notification_id')
+        .eq('user_id', user.id);
+
+      const readIds = new Set(reads?.map((r) => r.notification_id) || []);
+
+      return notifications.map((n): AdminNotification => ({
+        id: n.id,
+        type: n.notification_type as AdminNotification['type'],
+        title: n.title,
+        message: n.message,
+        createdAt: new Date(n.sent_at || n.created_at),
+        source: 'admin',
+        read: readIds.has(n.id),
+      }));
+    },
+    refetchInterval: 60000,
+    staleTime: 30000,
+    enabled: !!user?.id,
+  });
+
+  // Mark notification as read
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      if (!user?.id) return;
+      
+      const { error } = await supabase.from('user_notification_reads').upsert({
+        user_id: user.id,
+        notification_id: notificationId,
+      }, { onConflict: 'user_id,notification_id' });
+
+      if (error) console.error('Error marking notification as read:', error);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-broadcast-notifications'] });
+    },
+  });
+
+  // Combine and sort all notifications
+  const allNotifications = useMemo(() => {
+    const combined: Notification[] = [...systemNotifications, ...adminNotifications];
+    return combined
+      .sort((a, b) => {
         if (!a.createdAt || !b.createdAt) return 0;
         return b.createdAt.getTime() - a.createdAt.getTime();
-      }).slice(0, 10);
-    },
-    refetchInterval: 30000, // Refetch every 30 seconds
-  });
+      })
+      .slice(0, 15);
+  }, [systemNotifications, adminNotifications]);
+
+  const unreadCount = useMemo(() => {
+    const unreadAdmin = adminNotifications.filter((n) => !n.read).length;
+    return systemNotifications.length + unreadAdmin;
+  }, [systemNotifications, adminNotifications]);
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {
       case 'error':
         return <AlertTriangle className="w-4 h-4 text-destructive" />;
       case 'warning':
-        return <AlertTriangle className="w-4 h-4 text-ads-warning" />;
+        return <AlertTriangle className="w-4 h-4 text-amber-500" />;
+      case 'success':
+        return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
+      case 'urgent':
+        return <Megaphone className="w-4 h-4 text-destructive" />;
       case 'info':
-        return <Info className="w-4 h-4 text-ads-info" />;
       default:
-        return <CheckCircle2 className="w-4 h-4 text-ads-success" />;
+        return <Info className="w-4 h-4 text-sky-500" />;
     }
   };
 
-  const getBgColor = (type: Notification['type']) => {
+  const getBgColor = (type: Notification['type'], read?: boolean) => {
+    const opacity = read ? '5' : '10';
     switch (type) {
       case 'error':
-        return 'bg-destructive/10 border-destructive/20';
+      case 'urgent':
+        return `bg-destructive/${opacity} border-destructive/20`;
       case 'warning':
-        return 'bg-ads-warning/10 border-ads-warning/20';
+        return `bg-amber-500/${opacity} border-amber-500/20`;
+      case 'success':
+        return `bg-emerald-500/${opacity} border-emerald-500/20`;
       case 'info':
-        return 'bg-ads-info/10 border-ads-info/20';
       default:
-        return 'bg-ads-success/10 border-ads-success/20';
+        return `bg-sky-500/${opacity} border-sky-500/20`;
     }
   };
 
-  const unreadCount = notifications.length;
+  const handleNotificationClick = (notification: Notification) => {
+    if (notification.source === 'admin' && !notification.read) {
+      markAsReadMutation.mutate(notification.id);
+    }
+    setOpen(false);
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -194,46 +280,82 @@ export function NotificationPopover() {
             </span>
           )}
         </div>
-        <ScrollArea className="h-[300px]">
-          {notifications.length === 0 ? (
+        <ScrollArea className="h-[320px]">
+          {allNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <Bell className="w-10 h-10 mb-2 opacity-30" />
               <p className="text-sm">Nenhuma notificação</p>
             </div>
           ) : (
             <div className="p-2 space-y-2">
-              {notifications.map((notification) => (
-                <Link
-                  key={notification.id}
-                  to={notification.href}
-                  onClick={() => setOpen(false)}
-                  className={`block p-3 rounded-lg border transition-colors hover:bg-secondary/50 ${getBgColor(notification.type)}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 mt-0.5">
-                      {getIcon(notification.type)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground line-clamp-2">
-                        {notification.message}
-                      </p>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-primary font-medium">
-                          {notification.action}
-                        </span>
-                        {notification.createdAt && (
-                          <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(notification.createdAt, {
-                              addSuffix: true,
-                              locale: ptBR,
-                            })}
+              {allNotifications.map((notification) => {
+                const isAdmin = notification.source === 'admin';
+                const isRead = isAdmin ? notification.read : false;
+
+                if (isAdmin) {
+                  return (
+                    <div
+                      key={notification.id}
+                      onClick={() => handleNotificationClick(notification)}
+                      className={`block p-3 rounded-lg border transition-colors cursor-pointer hover:bg-secondary/50 ${getBgColor(notification.type, isRead)} ${isRead ? 'opacity-60' : ''}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 mt-0.5">
+                          {getIcon(notification.type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">
+                            {notification.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                            {notification.message}
+                          </p>
+                          <span className="text-xs text-muted-foreground mt-1 block">
+                            {notification.createdAt &&
+                              formatDistanceToNow(notification.createdAt, {
+                                addSuffix: true,
+                                locale: ptBR,
+                              })}
                           </span>
-                        )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  );
+                }
+
+                return (
+                  <Link
+                    key={notification.id}
+                    to={notification.href}
+                    onClick={() => handleNotificationClick(notification)}
+                    className={`block p-3 rounded-lg border transition-colors hover:bg-secondary/50 ${getBgColor(notification.type)}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 mt-0.5">
+                        {getIcon(notification.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground line-clamp-2">
+                          {notification.message}
+                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs text-primary font-medium">
+                            {notification.action}
+                          </span>
+                          {notification.createdAt && (
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(notification.createdAt, {
+                                addSuffix: true,
+                                locale: ptBR,
+                              })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </ScrollArea>
