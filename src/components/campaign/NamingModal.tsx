@@ -103,11 +103,8 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
         category: 'custom' as const,
       }));
     }
-    return [
-      { key: 'OFFER', label: 'OFFER', example: 'Oferta1', category: 'custom' },
-      { key: 'tipo', label: 'tipo', example: 'Video', category: 'custom' },
-      { key: 'nicho', label: 'nicho', example: 'Fitness', category: 'custom' },
-    ];
+    // Start with no custom variables - user creates them as needed
+    return [];
   });
   const [newVarName, setNewVarName] = useState('');
   const [showNewVarInput, setShowNewVarInput] = useState(false);
@@ -155,9 +152,9 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
       minuto: String(now.getMinutes()).padStart(2, '0'),
     };
 
-    // Add custom variables
+    // Add custom variables - use value or show placeholder if empty
     customVariables.forEach(v => {
-      replacements[v.key] = v.example;
+      replacements[v.key] = v.example || `[${v.key}]`;
     });
 
     // Handle sequencial with starting number
@@ -212,10 +209,16 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     const key = newVarName.toLowerCase().replace(/\s+/g, '_');
     setCustomVariables([
       ...customVariables,
-      { key, label: newVarName, example: 'valor', category: 'custom' },
+      { key, label: newVarName, example: '', category: 'custom' },
     ]);
     setNewVarName('');
     setShowNewVarInput(false);
+  };
+
+  const handleUpdateCustomVariableValue = (key: string, newValue: string) => {
+    setCustomVariables(customVariables.map(v => 
+      v.key === key ? { ...v, example: newValue } : v
+    ));
   };
 
   const handleDeleteCustomVariable = (key: string) => {
@@ -223,6 +226,19 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
   };
 
   const handleApply = () => {
+    // Check if any custom variable used in template is missing a value
+    const usedCustomVars = customVariables.filter(v => template.includes(`{{${v.key}}}`));
+    const missingValues = usedCustomVars.filter(v => !v.example.trim());
+    
+    if (missingValues.length > 0) {
+      toast({
+        title: 'Valores ausentes',
+        description: `Defina valores para: ${missingValues.map(v => v.key).join(', ')}`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Replace sequencial placeholder with configured start
     let finalTemplate = template.replace(/\{\{sequencial\}\}/g, `{{sequencial:${sequentialStart}}}`);
     
@@ -243,7 +259,9 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
       className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all hover:scale-105 hover:shadow-md ${color}`}
     >
       <span>{variable.label}</span>
-      <span className="opacity-60 text-[10px]">({variable.example})</span>
+      {variable.example && (
+        <span className="opacity-60 text-[10px]">({variable.example})</span>
+      )}
     </button>
   );
 
@@ -342,32 +360,55 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                 {/* Custom Variables */}
                 <div>
                   <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-purple-500" />
+                    <span className="w-2 h-2 rounded-full bg-primary" />
                     # Personalizadas
                   </h4>
-                  <div className="flex flex-wrap gap-2">
+                  
+                  {/* Custom variable badges for inserting */}
+                  <div className="flex flex-wrap gap-2 mb-3">
                     {customVariables.map(v => (
-                      <div key={v.key} className="flex items-center gap-1">
-                        <VariableBadge 
-                          variable={v} 
-                          color="bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30"
-                        />
-                        <button
-                          onClick={() => handleDeleteCustomVariable(v.key)}
-                          className="p-1 text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
+                      <VariableBadge 
+                        key={v.key}
+                        variable={v} 
+                        color="bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30"
+                      />
                     ))}
                   </div>
+
+                  {/* Custom variable value editors */}
+                  {customVariables.length > 0 && (
+                    <div className="space-y-2 p-3 rounded-lg bg-secondary/50 border border-border mb-3">
+                      <p className="text-xs text-muted-foreground font-medium mb-2">
+                        Defina os valores que serão usados no Facebook:
+                      </p>
+                      {customVariables.map(v => (
+                        <div key={v.key} className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-muted-foreground min-w-[80px]">{`{{${v.key}}}`}</span>
+                          <span className="text-xs text-muted-foreground">=</span>
+                          <Input
+                            value={v.example}
+                            onChange={e => handleUpdateCustomVariableValue(v.key, e.target.value)}
+                            placeholder={`Valor para ${v.label}`}
+                            className="h-7 text-sm flex-1"
+                          />
+                          <button
+                            onClick={() => handleDeleteCustomVariable(v.key)}
+                            className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
+                            title="Remover variável"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   
                   {showNewVarInput ? (
-                    <div className="flex items-center gap-2 mt-3">
+                    <div className="flex items-center gap-2">
                       <Input
                         value={newVarName}
                         onChange={e => setNewVarName(e.target.value)}
-                        placeholder="Nome da variável"
+                        placeholder="Nome da variável (ex: OFFER)"
                         className="h-8 text-sm"
                         autoFocus
                         onKeyDown={e => {
@@ -387,7 +428,6 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                       variant="outline"
                       size="sm"
                       onClick={() => setShowNewVarInput(true)}
-                      className="mt-3"
                     >
                       <Plus className="w-4 h-4 mr-1.5" />
                       Criar Variável
