@@ -1602,10 +1602,15 @@ Deno.serve(async (req) => {
     const defaultPageId = resolvedPages.length > 0 ? resolvedPages[0].pageId : '';
     const defaultInstagramUserId = resolvedPages.length > 0 ? resolvedPages[0].instagramActorId : null;
 
-    // Separate items by type
-    const campaigns = items.filter((i) => i.item_type === 'campaign');
-    const adsets = items.filter((i) => i.item_type === 'adset');
-    const ads = items.filter((i) => i.item_type === 'ad');
+    // Separate items by type - ONLY process pending items to prevent duplicates on re-execution
+    // This is critical: if a job times out and is re-triggered, we must not re-create items that already have facebook_id
+    const campaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'pending' && !i.facebook_id);
+    const adsets = items.filter((i) => i.item_type === 'adset' && i.status === 'pending' && !i.facebook_id);
+    const ads = items.filter((i) => i.item_type === 'ad' && i.status === 'pending' && !i.facebook_id);
+    
+    // Also collect already completed items to populate ID maps for parent references
+    const completedCampaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'completed' && i.facebook_id);
+    const completedAdsets = items.filter((i) => i.item_type === 'adset' && i.status === 'completed' && i.facebook_id);
 
     const normalizeAccountId = (value: unknown): string | null => {
       if (typeof value !== 'string') return null;
@@ -1685,16 +1690,39 @@ Deno.serve(async (req) => {
         config: c.config as Record<string, any>,
       }));
 
-      // Create campaigns in batch
-      console.log(`[process-jobs] Creating ${campaignsWithNames.length} campaigns via batch API...`);
-      const campaignIdMap = await createCampaignsBatch(
-        accessToken,
-        currentAccount.account_id,
-        campaignsWithNames,
-        config,
-        supabase,
-      );
-      console.log(`[process-jobs] Created ${campaignIdMap.size}/${campaignsWithNames.length} campaigns`);
+      // Pre-populate campaign ID map with already completed campaigns
+      // This is essential for resuming jobs - adsets need to reference parent campaign facebook_ids
+      const campaignIdMap = new Map<string, string>();
+      const completedCampaignsForAccount = 
+        itemsHaveAccountId && currentAccountId
+          ? completedCampaigns.filter((c) => getItemAccountId(c) === currentAccountId)
+          : completedCampaigns;
+      
+      for (const completed of completedCampaignsForAccount) {
+        if (completed.facebook_id) {
+          campaignIdMap.set(completed.id, completed.facebook_id);
+        }
+      }
+      console.log(`[process-jobs] Pre-loaded ${campaignIdMap.size} completed campaign IDs for resumption`);
+      
+      // Create NEW campaigns in batch (only pending ones)
+      if (campaignsWithNames.length > 0) {
+        console.log(`[process-jobs] Creating ${campaignsWithNames.length} NEW campaigns via batch API...`);
+        const newCampaignIdMap = await createCampaignsBatch(
+          accessToken,
+          currentAccount.account_id,
+          campaignsWithNames,
+          config,
+          supabase,
+        );
+        // Merge new IDs into the map
+        for (const [k, v] of newCampaignIdMap) {
+          campaignIdMap.set(k, v);
+        }
+        console.log(`[process-jobs] Created ${newCampaignIdMap.size}/${campaignsWithNames.length} new campaigns`);
+      } else {
+        console.log(`[process-jobs] No new campaigns to create (all already processed)`);
+      }
 
       // Prepare adsets with resolved names
       const adsetsWithNames = adsetsForAccount.map((a, i) => ({
@@ -1704,17 +1732,39 @@ Deno.serve(async (req) => {
         config: a.config as Record<string, any>,
       }));
 
-      // Create adsets in batch
-      console.log(`[process-jobs] Creating ${adsetsWithNames.length} adsets via batch API...`);
-      const adsetIdMap = await createAdsetsBatch(
-        accessToken,
-        currentAccount.account_id,
-        adsetsWithNames,
-        campaignIdMap,
-        config,
-        supabase,
-      );
-      console.log(`[process-jobs] Created ${adsetIdMap.size}/${adsetsWithNames.length} adsets`);
+      // Pre-populate adset ID map with already completed adsets
+      const adsetIdMap = new Map<string, string>();
+      const completedAdsetsForAccount = 
+        itemsHaveAccountId && currentAccountId
+          ? completedAdsets.filter((a) => getItemAccountId(a) === currentAccountId)
+          : completedAdsets;
+      
+      for (const completed of completedAdsetsForAccount) {
+        if (completed.facebook_id) {
+          adsetIdMap.set(completed.id, completed.facebook_id);
+        }
+      }
+      console.log(`[process-jobs] Pre-loaded ${adsetIdMap.size} completed adset IDs for resumption`);
+      
+      // Create NEW adsets in batch (only pending ones)
+      if (adsetsWithNames.length > 0) {
+        console.log(`[process-jobs] Creating ${adsetsWithNames.length} NEW adsets via batch API...`);
+        const newAdsetIdMap = await createAdsetsBatch(
+          accessToken,
+          currentAccount.account_id,
+          adsetsWithNames,
+          campaignIdMap,
+          config,
+          supabase,
+        );
+        // Merge new IDs into the map
+        for (const [k, v] of newAdsetIdMap) {
+          adsetIdMap.set(k, v);
+        }
+        console.log(`[process-jobs] Created ${newAdsetIdMap.size}/${adsetsWithNames.length} new adsets`);
+      } else {
+        console.log(`[process-jobs] No new adsets to create (all already processed)`);
+      }
 
       // Prepare ads with resolved names
       const adsWithNames = adsForAccount.map((a, i) => ({
@@ -1725,9 +1775,12 @@ Deno.serve(async (req) => {
       }));
 
       // Create ads based on type (catalog vs non-catalog)
-      if (config.useCatalog) {
+      // Only process if there are pending ads
+      if (adsWithNames.length === 0) {
+        console.log(`[process-jobs] No new ads to create for this account (all already processed)`);
+      } else if (config.useCatalog) {
         // Catalog ads: use batch API for creatives and ads
-        console.log(`[process-jobs] Creating ${adsWithNames.length} catalog creatives via batch API...`);
+        console.log(`[process-jobs] Creating ${adsWithNames.length} NEW catalog creatives via batch API...`);
         const creativeIdMap = await createCatalogCreativesBatch(
           accessToken,
           currentAccount.account_id,
@@ -1740,7 +1793,7 @@ Deno.serve(async (req) => {
         );
         console.log(`[process-jobs] Created ${creativeIdMap.size}/${adsWithNames.length} creatives`);
 
-        console.log(`[process-jobs] Creating ${adsWithNames.length} ads via batch API...`);
+        console.log(`[process-jobs] Creating ${adsWithNames.length} NEW ads via batch API...`);
         const adsCreated = await createAdsBatch(
           accessToken,
           currentAccount.account_id,
@@ -1750,11 +1803,11 @@ Deno.serve(async (req) => {
           supabase,
         );
         totalAdsCreated += adsCreated;
-        console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} ads`);
-      } else {
+        console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} new ads`);
+      } else if (adsWithNames.length > 0) {
         // Non-catalog ads: sequential processing (video upload required)
         const selectedCreatives = config.selectedCreatives || [];
-        console.log(`[process-jobs] Creating ${adsWithNames.length} non-catalog ads (sequential for video upload)...`);
+        console.log(`[process-jobs] Creating ${adsWithNames.length} NEW non-catalog ads (sequential for video upload)...`);
         
         // Calculate smart page distribution for non-catalog ads
         let pageAssignments: Array<{ pageId: string; instagramActorId: string | null }> = [];
