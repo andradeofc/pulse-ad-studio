@@ -610,7 +610,7 @@ async function createFacebookAd(
   name: string,
   pageId: string,
   instagramUserId: string | null,
-  creative?: { id: string; name: string; type: 'video' | 'image'; url: string } | null,
+  creative?: { id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string } | null,
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
@@ -885,6 +885,7 @@ async function createFacebookAd(
       }
 
       // Step 3: Create ad creative with video
+      // Facebook requires a thumbnail (image_url) for video ads
       const videoData: Record<string, any> = {
         video_id: videoId,
         call_to_action: {
@@ -894,6 +895,8 @@ async function createFacebookAd(
         message: config.primaryText || '',
         title: config.headline || '',
         link_description: config.description || '',
+        // Use the stored thumbnail or fallback to the video URL (FB will extract a frame)
+        image_url: creative.thumbnailUrl || creative.url,
       };
 
       const objectStorySpec: Record<string, any> = {
@@ -1485,7 +1488,7 @@ Deno.serve(async (req) => {
 
       // Process ads for this account with Anti-Spy round-robin page distribution
       // Get selected creatives from config for non-catalog ads
-      const selectedCreatives: Array<{ id: string; name: string; type: 'video' | 'image'; url: string }> = config.selectedCreatives || [];
+      const selectedCreatives: Array<{ id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string }> = config.selectedCreatives || [];
       
       let adIndex = 0;
       for (const ad of ads) {
@@ -1536,7 +1539,7 @@ Deno.serve(async (req) => {
 
         // For non-catalog ads, get the creative to use
         // Distribution logic: distribute creatives based on distribution mode
-        let creativeForAd: { id: string; name: string; type: 'video' | 'image'; url: string } | null = null;
+        let creativeForAd: { id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string } | null = null;
         
         if (!config.useCatalog && selectedCreatives.length > 0) {
           // Get creative from job item config if stored there, otherwise use round-robin
@@ -1548,7 +1551,7 @@ Deno.serve(async (req) => {
             const creativeIndex = adIndex % selectedCreatives.length;
             creativeForAd = selectedCreatives[creativeIndex];
           }
-          console.log(`[process-jobs] Using creative for ad: ${creativeForAd?.name} (${creativeForAd?.type})`);
+          console.log(`[process-jobs] Using creative for ad: ${creativeForAd?.name} (${creativeForAd?.type}), thumbnail: ${creativeForAd?.thumbnailUrl ? 'yes' : 'no'}`);
         }
 
         console.log(`[process-jobs] Creating ad: ${adName} with page: ${currentPageId} for account ${currentAccount.name}`);
