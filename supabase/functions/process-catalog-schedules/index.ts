@@ -392,7 +392,11 @@ Deno.serve(async (req) => {
 
           // Prepare batch requests
           const batchRequests: BatchRequest[] = dedupedBatch.map((product) => {
-            const data: Record<string, string> = {};
+            const canonicalId = canonicalizeRetailerId(product.retailer_id);
+            const data: Record<string, string> = {
+              // CRITICAL: Facebook requires 'id' field in data object for UPDATE operations
+              id: canonicalId,
+            };
 
             if (typedCreative.type === 'video') {
               // For video, use the video field with array of objects
@@ -404,7 +408,7 @@ Deno.serve(async (req) => {
 
             return {
               method: 'UPDATE' as const,
-              retailer_id: canonicalizeRetailerId(product.retailer_id),
+              retailer_id: canonicalId,
               data,
             };
           });
