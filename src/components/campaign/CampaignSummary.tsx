@@ -10,52 +10,23 @@ import { cn } from '@/lib/utils';
 import { RateLimitIndicator } from './RateLimitIndicator';
 import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { 
   formatCurrency as formatCurrencyUtil, 
   formatMultiCurrencyBudget,
-  hasMultipleCurrencies,
-  getPrimaryCurrency,
   getCurrencySymbol
 } from '@/lib/currencyUtils';
+import { useSelectedAccountsCurrency } from '@/hooks/useSelectedAccountsCurrency';
 
 export function CampaignSummary() {
   const { config, getTotalCampaigns, getTotalAdsets, getTotalAds, getTotalBudget } = useCampaignStore();
+  
+  // Use centralized currency detection hook
+  const { currencies, isMultiCurrency, primaryCurrency } = useSelectedAccountsCurrency();
   
   const totalCampaigns = getTotalCampaigns();
   const totalAdsets = getTotalAdsets();
   const totalAds = getTotalAds();
   const totalBudget = getTotalBudget();
-
-  // Fetch ad account data to get currencies
-  const { data: adAccounts = [] } = useQuery({
-    queryKey: ['ad-accounts-for-summary'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('facebook_ad_accounts')
-        .select('id, account_id, name, currency');
-      if (error) throw error;
-      return data || [];
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  // Get selected accounts data with currencies (using database id, not Facebook account_id)
-  const selectedAccountsData = useMemo(() => {
-    return config.selectedAccounts
-      .map(dbId => adAccounts.find(a => a.id === dbId))
-      .filter(Boolean) as typeof adAccounts;
-  }, [config.selectedAccounts, adAccounts]);
-
-  // Get unique currencies from selected accounts
-  const selectedCurrencies = useMemo(() => {
-    if (selectedAccountsData.length === 0) return ['BRL'];
-    return [...new Set(selectedAccountsData.map(a => a.currency || 'BRL'))];
-  }, [selectedAccountsData]);
-
-  const isMultiCurrency = selectedCurrencies.length > 1;
-  const primaryCurrency = selectedCurrencies[0] || 'BRL';
 
   // Calculate rate limit estimate
   const rateLimitEstimate = useMemo(() => {
@@ -137,12 +108,12 @@ export function CampaignSummary() {
     }
     
     // Single currency based on selected accounts
-    return selectedCurrencies.map(currency => ({
+    return currencies.map(currency => ({
       currency,
       total: baseBudget * multiplier,
       formatted: formatCurrencyUtil(baseBudget * multiplier, currency),
     }));
-  }, [budgetConfig, baseBudget, totalCampaigns, totalAdsets, config.useCBO, selectedCurrencies]);
+  }, [budgetConfig, baseBudget, totalCampaigns, totalAdsets, config.useCBO, currencies]);
 
   return (
     <Card className="glass-card sticky top-6">
@@ -219,11 +190,11 @@ export function CampaignSummary() {
         </div>
 
         {/* Currency indicator */}
-        {selectedAccountsData.length > 0 && (
+        {currencies.length > 0 && (
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Moeda(s)</span>
             <div className="flex gap-1">
-              {selectedCurrencies.map(currency => (
+              {currencies.map(currency => (
                 <Badge 
                   key={currency} 
                   variant="outline" 

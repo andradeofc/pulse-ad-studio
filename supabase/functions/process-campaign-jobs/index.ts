@@ -534,26 +534,36 @@ async function createFacebookAdset(
 
   // Promoted object (combine Pixel + Catalog when available)
   // For OUTCOME_SALES with OFFSITE_CONVERSIONS, pixel_id is REQUIRED to track conversions.
+  // For other objectives (TRAFFIC, ENGAGEMENT, etc.), pixel is optional.
   const promotedObject: Record<string, any> = {};
 
-  // Validation: OFFSITE_CONVERSIONS requires a Pixel
-  if (!config.pixelId) {
-    console.error('[process-jobs] Missing pixelId for OFFSITE_CONVERSIONS optimization');
+  // Determine if pixel is required based on objective
+  // OUTCOME_SALES requires a Pixel for OFFSITE_CONVERSIONS optimization
+  const objectiveRequiresPixel = config.objective === 'OUTCOME_SALES';
+  
+  if (objectiveRequiresPixel && !config.pixelId) {
+    console.error('[process-jobs] Missing pixelId for OUTCOME_SALES with OFFSITE_CONVERSIONS optimization');
     return {
       success: false,
       error: 'Para o objetivo VENDAS com otimização de conversões no site, é necessário selecionar um Pixel. Por favor, edite a campanha e selecione um Pixel no Step 3 (Conjuntos).',
     };
   }
 
-  promotedObject.pixel_id = config.pixelId;
-  promotedObject.custom_event_type = 'PURCHASE';
+  // Add pixel if available (required for SALES, optional for other objectives)
+  if (config.pixelId) {
+    promotedObject.pixel_id = config.pixelId;
+    promotedObject.custom_event_type = 'PURCHASE';
+  }
 
   // For DPA mode: only include product_set_id at adset level (product_catalog_id goes at campaign level)
   if (config.useCatalog && config.productSetId) {
     promotedObject.product_set_id = config.productSetId;
   }
 
-  params.promoted_object = JSON.stringify(promotedObject);
+  // Only set promoted_object if we have any values
+  if (Object.keys(promotedObject).length > 0) {
+    params.promoted_object = JSON.stringify(promotedObject);
+  }
 
   const logParams = { ...params, access_token: '[REDACTED]' };
   console.log(`[process-jobs] Adset params:`, JSON.stringify(logParams, null, 2));
