@@ -713,30 +713,33 @@ Deno.serve(async (req) => {
       throw new Error('No ad accounts selected in job config');
     }
 
-    // Get the first selected ad account with its profile
-    const { data: adAccount, error: accError } = await supabase
-      .from('facebook_ad_accounts')
-      .select('account_id, profile_id')
-      .eq('id', selectedAccountIds[0])
-      .single();
+    // Multi-account mode: process all selected accounts
+    const isMultiAccountMode = config.multiAccountMode === true && selectedAccountIds.length > 1;
+    console.log(`[process-jobs] Multi-account mode: ${isMultiAccountMode}, accounts: ${selectedAccountIds.length}`);
 
-    if (accError || !adAccount) {
-      throw new Error('Ad account not found');
+    // Fetch all selected ad accounts
+    const { data: allAdAccounts, error: accError } = await supabase
+      .from('facebook_ad_accounts')
+      .select('id, account_id, profile_id, name')
+      .in('id', selectedAccountIds);
+
+    if (accError || !allAdAccounts || allAdAccounts.length === 0) {
+      throw new Error('No ad accounts found');
     }
 
-    // Get access token from profile
-    const { data: profile, error: profError } = await supabase
+    console.log(`[process-jobs] Found ${allAdAccounts.length} ad accounts to process`);
+
+    // Get page info (shared across all accounts, resolved once)
+    // First we need to get access token from first account's profile for page resolution
+    const firstAccountProfileId = allAdAccounts[0].profile_id;
+    const { data: firstProfile } = await supabase
       .from('facebook_profiles')
       .select('access_token')
-      .eq('id', adAccount.profile_id)
+      .eq('id', firstAccountProfileId)
       .eq('user_id', user.id)
       .single();
 
-    if (profError || !profile) {
-      throw new Error('Profile not found or access denied');
-    }
-
-    const accessToken = profile.access_token;
+    const firstAccessToken = firstProfile?.access_token;
 
     // Get page ID (and Page access token) for ads
     // Note: config.selectedPages may contain either the database UUID or the Facebook page_id
@@ -744,7 +747,7 @@ Deno.serve(async (req) => {
     // For Anti-Spy mode, we store all resolved pages for round-robin distribution
     const resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null }> = [];
 
-    if (config.selectedPages && config.selectedPages.length > 0) {
+    if (config.selectedPages && config.selectedPages.length > 0 && firstAccessToken) {
       for (const selectedPageValue of config.selectedPages) {
         // First try to find by database UUID
         let { data: page } = await supabase
@@ -765,7 +768,7 @@ Deno.serve(async (req) => {
 
         if (page?.page_id) {
           const instagramActorId = await resolveInstagramActorIdForPage({
-            userAccessToken: accessToken,
+            userAccessToken: firstAccessToken,
             pageId: page.page_id,
             pageAccessTokenFromDb: page.access_token || null,
           });
@@ -790,162 +793,285 @@ Deno.serve(async (req) => {
       console.log(`[process-jobs] Anti-Spy enabled with ${resolvedPages.length} pages for round-robin distribution`);
     }
 
-    // Process items in order: campaigns → adsets → ads
+    // Get job items (these are templates - will be replicated for each account in multi-account mode)
     const campaigns = items.filter((i) => i.item_type === 'campaign');
     const adsets = items.filter((i) => i.item_type === 'adset');
     const ads = items.filter((i) => i.item_type === 'ad');
 
-    const totalItems = items.length;
+    // Calculate total items to process (items × accounts in multi-account mode)
+    const accountsToProcess = isMultiAccountMode ? allAdAccounts.length : 1;
+    const totalItems = items.length * accountsToProcess;
     let processedItems = 0;
     let hasError = false;
     let lastError = '';
 
-    // Map of local ID to Facebook ID
-    const idMap = new Map<string, string>();
+    // Process each account
+    for (let accountIndex = 0; accountIndex < accountsToProcess; accountIndex++) {
+      const currentAccount = allAdAccounts[accountIndex];
+      console.log(`[process-jobs] Processing account ${accountIndex + 1}/${accountsToProcess}: ${currentAccount.name} (${currentAccount.account_id})`);
 
-    // Process campaigns
-    for (const campaign of campaigns) {
-      console.log(`[process-jobs] Creating campaign: ${campaign.name}`);
+      // Get access token for this account's profile
+      const { data: profile, error: profError } = await supabase
+        .from('facebook_profiles')
+        .select('access_token')
+        .eq('id', currentAccount.profile_id)
+        .eq('user_id', user.id)
+        .single();
 
-      await supabase
-        .from('campaign_job_items')
-        .update({ status: 'processing' })
-        .eq('id', campaign.id);
-
-      const result = await createFacebookCampaign(accessToken, adAccount.account_id, config, campaign.name);
-
-      if (result.success && result.id) {
-        idMap.set(campaign.id, result.id);
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'completed', facebook_id: result.id })
-          .eq('id', campaign.id);
-      } else {
+      if (profError || !profile) {
+        console.error(`[process-jobs] Profile not found for account ${currentAccount.name}`);
+        // Mark all items for this account as failed
+        for (const item of items) {
+          await supabase
+            .from('campaign_job_items')
+            .update({ 
+              status: 'failed', 
+              error_message: `Profile not found for account ${currentAccount.name}` 
+            })
+            .eq('id', item.id);
+          processedItems++;
+        }
         hasError = true;
-        lastError = result.error || 'Unknown error';
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'failed', error_message: result.error })
-          .eq('id', campaign.id);
-      }
-
-      processedItems++;
-      const progress = Math.round((processedItems / totalItems) * 100);
-      await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
-    }
-
-    // Process adsets
-    for (const adset of adsets) {
-      const parentFbId = adset.parent_id ? idMap.get(adset.parent_id) : null;
-
-      if (!parentFbId) {
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'failed', error_message: 'Parent campaign failed' })
-          .eq('id', adset.id);
-        processedItems++;
-        hasError = true;
+        lastError = `Profile not found for account ${currentAccount.name}`;
         continue;
       }
 
-      console.log(`[process-jobs] Creating adset: ${adset.name}`);
+      const accessToken = profile.access_token;
 
-      await supabase
-        .from('campaign_job_items')
-        .update({ status: 'processing' })
-        .eq('id', adset.id);
+      // Map of local ID to Facebook ID (per account)
+      const idMap = new Map<string, string>();
 
-      const result = await createFacebookAdset(accessToken, adAccount.account_id, parentFbId, config, adset.name);
+      // Get account nickname/alias for naming
+      const accountNickname = currentAccount.name?.split(' - ')[0] || currentAccount.name || 'Conta';
+      const accountId = currentAccount.account_id?.replace('act_', '') || '';
 
-      if (result.success && result.id) {
-        idMap.set(adset.id, result.id);
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'completed', facebook_id: result.id })
-          .eq('id', adset.id);
-      } else {
-        hasError = true;
-        lastError = result.error || 'Unknown error';
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'failed', error_message: result.error })
-          .eq('id', adset.id);
-      }
+      // Helper to replace all naming variables (including custom ones)
+      const replaceNamingVariables = (name: string): string => {
+        let result = name
+          .replace(/\{\{conta_apelido\}\}/g, accountNickname)
+          .replace(/\{\{conta_nome\}\}/g, currentAccount.name || '')
+          .replace(/\{\{conta_id\}\}/g, accountId);
+        
+        // Replace custom naming variables from config
+        const customVars = config.customNamingVariables as Record<string, string> || {};
+        for (const [key, value] of Object.entries(customVars)) {
+          result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+        }
+        
+        // Replace date/time variables
+        const now = new Date();
+        result = result
+          .replace(/\{\{ano\}\}/g, now.getFullYear().toString())
+          .replace(/\{\{ano2\}\}/g, now.getFullYear().toString().slice(-2))
+          .replace(/\{\{mes\}\}/g, String(now.getMonth() + 1).padStart(2, '0'))
+          .replace(/\{\{dia\}\}/g, String(now.getDate()).padStart(2, '0'))
+          .replace(/\{\{hora\}\}/g, String(now.getHours()).padStart(2, '0'))
+          .replace(/\{\{minuto\}\}/g, String(now.getMinutes()).padStart(2, '0'));
+        
+        // Replace budget variable
+        result = result.replace(/\{\{budget\}\}/g, config.useCBO ? 'CBO' : 'ABO');
+        
+        // Replace structure variable
+        const structure = `${job.total_campaigns}-${config.adsetsPerCampaign || 1}-${config.adsPerAdset || 1}`;
+        result = result.replace(/\{\{estrutura\}\}/g, structure);
+        
+        return result;
+      };
 
-      processedItems++;
-      const progress = Math.round((processedItems / totalItems) * 100);
-      await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
-    }
+      // Process campaigns for this account
+      for (const campaign of campaigns) {
+        // Replace all variables in campaign name
+        let campaignName = replaceNamingVariables(campaign.name);
 
-    // Process ads with Anti-Spy round-robin page distribution
-    let adIndex = 0;
-    for (const ad of ads) {
-      const parentFbId = ad.parent_id ? idMap.get(ad.parent_id) : null;
+        console.log(`[process-jobs] Creating campaign: ${campaignName} for account ${currentAccount.name}`);
 
-      if (!parentFbId) {
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'failed', error_message: 'Parent adset failed' })
-          .eq('id', ad.id);
+        // Only update status on first account (to avoid conflicts)
+        if (accountIndex === 0) {
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'processing' })
+            .eq('id', campaign.id);
+        }
+
+        const result = await createFacebookCampaign(accessToken, currentAccount.account_id, config, campaignName);
+
+        if (result.success && result.id) {
+          idMap.set(campaign.id, result.id);
+          
+          // Update item status only on last account or if single account
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ 
+                status: 'completed', 
+                facebook_id: isMultiAccountMode ? `${result.id} (+${accountsToProcess - 1})` : result.id 
+              })
+              .eq('id', campaign.id);
+          }
+        } else {
+          hasError = true;
+          lastError = result.error || 'Unknown error';
+          
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: result.error })
+              .eq('id', campaign.id);
+          }
+        }
+
         processedItems++;
-        hasError = true;
-        continue;
+        const progress = Math.round((processedItems / totalItems) * 100);
+        await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
       }
 
-      // Anti-Spy: distribute pages round-robin across ads
-      let currentPageId = defaultPageId;
-      let currentInstagramUserId = defaultInstagramUserId;
-      
-      if (config.antiSpyEnabled && resolvedPages.length > 1) {
-        // Round-robin: each ad gets a different page
-        const pageIndex = adIndex % resolvedPages.length;
-        const selectedPage = resolvedPages[pageIndex];
-        currentPageId = selectedPage.pageId;
-        currentInstagramUserId = selectedPage.instagramActorId;
-        console.log(`[process-jobs] Anti-Spy: Ad ${adIndex + 1} using page ${currentPageId} (index ${pageIndex})`);
-      }
+      // Process adsets for this account
+      for (const adset of adsets) {
+        const parentFbId = adset.parent_id ? idMap.get(adset.parent_id) : null;
 
-      if (!currentPageId) {
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'failed', error_message: 'No page selected for ad' })
-          .eq('id', ad.id);
+        if (!parentFbId) {
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: 'Parent campaign failed' })
+              .eq('id', adset.id);
+          }
+          processedItems++;
+          hasError = true;
+          continue;
+        }
+
+        // Replace all variables in adset name
+        let adsetName = replaceNamingVariables(adset.name);
+
+        console.log(`[process-jobs] Creating adset: ${adsetName} for account ${currentAccount.name}`);
+
+        if (accountIndex === 0) {
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'processing' })
+            .eq('id', adset.id);
+        }
+
+        const result = await createFacebookAdset(accessToken, currentAccount.account_id, parentFbId, config, adsetName);
+
+        if (result.success && result.id) {
+          idMap.set(adset.id, result.id);
+          
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ 
+                status: 'completed', 
+                facebook_id: isMultiAccountMode ? `${result.id} (+${accountsToProcess - 1})` : result.id 
+              })
+              .eq('id', adset.id);
+          }
+        } else {
+          hasError = true;
+          lastError = result.error || 'Unknown error';
+          
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: result.error })
+              .eq('id', adset.id);
+          }
+        }
+
         processedItems++;
-        hasError = true;
-        lastError = 'No page selected';
+        const progress = Math.round((processedItems / totalItems) * 100);
+        await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
+      }
+
+      // Process ads for this account with Anti-Spy round-robin page distribution
+      let adIndex = 0;
+      for (const ad of ads) {
+        const parentFbId = ad.parent_id ? idMap.get(ad.parent_id) : null;
+
+        if (!parentFbId) {
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: 'Parent adset failed' })
+              .eq('id', ad.id);
+          }
+          processedItems++;
+          hasError = true;
+          adIndex++;
+          continue;
+        }
+
+        // Anti-Spy: distribute pages round-robin across ads
+        let currentPageId = defaultPageId;
+        let currentInstagramUserId = defaultInstagramUserId;
+        
+        if (config.antiSpyEnabled && resolvedPages.length > 1) {
+          // Round-robin: each ad gets a different page
+          const pageIndex = adIndex % resolvedPages.length;
+          const selectedPage = resolvedPages[pageIndex];
+          currentPageId = selectedPage.pageId;
+          currentInstagramUserId = selectedPage.instagramActorId;
+          console.log(`[process-jobs] Anti-Spy: Ad ${adIndex + 1} using page ${currentPageId} (index ${pageIndex})`);
+        }
+
+        if (!currentPageId) {
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: 'No page selected for ad' })
+              .eq('id', ad.id);
+          }
+          processedItems++;
+          hasError = true;
+          lastError = 'No page selected';
+          adIndex++;
+          continue;
+        }
+
+        // Replace all variables in ad name
+        let adName = replaceNamingVariables(ad.name);
+
+        console.log(`[process-jobs] Creating ad: ${adName} with page: ${currentPageId} for account ${currentAccount.name}`);
+
+        if (accountIndex === 0) {
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'processing' })
+            .eq('id', ad.id);
+        }
+
+        const result = await createFacebookAd(accessToken, currentAccount.account_id, parentFbId, config, adName, currentPageId, currentInstagramUserId);
+
+        if (result.success && result.id) {
+          idMap.set(ad.id, result.id);
+          
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ 
+                status: 'completed', 
+                facebook_id: isMultiAccountMode ? `${result.id} (+${accountsToProcess - 1})` : result.id 
+              })
+              .eq('id', ad.id);
+          }
+        } else {
+          hasError = true;
+          lastError = result.error || 'Unknown error';
+          
+          if (accountIndex === accountsToProcess - 1) {
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: result.error })
+              .eq('id', ad.id);
+          }
+        }
+
         adIndex++;
-        continue;
+        processedItems++;
+        const progress = Math.round((processedItems / totalItems) * 100);
+        await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
       }
-
-      console.log(`[process-jobs] Creating ad: ${ad.name} with page: ${currentPageId}`);
-
-      await supabase
-        .from('campaign_job_items')
-        .update({ status: 'processing' })
-        .eq('id', ad.id);
-
-      const result = await createFacebookAd(accessToken, adAccount.account_id, parentFbId, config, ad.name, currentPageId, currentInstagramUserId);
-
-      if (result.success && result.id) {
-        idMap.set(ad.id, result.id);
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'completed', facebook_id: result.id })
-          .eq('id', ad.id);
-      } else {
-        hasError = true;
-        lastError = result.error || 'Unknown error';
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'failed', error_message: result.error })
-          .eq('id', ad.id);
-      }
-
-      adIndex++;
-
-      processedItems++;
-      const progress = Math.round((processedItems / totalItems) * 100);
-      await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
     }
 
     // Final status update
@@ -960,7 +1086,7 @@ Deno.serve(async (req) => {
       })
       .eq('id', jobId);
 
-    console.log(`[process-jobs] Job ${jobId} finished with status: ${finalStatus}`);
+    console.log(`[process-jobs] Job ${jobId} finished with status: ${finalStatus} (${accountsToProcess} accounts processed)`);
 
     return new Response(
       JSON.stringify({

@@ -28,7 +28,8 @@ interface NamingModalProps {
   onOpenChange: (open: boolean) => void;
   context: NamingContext;
   value: string;
-  onApply: (template: string) => void;
+  onApply: (template: string, customVariables?: Record<string, string>) => void;
+  initialCustomVariables?: Record<string, string>;
 }
 
 interface Variable {
@@ -85,18 +86,29 @@ const contextLabels: Record<NamingContext, { label: string; color: string }> = {
   ad: { label: 'Anúncio', color: 'bg-purple-500 text-white' },
 };
 
-export function NamingModal({ open, onOpenChange, context, value, onApply }: NamingModalProps) {
+export function NamingModal({ open, onOpenChange, context, value, onApply, initialCustomVariables }: NamingModalProps) {
   const { toast } = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [template, setTemplate] = useState(value || '');
   const [sequentialStart, setSequentialStart] = useState('01');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [presets, setPresets] = useState<Preset[]>(defaultPresets);
-  const [customVariables, setCustomVariables] = useState<Variable[]>([
-    { key: 'OFFER', label: 'OFFER', example: 'Oferta1', category: 'custom' },
-    { key: 'tipo', label: 'tipo', example: 'Video', category: 'custom' },
-    { key: 'nicho', label: 'nicho', example: 'Fitness', category: 'custom' },
-  ]);
+  const [customVariables, setCustomVariables] = useState<Variable[]>(() => {
+    // Initialize from initialCustomVariables if provided
+    if (initialCustomVariables && Object.keys(initialCustomVariables).length > 0) {
+      return Object.entries(initialCustomVariables).map(([key, value]) => ({
+        key,
+        label: key,
+        example: value,
+        category: 'custom' as const,
+      }));
+    }
+    return [
+      { key: 'OFFER', label: 'OFFER', example: 'Oferta1', category: 'custom' },
+      { key: 'tipo', label: 'tipo', example: 'Video', category: 'custom' },
+      { key: 'nicho', label: 'nicho', example: 'Fitness', category: 'custom' },
+    ];
+  });
   const [newVarName, setNewVarName] = useState('');
   const [showNewVarInput, setShowNewVarInput] = useState(false);
 
@@ -213,7 +225,14 @@ export function NamingModal({ open, onOpenChange, context, value, onApply }: Nam
   const handleApply = () => {
     // Replace sequencial placeholder with configured start
     let finalTemplate = template.replace(/\{\{sequencial\}\}/g, `{{sequencial:${sequentialStart}}}`);
-    onApply(finalTemplate);
+    
+    // Build custom variables map for saving
+    const customVarsMap: Record<string, string> = {};
+    customVariables.forEach(v => {
+      customVarsMap[v.key] = v.example;
+    });
+    
+    onApply(finalTemplate, customVarsMap);
     onOpenChange(false);
   };
 

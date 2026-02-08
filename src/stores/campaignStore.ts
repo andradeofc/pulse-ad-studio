@@ -97,6 +97,9 @@ export interface CampaignConfig {
   destinationUrl: string;
   ctaType: string;
   urlParams: string;
+  
+  // Custom naming variables for nomenclature system
+  customNamingVariables: Record<string, string>;
 }
 
 interface CampaignState {
@@ -179,6 +182,7 @@ const defaultConfig: CampaignConfig = {
   destinationUrl: '',
   ctaType: 'LEARN_MORE',
   urlParams: 'utm_medium={{adset.name}}',
+  customNamingVariables: {},
 };
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
