@@ -275,6 +275,24 @@ Deno.serve(async (req) => {
           throw new Error('No products found in the product set');
         }
 
+        // Insert product tracking records
+        const productRecords = uniqueProducts.map((product) => ({
+          schedule_id: schedule.id,
+          retailer_id: canonicalizeRetailerId(product.retailer_id),
+          product_name: product.name || null,
+          status: 'pending',
+        }));
+
+        const { error: insertProductsError } = await supabase
+          .from('catalog_schedule_products')
+          .insert(productRecords);
+
+        if (insertProductsError) {
+          console.warn('[process-catalog-schedules] Failed to insert product tracking records:', insertProductsError);
+        } else {
+          console.log(`[process-catalog-schedules] Inserted ${productRecords.length} product tracking records`);
+        }
+
         let productsUpdated = 0;
         const errors: string[] = [];
 
@@ -313,37 +331,50 @@ Deno.serve(async (req) => {
 
           if (batchResult.validation_status) {
             let updated = 0;
+            const successRetailerIds: string[] = [];
+            const failedRetailerIds: { retailer_id: string; error: string }[] = [];
 
             for (const status of batchResult.validation_status) {
               if (status.status === 'success') {
                 updated++;
+                if (status.retailer_id) successRetailerIds.push(status.retailer_id);
                 continue;
               }
 
               const errorMsg = status.errors?.map((e) => e.message).join(', ') || 'Unknown error';
               const retailerIdLabel = status.retailer_id ? status.retailer_id : 'batch';
               outErrors.push(`${retailerIdLabel}: ${errorMsg}`);
+              if (status.retailer_id) {
+                failedRetailerIds.push({ retailer_id: status.retailer_id, error: errorMsg });
+              }
             }
 
-            return { updated, errors: outErrors, duplicateError };
+            console.log(`[process-catalog-schedules] ${label} validation results: ${updated} success, ${failedRetailerIds.length} failed`);
+            if (failedRetailerIds.length > 0) {
+              console.log(`[process-catalog-schedules] Failed retailer_ids: ${JSON.stringify(failedRetailerIds)}`);
+            }
+
+            return { updated, errors: outErrors, duplicateError, successRetailerIds, failedRetailerIds };
           }
 
           if (batchResult.handles && batchResult.handles.length > 0) {
             console.log(`[process-catalog-schedules] ${label} accepted with handles: ${batchResult.handles.join(', ')}`);
-            return { updated: reqs.length, errors: outErrors, duplicateError: false };
+            // When we get handles, we assume all products in the batch were accepted
+            const allRetailerIds = reqs.map((r) => r.retailer_id);
+            return { updated: reqs.length, errors: outErrors, duplicateError: false, successRetailerIds: allRetailerIds, failedRetailerIds: [] };
           }
 
           console.warn(
             `[process-catalog-schedules] ${label} unexpected response shape: ${JSON.stringify(batchResult).slice(0, 1500)}`
           );
-          return { updated: 0, errors: outErrors.length ? outErrors : ['batch: Unknown response'], duplicateError: false };
+          return { updated: 0, errors: outErrors.length ? outErrors : ['batch: Unknown response'], duplicateError: false, successRetailerIds: [], failedRetailerIds: [] };
         };
 
         const sendItemsBatchWithSplit = async (
           reqs: BatchRequest[],
           label: string,
           depth: number
-        ): Promise<{ updated: number; errors: string[] }> => {
+        ): Promise<{ updated: number; errors: string[]; successRetailerIds: string[]; failedRetailerIds: { retailer_id: string; error: string }[] }> => {
           const result = await sendItemsBatchOnce(reqs, label);
 
           // Professional fallback: if Meta complains about duplicate retailer_id at the batch level,
@@ -362,10 +393,20 @@ Deno.serve(async (req) => {
             await sleep(200);
             const rb = await sendItemsBatchWithSplit(b, `${label}.b`, depth + 1);
 
-            return { updated: ra.updated + rb.updated, errors: [...ra.errors, ...rb.errors] };
+            return { 
+              updated: ra.updated + rb.updated, 
+              errors: [...ra.errors, ...rb.errors],
+              successRetailerIds: [...ra.successRetailerIds, ...rb.successRetailerIds],
+              failedRetailerIds: [...ra.failedRetailerIds, ...rb.failedRetailerIds],
+            };
           }
 
-          return { updated: result.updated, errors: result.errors };
+          return { 
+            updated: result.updated, 
+            errors: result.errors,
+            successRetailerIds: result.successRetailerIds || [],
+            failedRetailerIds: result.failedRetailerIds || [],
+          };
         };
 
         // Process products in batches of 5000 (Facebook's limit per request)
@@ -415,6 +456,16 @@ Deno.serve(async (req) => {
             };
           });
 
+          // Log detailed payload for debugging (first 3 requests only)
+          if (batchRequests.length > 0) {
+            const samplePayload = {
+              access_token: '[REDACTED]',
+              item_type: 'PRODUCT_ITEM',
+              requests: batchRequests.slice(0, 3),
+            };
+            console.log(`[process-catalog-schedules] Sample payload (first 3 items): ${JSON.stringify(samplePayload, null, 2)}`);
+          }
+
           console.log(`[process-catalog-schedules] Sending batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batchRequests.length} products`);
 
            // Send batch update using items_batch endpoint (with adaptive splitting on duplicate retailer_id)
@@ -426,6 +477,29 @@ Deno.serve(async (req) => {
 
            productsUpdated += outcome.updated;
            errors.push(...outcome.errors);
+
+           // Update product tracking records
+           if (outcome.successRetailerIds.length > 0) {
+             const { error: updateSuccessError } = await supabase
+               .from('catalog_schedule_products')
+               .update({ status: 'success', updated_at: new Date().toISOString() })
+               .eq('schedule_id', schedule.id)
+               .in('retailer_id', outcome.successRetailerIds);
+             
+             if (updateSuccessError) {
+               console.warn('[process-catalog-schedules] Failed to update success product records:', updateSuccessError);
+             }
+           }
+
+           if (outcome.failedRetailerIds.length > 0) {
+             for (const failed of outcome.failedRetailerIds) {
+               await supabase
+                 .from('catalog_schedule_products')
+                 .update({ status: 'failed', error_message: failed.error, updated_at: new Date().toISOString() })
+                 .eq('schedule_id', schedule.id)
+                 .eq('retailer_id', failed.retailer_id);
+             }
+           }
 
            // Small delay between batches to avoid rate limiting
            if (i + BATCH_SIZE < uniqueProducts.length) {

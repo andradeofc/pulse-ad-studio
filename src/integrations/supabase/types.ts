@@ -140,6 +140,47 @@ export type Database = {
         }
         Relationships: []
       }
+      catalog_schedule_products: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          product_name: string | null
+          retailer_id: string
+          schedule_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          product_name?: string | null
+          retailer_id: string
+          schedule_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          product_name?: string | null
+          retailer_id?: string
+          schedule_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_schedule_products_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       catalog_schedules: {
         Row: {
           catalog_id: string
