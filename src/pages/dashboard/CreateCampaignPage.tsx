@@ -134,29 +134,48 @@ export default function CreateCampaignPage() {
   };
 
   const proceedWithCreation = async () => {
-    // CRITICAL: Mark as submitted immediately to prevent any race conditions
-    if (jobSubmitted) {
-      console.warn('[CreateCampaignPage] Job already submitted, blocking duplicate');
+    // CRITICAL: Triple-check to prevent any race conditions
+    if (jobSubmitted || isCreating || createJobMutation.isPending) {
+      console.warn('[CreateCampaignPage] Job already in progress, blocking duplicate');
       return;
     }
     
+    // Mark as submitted BEFORE any async work
     setJobSubmitted(true);
-    setShowRateLimitWarning(false);
     setIsCreating(true);
+    setShowRateLimitWarning(false);
     
     try {
-      // Fetch account details for all selected accounts
-      const { data: accountsData } = await supabase
+      // 1. VALIDATE: Ensure we have accounts selected
+      if (!config.selectedAccounts || config.selectedAccounts.length === 0) {
+        throw new Error('Nenhuma conta selecionada');
+      }
+
+      const accountsToProcess = config.selectedAccounts.length;
+      
+      console.log(`[CreateCampaignPage] Starting job creation for ${accountsToProcess} accounts`);
+
+      // 2. FETCH: Get account details for all selected accounts
+      const { data: accountsData, error: accountsError } = await supabase
         .from('facebook_ad_accounts')
         .select('id, account_id, name')
         .in('id', config.selectedAccounts);
       
+      if (accountsError) {
+        throw new Error(`Erro ao buscar contas: ${accountsError.message}`);
+      }
+
+      if (!accountsData || accountsData.length !== accountsToProcess) {
+        throw new Error(`Esperado ${accountsToProcess} contas, encontrado ${accountsData?.length || 0}`);
+      }
+      
       const accountsMap = new Map(
-        (accountsData || []).map(acc => [acc.id, { accountId: acc.account_id, accountName: acc.name }])
+        accountsData.map(acc => [acc.id, { accountId: acc.account_id, accountName: acc.name }])
       );
       
-      // Build the job items structure
-      // For multi-account mode, create separate items for EACH account
+      console.log(`[CreateCampaignPage] Accounts loaded: ${Array.from(accountsMap.values()).map(a => a.accountName).join(', ')}`);
+      
+      // 3. BUILD: Create job items structure
       const items: Array<{
         item_type: 'campaign' | 'adset' | 'ad';
         name: string;
@@ -164,10 +183,7 @@ export default function CreateCampaignPage() {
         config?: Record<string, any>;
       }> = [];
 
-      const accountsToProcess = config.selectedAccounts.length || 1;
-      
-      // IMPORTANT: totalCampaigns/totalAdsets/totalAds are PER ACCOUNT, not global
-      // The store returns the structure for ONE account
+      // IMPORTANT: These are PER ACCOUNT values
       const campaignsPerAccount = totalCampaigns;
       const adsetsPerAccount = totalAdsets;
       const adsPerAccount = totalAds;
@@ -185,16 +201,21 @@ export default function CreateCampaignPage() {
       
       let itemIndex = 0;
       
-      // For each account (or once if single account)
+      // Generate items for EACH account
       for (let accountIdx = 0; accountIdx < accountsToProcess; accountIdx++) {
         const accountDbId = config.selectedAccounts[accountIdx];
-        const accountInfo = accountsMap.get(accountDbId) || { accountId: '', accountName: 'Conta' };
+        const accountInfo = accountsMap.get(accountDbId);
+        
+        if (!accountInfo) {
+          throw new Error(`Conta ${accountDbId} não encontrada no mapa`);
+        }
+        
         const { accountId, accountName } = accountInfo;
         
-        // Generate campaigns, adsets, and ads for THIS account
-        // Use campaignsPerAccount (NOT totalCampaigns which could be multiplied elsewhere)
+        console.log(`[CreateCampaignPage] Generating items for account ${accountIdx + 1}/${accountsToProcess}: ${accountName}`);
+        
+        // Generate campaigns for THIS account
         for (let c = 0; c < campaignsPerAccount; c++) {
-          // Resolve campaign name using the naming resolver
           const campaignName = resolveTemplate(config.campaignName, {
             ...baseContext,
             campaignIndex: c,
@@ -213,12 +234,11 @@ export default function CreateCampaignPage() {
           });
           itemIndex++;
 
-          // Adsets per campaign - calculate correctly based on per-account values
+          // Generate adsets for THIS campaign
           const adsetsForThisCampaign = Math.ceil(adsetsPerAccount / campaignsPerAccount);
           for (let a = 0; a < adsetsForThisCampaign; a++) {
             const creativeName = config.selectedCreatives[a % config.selectedCreatives.length]?.name || `Criativo${a + 1}`;
             
-            // Resolve adset name
             const adsetName = resolveTemplate(config.adsetName, {
               ...baseContext,
               adsetIndex: a,
@@ -239,12 +259,11 @@ export default function CreateCampaignPage() {
             });
             itemIndex++;
 
-            // Ads per adset - calculate correctly based on per-account values
+            // Generate ads for THIS adset
             const adsForThisAdset = Math.ceil(adsPerAccount / adsetsPerAccount);
             for (let ad = 0; ad < adsForThisAdset; ad++) {
               const adCreativeName = config.selectedCreatives[ad % config.selectedCreatives.length]?.name || `Criativo${ad + 1}`;
               
-              // Resolve ad name
               const adName = resolveTemplate(config.adName, {
                 ...baseContext,
                 adIndex: ad,
@@ -268,35 +287,63 @@ export default function CreateCampaignPage() {
         }
       }
 
-      // Create the job name
+      // 4. VALIDATE: Verify we generated the correct number of items
+      const expectedCampaigns = campaignsPerAccount * accountsToProcess;
+      const expectedAdsets = adsetsPerAccount * accountsToProcess;
+      const expectedAds = adsPerAccount * accountsToProcess;
+      const expectedTotal = expectedCampaigns + expectedAdsets + expectedAds;
+      
+      const actualCampaigns = items.filter(i => i.item_type === 'campaign').length;
+      const actualAdsets = items.filter(i => i.item_type === 'adset').length;
+      const actualAds = items.filter(i => i.item_type === 'ad').length;
+      
+      console.log(`[CreateCampaignPage] Generated items: ${actualCampaigns} campaigns, ${actualAdsets} adsets, ${actualAds} ads (total: ${items.length})`);
+      console.log(`[CreateCampaignPage] Expected items: ${expectedCampaigns} campaigns, ${expectedAdsets} adsets, ${expectedAds} ads (total: ${expectedTotal})`);
+      
+      if (items.length !== expectedTotal) {
+        throw new Error(`Erro de geração: esperado ${expectedTotal} itens, gerado ${items.length}`);
+      }
+      
+      if (actualCampaigns !== expectedCampaigns) {
+        throw new Error(`Erro de geração: esperado ${expectedCampaigns} campanhas, gerado ${actualCampaigns}`);
+      }
+
+      // 5. SUBMIT: Create the job
       const now = new Date();
       const dateStr = now.toLocaleDateString('pt-BR').replace(/\//g, '_');
       const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }).replace(':', '_');
-      const jobName = `[${config.useCatalog ? 'CAT' : 'CRE'}|${config.useCBO ? 'CBO' : 'ABO'}][${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}][${dateStr}][${timeStr}]`;
+      const jobName = `[${config.useCatalog ? 'CAT' : 'CRE'}|${config.useCBO ? 'CBO' : 'ABO'}][${campaignsPerAccount}-${config.adsetsPerCampaign}-${config.adsPerAdset}][${dateStr}][${timeStr}]`;
 
-      // Total counts: per-account values multiplied by number of accounts
-      const finalTotalCampaigns = campaignsPerAccount * accountsToProcess;
-      const finalTotalAdsets = adsetsPerAccount * accountsToProcess;
-      const finalTotalAds = adsPerAccount * accountsToProcess;
+      console.log(`[CreateCampaignPage] Submitting job: ${jobName}`);
 
       await createJobMutation.mutateAsync({
         name: jobName,
         config: config as any,
-        totalCampaigns: finalTotalCampaigns,
-        totalAdsets: finalTotalAdsets,
-        totalAds: finalTotalAds,
+        totalCampaigns: expectedCampaigns,
+        totalAdsets: expectedAdsets,
+        totalAds: expectedAds,
         accountsCount: accountsToProcess,
         items,
       });
       
+      console.log(`[CreateCampaignPage] Job submitted successfully!`);
+      
+      // 6. CLEANUP: Only reset and navigate AFTER successful submission
       resetConfig();
       navigate('/fila-processamento');
+      
+      // NOTE: Do NOT reset jobSubmitted here - we're navigating away
     } catch (error) {
-      console.error('Error creating campaign job:', error);
-      // Reset the submission flag on error so user can retry
+      console.error('[CreateCampaignPage] Error creating campaign job:', error);
+      // Reset flags on error so user can retry
       setJobSubmitted(false);
-    } finally {
       setIsCreating(false);
+      
+      toast({
+        title: 'Erro ao criar job',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
     }
   };
 
