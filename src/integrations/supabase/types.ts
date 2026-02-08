@@ -309,6 +309,7 @@ export type Database = {
       facebook_ad_accounts: {
         Row: {
           account_id: string
+          amount_spent: number | null
           business_id: string | null
           business_name: string | null
           created_at: string
@@ -316,11 +317,13 @@ export type Database = {
           id: string
           name: string
           profile_id: string
+          spend_updated_at: string | null
           status: string | null
           timezone: string | null
         }
         Insert: {
           account_id: string
+          amount_spent?: number | null
           business_id?: string | null
           business_name?: string | null
           created_at?: string
@@ -328,11 +331,13 @@ export type Database = {
           id?: string
           name: string
           profile_id: string
+          spend_updated_at?: string | null
           status?: string | null
           timezone?: string | null
         }
         Update: {
           account_id?: string
+          amount_spent?: number | null
           business_id?: string | null
           business_name?: string | null
           created_at?: string
@@ -340,6 +345,7 @@ export type Database = {
           id?: string
           name?: string
           profile_id?: string
+          spend_updated_at?: string | null
           status?: string | null
           timezone?: string | null
         }

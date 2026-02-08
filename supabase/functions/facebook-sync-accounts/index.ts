@@ -106,11 +106,14 @@ serve(async (req) => {
 
     const syncedAccounts: any[] = [];
 
-    // Helper function to upsert ad account
+    // Helper function to upsert ad account with spend
     const upsertAdAccount = async (account: any, businessId: string | null, businessName: string | null) => {
       const accountStatus = account.account_status === 1 ? "active" : 
                            account.account_status === 2 ? "disabled" : 
                            account.account_status === 3 ? "unsettled" : "unknown";
+      
+      // Parse amount_spent (Facebook returns in cents for most currencies)
+      const amountSpent = account.amount_spent ? parseFloat(account.amount_spent) / 100 : 0;
       
       const { data, error } = await supabase
         .from("facebook_ad_accounts")
@@ -124,6 +127,8 @@ serve(async (req) => {
             status: accountStatus,
             business_id: businessId,
             business_name: businessName,
+            amount_spent: amountSpent,
+            spend_updated_at: new Date().toISOString(),
           },
           { onConflict: "profile_id,account_id" }
         )
@@ -137,9 +142,9 @@ serve(async (req) => {
       }
     };
 
-    // 2. Fetch personal ad accounts
+    // 2. Fetch personal ad accounts with spend
     console.log("Fetching personal ad accounts...");
-    const personalAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+    const personalAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status,amount_spent&access_token=${accessToken}`;
     
     const personalResponse = await fetch(personalAccountsUrl);
     
@@ -183,7 +188,7 @@ serve(async (req) => {
         // Fetch owned ad accounts for this BM
         console.log(`Fetching ad accounts for BM: ${business.name} (${business.id})`);
         
-        const ownedAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+        const ownedAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status,amount_spent&access_token=${accessToken}`;
         const ownedResponse = await fetch(ownedAccountsUrl);
         
         if (ownedResponse.ok) {
@@ -199,7 +204,7 @@ serve(async (req) => {
         }
 
         // Fetch client ad accounts for this BM
-        const clientAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+        const clientAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status,amount_spent&access_token=${accessToken}`;
         const clientResponse = await fetch(clientAccountsUrl);
         
         if (clientResponse.ok) {
