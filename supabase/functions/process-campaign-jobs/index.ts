@@ -16,9 +16,9 @@ const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 const BATCH_CONFIG = {
   MAX_BATCH_SIZE: 50, // Facebook hard limit
   CAMPAIGN_BATCH_SIZE: 15, // Campaigns are heavier ops
-  ADSET_BATCH_SIZE: 40, // Adsets can be batched more aggressively  
-  AD_BATCH_SIZE: 40, // Ads with creatives
-  CREATIVE_BATCH_SIZE: 40, // Creatives batch
+  ADSET_BATCH_SIZE: 30, // Reduced to avoid timeouts  
+  AD_BATCH_SIZE: 30, // Reduced to avoid timeouts
+  CREATIVE_BATCH_SIZE: 20, // Reduced for catalog creatives (heavy operations)
   BATCH_DELAY_MS: 50, // Minimal delay (QPS allows 100/s)
   DYNAMIC_DELAY_ENABLED: true, // Enable adaptive delays based on usage
 };
