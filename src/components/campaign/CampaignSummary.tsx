@@ -34,17 +34,17 @@ export function CampaignSummary() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('facebook_ad_accounts')
-        .select('account_id, name, currency');
+        .select('id, account_id, name, currency');
       if (error) throw error;
       return data || [];
     },
     staleTime: 5 * 60 * 1000,
   });
 
-  // Get selected accounts data with currencies
+  // Get selected accounts data with currencies (using database id, not Facebook account_id)
   const selectedAccountsData = useMemo(() => {
     return config.selectedAccounts
-      .map(accountId => adAccounts.find(a => a.account_id === accountId))
+      .map(dbId => adAccounts.find(a => a.id === dbId))
       .filter(Boolean) as typeof adAccounts;
   }, [config.selectedAccounts, adAccounts]);
 
