@@ -71,14 +71,19 @@ export type Database = {
       campaign_jobs: {
         Row: {
           accounts_count: number
+          batch_size: number | null
           completed_at: string | null
           config: Json
           created_at: string
           error_message: string | null
           hash: string
           id: string
+          last_rate_limit_percent: number | null
           name: string
+          paused_at: string | null
+          processed_items: number | null
           progress: number
+          resume_after: string | null
           started_at: string | null
           status: string
           total_ads: number
@@ -89,14 +94,19 @@ export type Database = {
         }
         Insert: {
           accounts_count?: number
+          batch_size?: number | null
           completed_at?: string | null
           config?: Json
           created_at?: string
           error_message?: string | null
           hash: string
           id?: string
+          last_rate_limit_percent?: number | null
           name: string
+          paused_at?: string | null
+          processed_items?: number | null
           progress?: number
+          resume_after?: string | null
           started_at?: string | null
           status?: string
           total_ads?: number
@@ -107,14 +117,19 @@ export type Database = {
         }
         Update: {
           accounts_count?: number
+          batch_size?: number | null
           completed_at?: string | null
           config?: Json
           created_at?: string
           error_message?: string | null
           hash?: string
           id?: string
+          last_rate_limit_percent?: number | null
           name?: string
+          paused_at?: string | null
+          processed_items?: number | null
           progress?: number
+          resume_after?: string | null
           started_at?: string | null
           status?: string
           total_ads?: number
@@ -521,6 +536,39 @@ export type Database = {
           token_expires_at?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      rate_limit_tracking: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          last_updated_at: string
+          request_count: number
+          usage_percent: number
+          user_id: string
+          window_start: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          last_updated_at?: string
+          request_count?: number
+          usage_percent?: number
+          user_id: string
+          window_start?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          last_updated_at?: string
+          request_count?: number
+          usage_percent?: number
+          user_id?: string
+          window_start?: string
         }
         Relationships: []
       }
