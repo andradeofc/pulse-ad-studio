@@ -24,7 +24,7 @@ export default function LoginPage() {
       await login(email, password);
       toast({
         title: 'Login realizado!',
-        description: 'Bem-vindo de volta ao AdsPulse.',
+        description: 'Bem-vindo de volta ao AdStorm.',
       });
       navigate('/dashboard');
     } catch (error: unknown) {
@@ -53,7 +53,7 @@ export default function LoginPage() {
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-glow-sm">
               <Megaphone className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-xl text-foreground">AdsPulse</span>
+            <span className="font-bold text-xl text-foreground">AdStorm</span>
           </Link>
 
           <h1 className="text-2xl font-bold text-foreground mb-2">Bem-vindo de volta</h1>

@@ -28,7 +28,7 @@ export function PublicLayout() {
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-glow-sm">
                 <Megaphone className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-bold text-xl text-foreground">AdsPulse</span>
+              <span className="font-bold text-xl text-foreground">AdStorm</span>
             </Link>
 
             {/* Desktop Navigation */}
@@ -117,7 +117,7 @@ export function PublicLayout() {
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
                     <Megaphone className="w-4 h-4 text-primary-foreground" />
                   </div>
-                  <span className="font-bold text-lg text-foreground">AdsPulse</span>
+                  <span className="font-bold text-lg text-foreground">AdStorm</span>
                 </Link>
                 <p className="text-sm text-muted-foreground">
                   Plataforma profissional para gestão e criação em massa de campanhas no Facebook Ads.
@@ -159,7 +159,7 @@ export function PublicLayout() {
 
             <div className="border-t border-border mt-12 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
               <p className="text-sm text-muted-foreground">
-                © 2024 AdsPulse. Todos os direitos reservados.
+                © 2024 AdStorm. Todos os direitos reservados.
               </p>
               <div className="flex items-center gap-4">
                 <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">

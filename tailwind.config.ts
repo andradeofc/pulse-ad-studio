@@ -60,7 +60,7 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        // AdsPulse custom colors
+        // AdStorm custom colors
         "ads-success": "hsl(var(--ads-success))",
         "ads-warning": "hsl(var(--ads-warning))",
         "ads-danger": "hsl(var(--ads-danger))",

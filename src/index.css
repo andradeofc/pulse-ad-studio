@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* AdsPulse Design System - Dark Theme
+/* AdStorm Design System - Dark Theme
    Professional Facebook Ads Management Platform
    Colors in HSL format for Tailwind compatibility
 */
@@ -60,7 +60,7 @@
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 160 84% 39%;
 
-    /* Custom AdsPulse Colors */
+    /* Custom AdStorm Colors */
     --ads-warning: 38 92% 50%;          /* #f59e0b - Amber */
     --ads-info: 217 91% 60%;            /* #3b82f6 - Blue */
     --ads-success: 160 84% 39%;         /* #10b981 - Emerald */
