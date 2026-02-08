@@ -152,7 +152,8 @@ export default function CatalogSchedulingPage() {
   const [selectedCatalog, setSelectedCatalog] = useState<string>('');
   const [selectedProductSet, setSelectedProductSet] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-  const [selectedTime, setSelectedTime] = useState<string>('21:00');
+  const [selectedHour, setSelectedHour] = useState<string>('21');
+  const [selectedMinute, setSelectedMinute] = useState<string>('00');
 
   // Fetch schedules
   const { data: schedules, isLoading: loadingSchedules } = useQuery({
@@ -365,10 +366,11 @@ export default function CatalogSchedulingPage() {
   // Create schedule mutation
   const createScheduleMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedDate || !selectedTime) throw new Error('Data e hora são obrigatórios');
+      if (!selectedDate || !selectedHour || !selectedMinute) throw new Error('Data e hora são obrigatórios');
 
       // Combine date and time in Brazil timezone
-      const [hours, minutes] = selectedTime.split(':').map(Number);
+      const hours = parseInt(selectedHour, 10);
+      const minutes = parseInt(selectedMinute, 10);
       const scheduledDate = new Date(selectedDate);
       scheduledDate.setHours(hours, minutes, 0, 0);
 
@@ -444,10 +446,11 @@ export default function CatalogSchedulingPage() {
     setSelectedCatalog('');
     setSelectedProductSet('');
     setSelectedDate(undefined);
-    setSelectedTime('21:00');
+    setSelectedHour('21');
+    setSelectedMinute('00');
   };
 
-  const canSubmit = selectedCreative && selectedProfile && selectedCatalog && selectedProductSet && selectedDate && selectedTime;
+  const canSubmit = selectedCreative && selectedProfile && selectedCatalog && selectedProductSet && selectedDate && selectedHour && selectedMinute;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -485,14 +488,9 @@ export default function CatalogSchedulingPage() {
     );
   };
 
-  // Generate time options (every 30 minutes)
-  const timeOptions = [];
-  for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 30) {
-      const time = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-      timeOptions.push(time);
-    }
-  }
+  // Generate hour and minute options
+  const hourOptions = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+  const minuteOptions = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 
   // Subscribe to realtime updates
   useEffect(() => {
@@ -778,18 +776,33 @@ export default function CatalogSchedulingPage() {
                     <Clock className="w-4 h-4" />
                     Horário (Brasil)
                   </Label>
-                  <Select value={selectedTime} onValueChange={setSelectedTime}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Horário" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[300px]">
-                      {timeOptions.map((time) => (
-                        <SelectItem key={time} value={time}>
-                          {time}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedHour} onValueChange={setSelectedHour}>
+                      <SelectTrigger className="w-[80px]">
+                        <SelectValue placeholder="HH" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[200px]">
+                        {hourOptions.map((hour) => (
+                          <SelectItem key={hour} value={hour}>
+                            {hour}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-lg font-bold text-muted-foreground">:</span>
+                    <Select value={selectedMinute} onValueChange={setSelectedMinute}>
+                      <SelectTrigger className="w-[80px]">
+                        <SelectValue placeholder="MM" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[200px]">
+                        {minuteOptions.map((minute) => (
+                          <SelectItem key={minute} value={minute}>
+                            {minute}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
@@ -815,7 +828,7 @@ export default function CatalogSchedulingPage() {
                       </p>
                       <p>
                         <strong className="text-foreground">Agendado para:</strong>{' '}
-                        {selectedDate && format(selectedDate, "dd/MM/yyyy", { locale: ptBR })} às {selectedTime} (Horário de Brasília)
+                        {selectedDate && format(selectedDate, "dd/MM/yyyy", { locale: ptBR })} às {selectedHour}:{selectedMinute} (Horário de Brasília)
                       </p>
                     </div>
                   </CardContent>
