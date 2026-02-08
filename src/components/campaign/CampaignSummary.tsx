@@ -4,8 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { useCampaignStore, Creative } from '@/stores/campaignStore';
 import { cn } from '@/lib/utils';
+import { RateLimitIndicator } from './RateLimitIndicator';
+import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
+import { useMemo } from 'react';
 
 export function CampaignSummary() {
   const { config, getTotalCampaigns, getTotalAdsets, getTotalAds, getTotalBudget } = useCampaignStore();
@@ -14,6 +18,19 @@ export function CampaignSummary() {
   const totalAdsets = getTotalAdsets();
   const totalAds = getTotalAds();
   const totalBudget = getTotalBudget();
+
+  // Calculate rate limit estimate
+  const rateLimitEstimate = useMemo(() => {
+    const accountsCount = config.selectedAccounts.length || 1;
+    return estimateRateLimitUsage(
+      totalCampaigns,
+      config.adsetsPerCampaign,
+      config.adsPerAdset,
+      config.useCatalog,
+      0, // Current usage (we don't know until we call the API)
+      accountsCount
+    );
+  }, [totalCampaigns, config.adsetsPerCampaign, config.adsPerAdset, config.useCatalog, config.selectedAccounts.length]);
 
   const distributionLabel = {
     campaign: 'Por Campanha',
@@ -109,6 +126,10 @@ export function CampaignSummary() {
             {formatCurrency(totalBudget)}
           </span>
         </div>
+
+        {/* Rate Limit Indicator */}
+        <Separator className="my-2" />
+        <RateLimitIndicator estimate={rateLimitEstimate} showDetails={true} />
 
         {/* Selected Creatives */}
         {config.selectedCreatives.length > 0 && (
