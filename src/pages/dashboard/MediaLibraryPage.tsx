@@ -672,19 +672,34 @@ export default function MediaLibraryPage() {
               <span>{formatDate(previewCreative.created_at)}</span>
             </div>
           )}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Fechar</AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <a 
-                href={previewCreative?.url} 
-                download={previewCreative?.name} 
-                target="_blank" 
-                rel="noopener noreferrer"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </a>
-            </AlertDialogAction>
+          <AlertDialogFooter className="flex-row gap-2 sm:justify-between">
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (previewCreative) {
+                  handleDelete(previewCreative);
+                  setPreviewCreative(null);
+                }
+              }}
+              className="mr-auto"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Excluir
+            </Button>
+            <div className="flex gap-2">
+              <AlertDialogCancel>Fechar</AlertDialogCancel>
+              <AlertDialogAction asChild>
+                <a 
+                  href={previewCreative?.url} 
+                  download={previewCreative?.name} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </a>
+              </AlertDialogAction>
+            </div>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
