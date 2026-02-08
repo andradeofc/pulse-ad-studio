@@ -1343,33 +1343,20 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // Auth check
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Parse job_id
+    // Parse body first to get job_id
     let jobId: string | null = null;
+    let batchMode = false;
+    let batchSize = 25;
+    
     try {
       const body = await req.json();
       jobId = body.job_id;
+      batchMode = body.batch_mode === true;
+      batchSize = body.batch_size || 25;
     } catch {
       // No body
     }
@@ -1380,6 +1367,66 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Auth check - support both user tokens AND service role calls from queue-processor
+    const authHeader = req.headers.get('Authorization');
+    let userId: string | null = null;
+    let isServiceRoleCall = false;
+    
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      
+      // Check if this is the service role key (internal call from queue-processor)
+      if (token === supabaseServiceKey) {
+        isServiceRoleCall = true;
+        console.log(`[process-jobs] Service role call for job ${jobId}`);
+        
+        // Get job to find user_id
+        const { data: jobForUser } = await supabase
+          .from('campaign_jobs')
+          .select('user_id')
+          .eq('id', jobId)
+          .single();
+        
+        if (jobForUser) {
+          userId = jobForUser.user_id;
+        }
+      } else if (token === supabaseAnonKey) {
+        // Anon key call from queue-processor via functions.invoke
+        isServiceRoleCall = true;
+        console.log(`[process-jobs] Anon key call for job ${jobId}`);
+        
+        // Get job to find user_id
+        const { data: jobForUser } = await supabase
+          .from('campaign_jobs')
+          .select('user_id')
+          .eq('id', jobId)
+          .single();
+        
+        if (jobForUser) {
+          userId = jobForUser.user_id;
+        }
+      } else {
+        // Regular user token
+        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+        
+        if (!userError && user) {
+          userId = user.id;
+        }
+      }
+    }
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'Unauthorized - no valid user' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Create a fake user object for compatibility
+    const user = { id: userId };
+
+    // Note: jobId was already validated above
 
     console.log(`[process-jobs] Processing job ${jobId} for user ${user.id}`);
 
