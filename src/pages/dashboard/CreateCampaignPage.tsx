@@ -131,7 +131,20 @@ export default function CreateCampaignPage() {
     setIsCreating(true);
     
     try {
+      // Fetch account details for all selected accounts
+      const { data: accountsData } = await import('@/integrations/supabase/client').then(m => 
+        m.supabase
+          .from('facebook_ad_accounts')
+          .select('id, account_id, name')
+          .in('id', config.selectedAccounts)
+      );
+      
+      const accountsMap = new Map(
+        (accountsData || []).map(acc => [acc.id, { accountId: acc.account_id, accountName: acc.name }])
+      );
+      
       // Build the job items structure
+      // For multi-account mode, create separate items for EACH account
       const items: Array<{
         item_type: 'campaign' | 'adset' | 'ad';
         name: string;
@@ -139,7 +152,7 @@ export default function CreateCampaignPage() {
         config?: Record<string, any>;
       }> = [];
 
-      let itemIndex = 0;
+      const accountsToProcess = config.selectedAccounts.length || 1;
       
       // Build context for name resolution
       const baseContext = {
@@ -152,69 +165,86 @@ export default function CreateCampaignPage() {
         customVariables: config.customNamingVariables,
       };
       
-      // Generate campaigns, adsets, and ads based on config
-      for (let c = 0; c < totalCampaigns; c++) {
-        // Resolve campaign name using the naming resolver
-        const campaignName = resolveTemplate(config.campaignName, {
-          ...baseContext,
-          campaignIndex: c,
-          accountName: 'Conta', // Will be resolved per-account in edge function
-        });
+      let itemIndex = 0;
+      
+      // For each account (or once if single account)
+      for (let accountIdx = 0; accountIdx < accountsToProcess; accountIdx++) {
+        const accountDbId = config.selectedAccounts[accountIdx];
+        const accountInfo = accountsMap.get(accountDbId) || { accountId: '', accountName: 'Conta' };
+        const { accountId, accountName } = accountInfo;
         
-        const campaignIndex = itemIndex;
-        items.push({
-          item_type: 'campaign',
-          name: campaignName,
-          config: { objective: config.objective },
-        });
-        itemIndex++;
-
-        // Adsets per campaign
-        const adsetsForThisCampaign = Math.ceil(totalAdsets / totalCampaigns);
-        for (let a = 0; a < adsetsForThisCampaign; a++) {
-          const creativeName = config.selectedCreatives[a % config.selectedCreatives.length]?.name || `Criativo${a + 1}`;
-          
-          // Resolve adset name
-          const adsetName = resolveTemplate(config.adsetName, {
+        // Generate campaigns, adsets, and ads for THIS account
+        for (let c = 0; c < totalCampaigns; c++) {
+          // Resolve campaign name using the naming resolver
+          const campaignName = resolveTemplate(config.campaignName, {
             ...baseContext,
-            adsetIndex: a,
-            creativeName,
+            campaignIndex: c,
+            accountName: accountName,
           });
-
-          const adsetIndex = itemIndex;
+          
+          const campaignIndex = itemIndex;
           items.push({
-            item_type: 'adset',
-            name: adsetName,
-            parent_index: campaignIndex,
+            item_type: 'campaign',
+            name: campaignName,
             config: { 
-              pixelId: config.pixelId,
-              catalogId: config.catalogId,
+              objective: config.objective,
+              accountId,
+              accountName,
             },
           });
           itemIndex++;
 
-          // Ads per adset
-          const adsForThisAdset = Math.ceil(totalAds / totalAdsets);
-          for (let ad = 0; ad < adsForThisAdset; ad++) {
-            const adCreativeName = config.selectedCreatives[ad % config.selectedCreatives.length]?.name || `Criativo${ad + 1}`;
+          // Adsets per campaign
+          const adsetsForThisCampaign = Math.ceil(totalAdsets / totalCampaigns);
+          for (let a = 0; a < adsetsForThisCampaign; a++) {
+            const creativeName = config.selectedCreatives[a % config.selectedCreatives.length]?.name || `Criativo${a + 1}`;
             
-            // Resolve ad name
-            const adName = resolveTemplate(config.adName, {
+            // Resolve adset name
+            const adsetName = resolveTemplate(config.adsetName, {
               ...baseContext,
-              adIndex: ad,
-              creativeName: adCreativeName,
+              adsetIndex: a,
+              creativeName,
             });
 
+            const adsetIndex = itemIndex;
             items.push({
-              item_type: 'ad',
-              name: adName,
-              parent_index: adsetIndex,
-              config: {
-                useCatalog: config.useCatalog,
-                creativeId: config.selectedCreatives[ad % config.selectedCreatives.length]?.id,
+              item_type: 'adset',
+              name: adsetName,
+              parent_index: campaignIndex,
+              config: { 
+                pixelId: config.pixelId,
+                catalogId: config.catalogId,
+                accountId,
+                accountName,
               },
             });
             itemIndex++;
+
+            // Ads per adset
+            const adsForThisAdset = Math.ceil(totalAds / totalAdsets);
+            for (let ad = 0; ad < adsForThisAdset; ad++) {
+              const adCreativeName = config.selectedCreatives[ad % config.selectedCreatives.length]?.name || `Criativo${ad + 1}`;
+              
+              // Resolve ad name
+              const adName = resolveTemplate(config.adName, {
+                ...baseContext,
+                adIndex: ad,
+                creativeName: adCreativeName,
+              });
+
+              items.push({
+                item_type: 'ad',
+                name: adName,
+                parent_index: adsetIndex,
+                config: {
+                  useCatalog: config.useCatalog,
+                  creativeId: config.selectedCreatives[ad % config.selectedCreatives.length]?.id,
+                  accountId,
+                  accountName,
+                },
+              });
+              itemIndex++;
+            }
           }
         }
       }
@@ -225,13 +255,18 @@ export default function CreateCampaignPage() {
       const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }).replace(':', '_');
       const jobName = `[${config.useCatalog ? 'CAT' : 'CRE'}|${config.useCBO ? 'CBO' : 'ABO'}][${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}][${dateStr}][${timeStr}]`;
 
+      // Total counts now reflect multi-account multiplication
+      const finalTotalCampaigns = totalCampaigns * accountsToProcess;
+      const finalTotalAdsets = totalAdsets * accountsToProcess;
+      const finalTotalAds = totalAds * accountsToProcess;
+
       await createJobMutation.mutateAsync({
         name: jobName,
         config: config as any,
-        totalCampaigns,
-        totalAdsets,
-        totalAds,
-        accountsCount: config.selectedAccounts.length || 1,
+        totalCampaigns: finalTotalCampaigns,
+        totalAdsets: finalTotalAdsets,
+        totalAds: finalTotalAds,
+        accountsCount: accountsToProcess,
         items,
       });
       
