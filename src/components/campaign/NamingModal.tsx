@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical } from 'lucide-react';
+import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
+import { useNamingPresets, type Preset, type CustomVariable } from '@/hooks/useNamingPresets';
 
 type NamingContext = 'campaign' | 'adset' | 'ad';
 
@@ -43,14 +44,6 @@ interface Variable {
   label: string;
   example: string;
   category: 'data' | 'date' | 'custom';
-}
-
-interface Preset {
-  id: string;
-  name: string;
-  template: string;
-  context: NamingContext;
-  isDefault?: boolean;
 }
 
 const dataVariables: Variable[] = [
@@ -74,56 +67,6 @@ const dateVariables: Variable[] = [
   { key: 'minuto', label: 'Minuto', example: '43', category: 'date' },
 ];
 
-const defaultPresets: Preset[] = [
-  {
-    id: 'default-ntp',
-    name: 'NTP',
-    template: '[CP{{sequencial:01}}] [{{conta_apelido}} + {{conjunto_catalogo}}] [{{nicho}}] [{{pagina_nome}}] [TDC {{budget}}] [{{dia}}/{{mes}}] - {{conjunto_catalogo}}',
-    context: 'campaign',
-    isDefault: true,
-  },
-  {
-    id: 'default-elton',
-    name: 'PRESET ELTON',
-    template: '[CP{{sequencial:08}}][{{budget}}][{{estrutura}}][{{conta_apelido}}][{{ano2}}_{{mes}}_{{dia}}][{{hora}}_{{minuto}}]',
-    context: 'campaign',
-    isDefault: true,
-  },
-  {
-    id: 'default-simples',
-    name: 'Simples',
-    template: '{{conta_apelido}}_{{criativo}}_{{sequencial:01}}',
-    context: 'campaign',
-    isDefault: true,
-  },
-];
-
-const PRESETS_STORAGE_KEY = 'naming-presets';
-
-const loadPresetsFromStorage = (): Preset[] => {
-  try {
-    const stored = localStorage.getItem(PRESETS_STORAGE_KEY);
-    if (stored) {
-      const userPresets = JSON.parse(stored) as Preset[];
-      // Merge default presets with user presets, avoiding duplicates
-      return [...defaultPresets, ...userPresets.filter(p => !p.isDefault)];
-    }
-  } catch (e) {
-    console.error('Error loading presets from storage:', e);
-  }
-  return defaultPresets;
-};
-
-const savePresetsToStorage = (presets: Preset[]) => {
-  try {
-    // Only save user-created presets (not defaults)
-    const userPresets = presets.filter(p => !p.isDefault);
-    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(userPresets));
-  } catch (e) {
-    console.error('Error saving presets to storage:', e);
-  }
-};
-
 const contextLabels: Record<NamingContext, { label: string; color: string }> = {
   campaign: { label: 'Campanha', color: 'bg-ads-success text-white' },
   adset: { label: 'Conjunto', color: 'bg-ads-info text-white' },
@@ -136,29 +79,58 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
   const [template, setTemplate] = useState(value || '');
   const [sequentialStart, setSequentialStart] = useState('01');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
-  const [presets, setPresets] = useState<Preset[]>(() => loadPresetsFromStorage());
-  const [customVariables, setCustomVariables] = useState<Variable[]>(() => {
-    // Initialize from initialCustomVariables if provided
-    if (initialCustomVariables && Object.keys(initialCustomVariables).length > 0) {
-      return Object.entries(initialCustomVariables).map(([key, value]) => ({
-        key,
-        label: key,
-        example: value,
-        category: 'custom' as const,
-      }));
-    }
-    // Start with no custom variables - user creates them as needed
-    return [];
-  });
-  const [newVarName, setNewVarName] = useState('');
-  const [showNewVarInput, setShowNewVarInput] = useState(false);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [editingPresetName, setEditingPresetName] = useState('');
+  const [newVarName, setNewVarName] = useState('');
+  const [showNewVarInput, setShowNewVarInput] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Load presets from storage on mount
+  // Local state for custom variables (merged from DB and initialCustomVariables)
+  const [localCustomVars, setLocalCustomVars] = useState<Variable[]>([]);
+
+  const {
+    presets,
+    customVariables,
+    isLoading,
+    savePreset,
+    renamePreset,
+    deletePreset,
+    saveVariable,
+    deleteVariable,
+    updateVariableValue,
+    reload,
+  } = useNamingPresets();
+
+  // Reload data when modal opens
   useEffect(() => {
-    setPresets(loadPresetsFromStorage());
-  }, []);
+    if (open) {
+      reload();
+    }
+  }, [open, reload]);
+
+  // Initialize local custom vars from DB + initialCustomVariables
+  useEffect(() => {
+    const dbVars: Variable[] = customVariables.map(v => ({
+      key: v.key,
+      label: v.label,
+      example: v.value,
+      category: 'custom' as const,
+    }));
+
+    // Merge with initialCustomVariables if provided
+    if (initialCustomVariables && Object.keys(initialCustomVariables).length > 0) {
+      Object.entries(initialCustomVariables).forEach(([key, val]) => {
+        const existing = dbVars.find(v => v.key === key);
+        if (existing) {
+          existing.example = val;
+        } else {
+          dbVars.push({ key, label: key, example: val, category: 'custom' });
+        }
+      });
+    }
+
+    setLocalCustomVars(dbVars);
+  }, [customVariables, initialCustomVariables]);
 
   useEffect(() => {
     if (open && value) {
@@ -204,7 +176,7 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     };
 
     // Add custom variables - use value or show placeholder if empty
-    customVariables.forEach(v => {
+    localCustomVars.forEach(v => {
       replacements[v.key] = v.example || `[${v.key}]`;
     });
 
@@ -229,22 +201,17 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     }
   };
 
-  const handleSavePreset = () => {
+  const handleSavePreset = async () => {
     const name = prompt('Nome do preset:');
     if (!name) return;
     
-    const newPreset: Preset = {
-      id: Date.now().toString(),
-      name,
-      template,
-      context,
-      isDefault: false,
-    };
-    const updatedPresets = [...presets, newPreset];
-    setPresets(updatedPresets);
-    savePresetsToStorage(updatedPresets);
-    setSelectedPreset(newPreset.id);
-    toast({ title: 'Preset salvo!', description: `"${name}" foi salvo com sucesso.` });
+    setIsSaving(true);
+    const newPreset = await savePreset(name, template, context);
+    setIsSaving(false);
+    
+    if (newPreset) {
+      setSelectedPreset(newPreset.id);
+    }
   };
 
   const handleRenamePreset = (presetId: string) => {
@@ -255,36 +222,27 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     setEditingPresetName(preset.name);
   };
 
-  const handleSaveRename = () => {
+  const handleSaveRename = async () => {
     if (!editingPresetId || !editingPresetName.trim()) {
       setEditingPresetId(null);
       return;
     }
     
-    const updatedPresets = presets.map(p => 
-      p.id === editingPresetId ? { ...p, name: editingPresetName.trim() } : p
-    );
-    setPresets(updatedPresets);
-    savePresetsToStorage(updatedPresets);
+    setIsSaving(true);
+    await renamePreset(editingPresetId, editingPresetName.trim());
+    setIsSaving(false);
     setEditingPresetId(null);
     setEditingPresetName('');
-    toast({ title: 'Renomeado!', description: 'O preset foi renomeado com sucesso.' });
   };
 
-  const handleDeletePreset = (presetId: string) => {
-    const preset = presets.find(p => p.id === presetId);
-    if (!preset || preset.isDefault) {
-      toast({ title: 'Não permitido', description: 'Presets padrão não podem ser excluídos.', variant: 'destructive' });
-      return;
-    }
+  const handleDeletePreset = async (presetId: string) => {
+    setIsSaving(true);
+    const success = await deletePreset(presetId);
+    setIsSaving(false);
     
-    const updatedPresets = presets.filter(p => p.id !== presetId);
-    setPresets(updatedPresets);
-    savePresetsToStorage(updatedPresets);
-    if (selectedPreset === presetId) {
+    if (success && selectedPreset === presetId) {
       setSelectedPreset('');
     }
-    toast({ title: 'Excluído!', description: 'O preset foi excluído com sucesso.' });
   };
 
   const handleClear = () => {
@@ -297,31 +255,44 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     toast({ title: 'Copiado!', description: 'Template copiado para a área de transferência.' });
   };
 
-  const handleAddCustomVariable = () => {
+  const handleAddCustomVariable = async () => {
     if (!newVarName.trim()) return;
     
     const key = newVarName.toLowerCase().replace(/\s+/g, '_');
-    setCustomVariables([
-      ...customVariables,
+    
+    // Add locally first for immediate feedback
+    setLocalCustomVars(prev => [
+      ...prev,
       { key, label: newVarName, example: '', category: 'custom' },
     ]);
     setNewVarName('');
     setShowNewVarInput(false);
+    
+    // Then persist to database
+    await saveVariable(key, newVarName, '');
   };
 
-  const handleUpdateCustomVariableValue = (key: string, newValue: string) => {
-    setCustomVariables(customVariables.map(v => 
+  const handleUpdateCustomVariableValue = async (key: string, newValue: string) => {
+    // Update locally first for immediate feedback
+    setLocalCustomVars(prev => prev.map(v => 
       v.key === key ? { ...v, example: newValue } : v
     ));
+    
+    // Then persist to database
+    await updateVariableValue(key, newValue);
   };
 
-  const handleDeleteCustomVariable = (key: string) => {
-    setCustomVariables(customVariables.filter(v => v.key !== key));
+  const handleDeleteCustomVariable = async (key: string) => {
+    // Remove locally first
+    setLocalCustomVars(prev => prev.filter(v => v.key !== key));
+    
+    // Then remove from database
+    await deleteVariable(key);
   };
 
-  const handleApply = () => {
+  const handleApply = async () => {
     // Check if any custom variable used in template is missing a value
-    const usedCustomVars = customVariables.filter(v => template.includes(`{{${v.key}}}`));
+    const usedCustomVars = localCustomVars.filter(v => template.includes(`{{${v.key}}}`));
     const missingValues = usedCustomVars.filter(v => !v.example.trim());
     
     if (missingValues.length > 0) {
@@ -338,9 +309,18 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     
     // Build custom variables map for saving
     const customVarsMap: Record<string, string> = {};
-    customVariables.forEach(v => {
+    localCustomVars.forEach(v => {
       customVarsMap[v.key] = v.example;
     });
+    
+    // Save all variable values to database before applying
+    setIsSaving(true);
+    for (const v of localCustomVars) {
+      if (v.example) {
+        await saveVariable(v.key, v.label, v.example);
+      }
+    }
+    setIsSaving(false);
     
     onApply(finalTemplate, customVarsMap);
     onOpenChange(false);
@@ -514,7 +494,7 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                   
                   {/* Custom variable badges for inserting */}
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {customVariables.map(v => (
+                    {localCustomVars.map(v => (
                       <VariableBadge 
                         key={v.key}
                         variable={v} 
@@ -524,12 +504,12 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                   </div>
 
                   {/* Custom variable value editors */}
-                  {customVariables.length > 0 && (
+                  {localCustomVars.length > 0 && (
                     <div className="space-y-2 p-3 rounded-lg bg-secondary/50 border border-border mb-3">
                       <p className="text-xs text-muted-foreground font-medium mb-2">
                         Defina os valores que serão usados no Facebook:
                       </p>
-                      {customVariables.map(v => (
+                      {localCustomVars.map(v => (
                         <div key={v.key} className="flex items-center gap-2">
                           <span className="text-xs font-mono text-muted-foreground min-w-[80px]">{`{{${v.key}}}`}</span>
                           <span className="text-xs text-muted-foreground">=</span>
@@ -664,8 +644,16 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border bg-secondary/30 flex justify-end">
-          <Button onClick={handleApply} className="glow-primary">
+        <div className="p-4 border-t border-border bg-secondary/30 flex items-center justify-between">
+          {isLoading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Carregando...
+            </div>
+          )}
+          {!isLoading && <div />}
+          <Button onClick={handleApply} disabled={isSaving} className="glow-primary">
+            {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Usar Template
           </Button>
         </div>

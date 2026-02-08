@@ -681,6 +681,66 @@ export type Database = {
         }
         Relationships: []
       }
+      naming_presets: {
+        Row: {
+          context: string
+          created_at: string
+          id: string
+          name: string
+          template: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          context: string
+          created_at?: string
+          id?: string
+          name: string
+          template: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          context?: string
+          created_at?: string
+          id?: string
+          name?: string
+          template?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      naming_variables: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          label: string
+          updated_at: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          label: string
+          updated_at?: string
+          user_id: string
+          value?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          label?: string
+          updated_at?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: []
+      }
       rate_limit_tracking: {
         Row: {
           account_id: string
