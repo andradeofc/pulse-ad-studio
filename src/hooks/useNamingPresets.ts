@@ -151,6 +151,35 @@ export function useNamingPresets() {
     }
   }, [toast]);
 
+  // Update existing preset template
+  const updatePreset = useCallback(async (presetId: string, template: string): Promise<boolean> => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset || preset.isDefault) {
+      toast({ title: 'Não permitido', description: 'Presets padrão não podem ser alterados.', variant: 'destructive' });
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('naming_presets')
+        .update({ template, updated_at: new Date().toISOString() })
+        .eq('id', presetId);
+
+      if (error) {
+        console.error('Error updating preset:', error);
+        toast({ title: 'Erro ao atualizar', description: error.message, variant: 'destructive' });
+        return false;
+      }
+
+      setPresets(prev => prev.map(p => p.id === presetId ? { ...p, template } : p));
+      toast({ title: 'Atualizado!', description: `"${preset.name}" foi atualizado com sucesso.` });
+      return true;
+    } catch (error) {
+      console.error('Error updating preset:', error);
+      return false;
+    }
+  }, [presets, toast]);
+
   // Rename preset
   const renamePreset = useCallback(async (presetId: string, newName: string): Promise<boolean> => {
     const preset = presets.find(p => p.id === presetId);
@@ -315,6 +344,7 @@ export function useNamingPresets() {
     customVariables,
     isLoading,
     savePreset,
+    updatePreset,
     renamePreset,
     deletePreset,
     saveVariable,
