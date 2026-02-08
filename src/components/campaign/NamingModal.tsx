@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Sparkles, Save, Trash2, Copy, Plus, X } from 'lucide-react';
+import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 
@@ -44,6 +50,7 @@ interface Preset {
   name: string;
   template: string;
   context: NamingContext;
+  isDefault?: boolean;
 }
 
 const dataVariables: Variable[] = [
@@ -69,24 +76,53 @@ const dateVariables: Variable[] = [
 
 const defaultPresets: Preset[] = [
   {
-    id: '1',
+    id: 'default-ntp',
     name: 'NTP',
     template: '[CP{{sequencial:01}}] [{{conta_apelido}} + {{conjunto_catalogo}}] [{{nicho}}] [{{pagina_nome}}] [TDC {{budget}}] [{{dia}}/{{mes}}] - {{conjunto_catalogo}}',
     context: 'campaign',
+    isDefault: true,
   },
   {
-    id: '2',
+    id: 'default-elton',
     name: 'PRESET ELTON',
     template: '[CP{{sequencial:08}}][{{budget}}][{{estrutura}}][{{conta_apelido}}][{{ano2}}_{{mes}}_{{dia}}][{{hora}}_{{minuto}}]',
     context: 'campaign',
+    isDefault: true,
   },
   {
-    id: '3',
+    id: 'default-simples',
     name: 'Simples',
     template: '{{conta_apelido}}_{{criativo}}_{{sequencial:01}}',
     context: 'campaign',
+    isDefault: true,
   },
 ];
+
+const PRESETS_STORAGE_KEY = 'naming-presets';
+
+const loadPresetsFromStorage = (): Preset[] => {
+  try {
+    const stored = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (stored) {
+      const userPresets = JSON.parse(stored) as Preset[];
+      // Merge default presets with user presets, avoiding duplicates
+      return [...defaultPresets, ...userPresets.filter(p => !p.isDefault)];
+    }
+  } catch (e) {
+    console.error('Error loading presets from storage:', e);
+  }
+  return defaultPresets;
+};
+
+const savePresetsToStorage = (presets: Preset[]) => {
+  try {
+    // Only save user-created presets (not defaults)
+    const userPresets = presets.filter(p => !p.isDefault);
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(userPresets));
+  } catch (e) {
+    console.error('Error saving presets to storage:', e);
+  }
+};
 
 const contextLabels: Record<NamingContext, { label: string; color: string }> = {
   campaign: { label: 'Campanha', color: 'bg-ads-success text-white' },
@@ -100,7 +136,7 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
   const [template, setTemplate] = useState(value || '');
   const [sequentialStart, setSequentialStart] = useState('01');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
-  const [presets, setPresets] = useState<Preset[]>(defaultPresets);
+  const [presets, setPresets] = useState<Preset[]>(() => loadPresetsFromStorage());
   const [customVariables, setCustomVariables] = useState<Variable[]>(() => {
     // Initialize from initialCustomVariables if provided
     if (initialCustomVariables && Object.keys(initialCustomVariables).length > 0) {
@@ -116,6 +152,13 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
   });
   const [newVarName, setNewVarName] = useState('');
   const [showNewVarInput, setShowNewVarInput] = useState(false);
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [editingPresetName, setEditingPresetName] = useState('');
+
+  // Load presets from storage on mount
+  useEffect(() => {
+    setPresets(loadPresetsFromStorage());
+  }, []);
 
   useEffect(() => {
     if (open && value) {
@@ -195,10 +238,53 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
       name,
       template,
       context,
+      isDefault: false,
     };
-    setPresets([...presets, newPreset]);
+    const updatedPresets = [...presets, newPreset];
+    setPresets(updatedPresets);
+    savePresetsToStorage(updatedPresets);
     setSelectedPreset(newPreset.id);
     toast({ title: 'Preset salvo!', description: `"${name}" foi salvo com sucesso.` });
+  };
+
+  const handleRenamePreset = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset || preset.isDefault) return;
+    
+    setEditingPresetId(presetId);
+    setEditingPresetName(preset.name);
+  };
+
+  const handleSaveRename = () => {
+    if (!editingPresetId || !editingPresetName.trim()) {
+      setEditingPresetId(null);
+      return;
+    }
+    
+    const updatedPresets = presets.map(p => 
+      p.id === editingPresetId ? { ...p, name: editingPresetName.trim() } : p
+    );
+    setPresets(updatedPresets);
+    savePresetsToStorage(updatedPresets);
+    setEditingPresetId(null);
+    setEditingPresetName('');
+    toast({ title: 'Renomeado!', description: 'O preset foi renomeado com sucesso.' });
+  };
+
+  const handleDeletePreset = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset || preset.isDefault) {
+      toast({ title: 'Não permitido', description: 'Presets padrão não podem ser excluídos.', variant: 'destructive' });
+      return;
+    }
+    
+    const updatedPresets = presets.filter(p => p.id !== presetId);
+    setPresets(updatedPresets);
+    savePresetsToStorage(updatedPresets);
+    if (selectedPreset === presetId) {
+      setSelectedPreset('');
+    }
+    toast({ title: 'Excluído!', description: 'O preset foi excluído com sucesso.' });
   };
 
   const handleClear = () => {
@@ -302,11 +388,65 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                 .filter(p => p.context === context)
                 .map(preset => (
                   <SelectItem key={preset.id} value={preset.id}>
-                    {preset.name}
+                    {preset.name} {preset.isDefault && <span className="text-muted-foreground text-xs">(padrão)</span>}
                   </SelectItem>
                 ))}
             </SelectContent>
           </Select>
+          
+          {/* Preset actions dropdown */}
+          {selectedPreset && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {editingPresetId === selectedPreset ? (
+                  <div className="p-2">
+                    <Input
+                      value={editingPresetName}
+                      onChange={(e) => setEditingPresetName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveRename();
+                        if (e.key === 'Escape') setEditingPresetId(null);
+                      }}
+                      placeholder="Novo nome..."
+                      className="h-8 text-sm"
+                      autoFocus
+                    />
+                    <div className="flex gap-1 mt-2">
+                      <Button size="sm" onClick={handleSaveRename} className="h-7 text-xs">
+                        Salvar
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingPresetId(null)} className="h-7 text-xs">
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => handleRenamePreset(selectedPreset)}
+                      disabled={presets.find(p => p.id === selectedPreset)?.isDefault}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Renomear
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleDeletePreset(selectedPreset)}
+                      disabled={presets.find(p => p.id === selectedPreset)?.isDefault}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Excluir
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           
           <Button variant="outline" size="sm" onClick={handleSavePreset}>
             <Save className="w-4 h-4 mr-1.5" />
