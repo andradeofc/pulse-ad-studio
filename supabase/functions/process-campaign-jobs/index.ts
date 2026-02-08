@@ -702,21 +702,51 @@ async function fetchWithRetry(
 }
 
 // Create campaigns using batch API
+// CRITICAL: This function now checks for existing facebook_id to prevent duplicates on re-execution
 async function createCampaignsBatch(
   accessToken: string,
   adAccountId: string,
-  campaigns: Array<{ id: string; name: string; config: Record<string, any> }>,
+  campaigns: Array<{ id: string; name: string; config: Record<string, any>; facebook_id?: string | null }>,
   config: Record<string, any>,
   supabase: any,
 ): Promise<Map<string, string>> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const idMap = new Map<string, string>();
   
-  // Build batch requests
-  const batchItems: Array<{ item: typeof campaigns[0]; batchItem: BatchRequestItem }> = [];
+  // CRITICAL: Check for campaigns that already have facebook_id (from previous execution)
+  // This prevents creating duplicate campaigns when job resumes after timeout
+  const campaignsNeedingCreation: typeof campaigns = [];
   
-  for (let i = 0; i < campaigns.length; i++) {
-    const campaign = campaigns[i];
+  for (const campaign of campaigns) {
+    // Check both facebook_id from DB and savedFacebookId in config
+    const existingFbId = campaign.facebook_id || (campaign.config as any)?.savedFacebookId;
+    if (existingFbId) {
+      // Campaign already created in previous execution, reuse it
+      idMap.set(campaign.id, existingFbId);
+      console.log(`[batch] Reusing existing campaign ${existingFbId} for item ${campaign.id}`);
+      
+      // Ensure it's marked as completed
+      await supabase
+        .from('campaign_job_items')
+        .update({ status: 'completed', facebook_id: existingFbId })
+        .eq('id', campaign.id);
+    } else {
+      campaignsNeedingCreation.push(campaign);
+    }
+  }
+  
+  if (campaignsNeedingCreation.length === 0) {
+    console.log(`[batch] All ${campaigns.length} campaigns already exist, skipping creation`);
+    return idMap;
+  }
+  
+  console.log(`[batch] Creating ${campaignsNeedingCreation.length} campaigns (${campaigns.length - campaignsNeedingCreation.length} already exist)`);
+  
+  // Build batch requests
+  const batchItems: Array<{ item: typeof campaignsNeedingCreation[0]; batchItem: BatchRequestItem }> = [];
+  
+  for (let i = 0; i < campaignsNeedingCreation.length; i++) {
+    const campaign = campaignsNeedingCreation[i];
     const params = buildCampaignParams(config, campaign.name);
     
     const body = new URLSearchParams(params).toString();
@@ -736,7 +766,7 @@ async function createCampaignsBatch(
   const batchSize = getAdaptiveBatchSize(BATCH_CONFIG.CAMPAIGN_BATCH_SIZE, adAccountId);
   const chunks = chunkArray(batchItems, batchSize);
   
-  console.log(`[batch] Creating ${campaigns.length} campaigns in ${chunks.length} batches (size: ${batchSize})`);
+  console.log(`[batch] Creating ${campaignsNeedingCreation.length} campaigns in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
     const batch = chunk.map(c => c.batchItem);
@@ -758,9 +788,12 @@ async function createCampaignsBatch(
         
         if (result.code === 200 && parsedBody.id) {
           idMap.set(item.id, parsedBody.id);
+          
+          // CRITICAL: Save facebook_id to both column AND config for redundancy
+          const updatedConfig = { ...item.config, savedFacebookId: parsedBody.id };
           await supabase
             .from('campaign_job_items')
-            .update({ status: 'completed', facebook_id: parsedBody.id })
+            .update({ status: 'completed', facebook_id: parsedBody.id, config: updatedConfig })
             .eq('id', item.id);
         } else {
           const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
@@ -788,10 +821,11 @@ async function createCampaignsBatch(
 }
 
 // Create adsets using batch API
+// CRITICAL: This function now checks for existing facebook_id to prevent duplicates on re-execution
 async function createAdsetsBatch(
   accessToken: string,
   adAccountId: string,
-  adsets: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any> }>,
+  adsets: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any>; facebook_id?: string | null }>,
   campaignIdMap: Map<string, string>,
   config: Record<string, any>,
   supabase: any,
@@ -799,8 +833,37 @@ async function createAdsetsBatch(
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const idMap = new Map<string, string>();
   
+  // CRITICAL: Check for adsets that already have facebook_id (from previous execution)
+  // This prevents creating duplicate adsets when job resumes after timeout
+  const adsetsNeedingCreation: typeof adsets = [];
+  
+  for (const adset of adsets) {
+    // Check both facebook_id from DB and savedFacebookId in config
+    const existingFbId = adset.facebook_id || (adset.config as any)?.savedFacebookId;
+    if (existingFbId) {
+      // Adset already created in previous execution, reuse it
+      idMap.set(adset.id, existingFbId);
+      console.log(`[batch] Reusing existing adset ${existingFbId} for item ${adset.id}`);
+      
+      // Ensure it's marked as completed
+      await supabase
+        .from('campaign_job_items')
+        .update({ status: 'completed', facebook_id: existingFbId })
+        .eq('id', adset.id);
+    } else {
+      adsetsNeedingCreation.push(adset);
+    }
+  }
+  
+  if (adsetsNeedingCreation.length === 0) {
+    console.log(`[batch] All ${adsets.length} adsets already exist, skipping creation`);
+    return idMap;
+  }
+  
+  console.log(`[batch] Creating ${adsetsNeedingCreation.length} adsets (${adsets.length - adsetsNeedingCreation.length} already exist)`);
+  
   // Filter adsets with valid parent campaigns
-  const validAdsets = adsets.filter(adset => {
+  const validAdsets = adsetsNeedingCreation.filter(adset => {
     const parentFbId = adset.parent_id ? campaignIdMap.get(adset.parent_id) : null;
     if (!parentFbId) {
       supabase
@@ -859,9 +922,12 @@ async function createAdsetsBatch(
         
         if (result.code === 200 && parsedBody.id) {
           idMap.set(item.id, parsedBody.id);
+          
+          // CRITICAL: Save facebook_id to both column AND config for redundancy
+          const updatedConfig = { ...item.config, savedFacebookId: parsedBody.id };
           await supabase
             .from('campaign_job_items')
-            .update({ status: 'completed', facebook_id: parsedBody.id })
+            .update({ status: 'completed', facebook_id: parsedBody.id, config: updatedConfig })
             .eq('id', item.id);
         } else {
           const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
@@ -1751,10 +1817,12 @@ Deno.serve(async (req) => {
       );
 
       // Prepare campaigns with resolved names
+      // CRITICAL: Include facebook_id so batch functions can detect already-created items
       const campaignsWithNames = campaignsForAccount.map((c, i) => ({
         id: c.id,
         name: replaceNamingVariables(c.name, { campaignIndex: i }),
         config: c.config as Record<string, any>,
+        facebook_id: c.facebook_id, // Include for idempotency check
       }));
 
       // Pre-populate campaign ID map with already completed campaigns
@@ -1791,12 +1859,13 @@ Deno.serve(async (req) => {
         console.log(`[process-jobs] No new campaigns to create (all already processed)`);
       }
 
-      // Prepare adsets with resolved names
+      // CRITICAL: Include facebook_id so batch functions can detect already-created items
       const adsetsWithNames = adsetsForAccount.map((a, i) => ({
         id: a.id,
         name: replaceNamingVariables(a.name, { adsetIndex: i }),
         parent_id: a.parent_id,
         config: a.config as Record<string, any>,
+        facebook_id: a.facebook_id, // Include for idempotency check
       }));
 
       // Pre-populate adset ID map with already completed adsets
