@@ -700,6 +700,13 @@ async function createFacebookAd(
       
       // applink_treatment: web_only ensures app deep links in the feed are ignored
       applink_treatment: 'web_only',
+      
+      // Multi-Advertiser Ads: OPT_IN allows Facebook to show your ad with others
+      // OPT_OUT keeps your ad standalone. Since August 2024, default is OPT_IN.
+      // Reference: https://developers.facebook.com/docs/marketing-api/creative/multi-advertiser-ads/
+      contextual_multi_ads: JSON.stringify({
+        enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
+      }),
     };
 
     // Add URL parameters if provided (utm_medium, utm_source, etc.)
@@ -922,6 +929,11 @@ async function createFacebookAd(
         access_token: accessToken,
         name: `Creative_${name}`,
         object_story_spec: JSON.stringify(objectStorySpec),
+        // Multi-Advertiser Ads: OPT_IN allows Facebook to show your ad with others
+        // OPT_OUT keeps your ad standalone. Since August 2024, default is OPT_IN.
+        contextual_multi_ads: JSON.stringify({
+          enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
+        }),
       };
 
       if (urlParams && urlParams.trim()) {
@@ -995,6 +1007,11 @@ async function createFacebookAd(
         access_token: accessToken,
         name: `Creative_${name}`,
         object_story_spec: JSON.stringify(objectStorySpec),
+        // Multi-Advertiser Ads: OPT_IN allows Facebook to show your ad with others
+        // OPT_OUT keeps your ad standalone. Since August 2024, default is OPT_IN.
+        contextual_multi_ads: JSON.stringify({
+          enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
+        }),
       };
 
       if (urlParams && urlParams.trim()) {
