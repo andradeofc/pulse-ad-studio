@@ -9,9 +9,13 @@ import { AdLimitWarning } from '../AdLimitWarning';
 import { 
   formatCurrency as formatCurrencyUtil, 
   formatMultiCurrencyBudget,
-  hasMultipleCurrencies,
-  getPrimaryCurrency 
+  getCurrencySymbol
 } from '@/lib/currencyUtils';
+import { 
+  useSelectedAccountsCurrency, 
+  safeGetHostname 
+} from '@/hooks/useSelectedAccountsCurrency';
+import { useMemo } from 'react';
 
 // CTA labels map - synced with Step4Ads
 const ctaLabels: Record<string, string> = {
@@ -38,33 +42,63 @@ const ctaLabels: Record<string, string> = {
 export function Step5Review() {
   const { config, getTotalCampaigns, getTotalAdsets, getTotalAds, getTotalBudget } = useCampaignStore();
   
+  // Use centralized currency detection hook
+  const { currencies, isMultiCurrency, primaryCurrency } = useSelectedAccountsCurrency();
+  
   const totalCampaigns = getTotalCampaigns();
   const totalAdsets = getTotalAdsets();
   const totalAds = getTotalAds();
   const totalBudget = getTotalBudget();
 
-  // Determine the currency to use for formatting
+  // Get budget config based on CBO/ABO mode
   const budgetConfig = config.useCBO ? config.budgetByCurrency : config.adsetBudgetByCurrency;
-  const isMultiCurrency = hasMultipleCurrencies(budgetConfig);
-  const primaryCurrency = getPrimaryCurrency(budgetConfig, 'BRL');
+  const baseBudget = config.useCBO ? config.budget : config.adsetBudget;
   
-  // Format currency respecting the configured currency
+  // Format currency respecting the detected currency from accounts
   const formatCurrency = (value: number) => {
-    if (isMultiCurrency) {
-      // If multiple currencies, we show in primary currency (for single values)
-      return formatCurrencyUtil(value, primaryCurrency);
-    }
     return formatCurrencyUtil(value, primaryCurrency);
   };
   
   // Format budget showing all currencies if multi-currency
   const formatBudgetDisplay = () => {
-    if (isMultiCurrency) {
+    // Check if we have budgets configured per currency
+    const hasBudgetConfig = Object.keys(budgetConfig).some(c => budgetConfig[c] > 0);
+    
+    if (hasBudgetConfig && isMultiCurrency) {
       return formatMultiCurrencyBudget(budgetConfig);
     }
-    const budgetValue = config.useCBO ? config.budget : config.adsetBudget;
-    return formatCurrencyUtil(budgetValue, primaryCurrency);
+    
+    if (hasBudgetConfig) {
+      const currency = Object.keys(budgetConfig).find(c => budgetConfig[c] > 0) || primaryCurrency;
+      return formatCurrencyUtil(budgetConfig[currency] || baseBudget, currency);
+    }
+    
+    // Fallback to base budget with detected currency
+    return formatCurrencyUtil(baseBudget, primaryCurrency);
   };
+  
+  // Calculate budget totals per currency for display
+  const budgetTotalsByCurrency = useMemo(() => {
+    const hasBudgetConfig = Object.keys(budgetConfig).some(c => budgetConfig[c] > 0);
+    const multiplier = config.useCBO ? totalCampaigns : totalAdsets;
+    
+    if (hasBudgetConfig) {
+      return Object.entries(budgetConfig)
+        .filter(([_, v]) => v > 0)
+        .map(([currency, value]) => ({
+          currency,
+          total: value * multiplier,
+          formatted: formatCurrencyUtil(value * multiplier, currency),
+        }));
+    }
+    
+    // Single currency based on selected accounts
+    return currencies.map(currency => ({
+      currency,
+      total: baseBudget * multiplier,
+      formatted: formatCurrencyUtil(baseBudget * multiplier, currency),
+    }));
+  }, [budgetConfig, baseBudget, totalCampaigns, totalAdsets, config.useCBO, currencies]);
 
   const objectiveLabels: Record<string, string> = {
     OUTCOME_SALES: 'Vendas',
@@ -335,22 +369,21 @@ export function Step5Review() {
                       Total ({totalCampaigns} campanhas)
                     </span>
                     <span className="text-lg font-bold text-destructive">
-                      {isMultiCurrency ? (
-                        <span className="text-sm">Múltiplas moedas</span>
+                      {budgetTotalsByCurrency.length === 1 ? (
+                        budgetTotalsByCurrency[0].formatted
                       ) : (
-                        formatCurrencyUtil(totalBudget, primaryCurrency)
+                        <span className="text-sm">Múltiplas moedas</span>
                       )}
                     </span>
                   </div>
-                  {isMultiCurrency && (
-                    <div className="text-xs text-muted-foreground text-right">
-                      {Object.entries(budgetConfig)
-                        .filter(([_, v]) => v > 0)
-                        .map(([currency, value]) => (
-                          <div key={currency}>
-                            {formatCurrencyUtil(value * totalCampaigns, currency)}
-                          </div>
-                        ))}
+                  {budgetTotalsByCurrency.length > 1 && (
+                    <div className="text-xs text-muted-foreground text-right space-y-0.5">
+                      {budgetTotalsByCurrency.map(({ currency, formatted }) => (
+                        <div key={currency} className="flex items-center justify-end gap-1">
+                          <span className="text-muted-foreground/70">{currency}:</span>
+                          <span className="font-medium">{formatted}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -460,7 +493,7 @@ export function Step5Review() {
                     rel="noopener noreferrer"
                     className="text-sm text-primary hover:underline flex items-center gap-1 max-w-[180px] truncate"
                   >
-                    {new URL(config.destinationUrl).hostname}
+                    {safeGetHostname(config.destinationUrl) || config.destinationUrl}
                     <ExternalLink className="w-3 h-3 flex-shrink-0" />
                   </a>
                 </div>
