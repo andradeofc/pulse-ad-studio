@@ -41,7 +41,7 @@ export interface FacebookPage {
 
 interface PageSelectorProps {
   selectedPages: string[];
-  onSelectionChange: (pageIds: string[]) => void;
+  onSelectionChange: (pageIds: string[], pageNames: string[]) => void;
   multiSelect?: boolean;
   totalAdsToCreate: number;
 }
@@ -197,14 +197,22 @@ export function PageSelector({
     toast.success('Distribuição randomizada');
   };
 
-  const handleTogglePage = (pageId: string) => {
+  const handleTogglePage = (pageId: string, pageName: string) => {
     if (multiSelect) {
-      const newSelection = selectedPages.includes(pageId)
+      const isRemoving = selectedPages.includes(pageId);
+      const newSelection = isRemoving
         ? selectedPages.filter(id => id !== pageId)
         : [...selectedPages, pageId];
-      onSelectionChange(newSelection);
+      
+      // Build corresponding names array
+      const newNames = newSelection.map(id => {
+        const page = pages.find(p => p.page_id === id);
+        return page?.name || '';
+      });
+      
+      onSelectionChange(newSelection, newNames);
     } else {
-      onSelectionChange([pageId]);
+      onSelectionChange([pageId], [pageName]);
       setOpen(false);
     }
   };
@@ -322,11 +330,11 @@ export function PageSelector({
                             "flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors",
                             isSelected ? "bg-primary/10 border border-primary/30" : "hover:bg-secondary/50"
                           )}
-                          onClick={() => handleTogglePage(page.page_id)}
+                          onClick={() => handleTogglePage(page.page_id, page.name)}
                         >
                           <Checkbox
                             checked={isSelected}
-                            onCheckedChange={() => handleTogglePage(page.page_id)}
+                            onCheckedChange={() => handleTogglePage(page.page_id, page.name)}
                           />
                           
                           {page.picture_url ? (
@@ -484,7 +492,7 @@ export function PageSelector({
                         <CommandItem
                           key={page.id}
                           value={page.page_id}
-                          onSelect={() => handleTogglePage(page.page_id)}
+                          onSelect={() => handleTogglePage(page.page_id, page.name)}
                           className="flex items-center gap-3 py-3"
                         >
                           <Check

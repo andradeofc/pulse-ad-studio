@@ -463,7 +463,8 @@ async function createFacebookAdset(
     access_token: accessToken,
     campaign_id: campaignId,
     name,
-    status: config.isPaused ? 'PAUSED' : 'ACTIVE',
+    // Adsets are always created ACTIVE - campaign pause controls delivery
+    status: 'ACTIVE',
 
     // Required for most website conversion/ad catalog flows
     destination_type: 'WEBSITE',
@@ -745,7 +746,8 @@ async function createFacebookAd(
       name,
       adset_id: adsetId,
       creative: JSON.stringify({ creative_id: creativeId }),
-      status: config.isPaused ? 'PAUSED' : 'ACTIVE',
+      // Ads are always created ACTIVE - campaign pause controls delivery
+      status: 'ACTIVE',
     };
 
     const logAdParams = { ...adParams, access_token: '[REDACTED]' };
@@ -1057,12 +1059,22 @@ Deno.serve(async (req) => {
       const accountNickname = currentAccount.name?.split(' - ')[0] || currentAccount.name || 'Conta';
       const accountId = currentAccount.account_id?.replace('act_', '') || '';
 
+      // Get catalog name for naming variables
+      const catalogName = config.catalogName || config.selectedBusinessManagerName || '';
+      
+      // Get first page name for naming variables
+      const firstPageName = resolvedPages.length > 0 
+        ? (config.pageNames?.[0] || resolvedPages[0]?.pageId || '')
+        : '';
+
       // Helper to replace all naming variables (including custom ones)
       const replaceNamingVariables = (name: string): string => {
         let result = name
           .replace(/\{\{conta_apelido\}\}/g, accountNickname)
           .replace(/\{\{conta_nome\}\}/g, currentAccount.name || '')
-          .replace(/\{\{conta_id\}\}/g, accountId);
+          .replace(/\{\{conta_id\}\}/g, accountId)
+          .replace(/\{\{catalogo_nome\}\}/g, catalogName)
+          .replace(/\{\{pagina_nome\}\}/g, firstPageName);
         
         // Replace custom naming variables from config
         const customVars = config.customNamingVariables as Record<string, string> || {};

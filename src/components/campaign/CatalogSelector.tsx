@@ -19,7 +19,7 @@ interface Catalog {
 
 interface CatalogSelectorProps {
   value: string;
-  onChange: (catalogId: string, catalogDbId: string) => void;
+  onChange: (catalogId: string, catalogDbId: string, catalogName: string) => void;
   businessManagerId: string; // BM to fetch catalogs from
   selectedAccounts: string[]; // DB UUIDs (used to fetch shared catalogs via ad account)
 }
@@ -168,7 +168,7 @@ export function CatalogSelector({ value, onChange, businessManagerId, selectedAc
             {filteredCatalogs.map((catalog) => (
               <div
                 key={catalog.id}
-                onClick={() => onChange(catalog.catalog_id, catalog.id)}
+                onClick={() => onChange(catalog.catalog_id, catalog.id, catalog.name)}
                 className={cn(
                   "flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors",
                   value === catalog.catalog_id

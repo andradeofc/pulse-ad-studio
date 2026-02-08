@@ -410,8 +410,8 @@ export function Step2Campaign() {
                 </div>
                 <CatalogSelector
                   value={config.catalogId}
-                  onChange={(catalogId, catalogDbId) => {
-                    updateConfig({ catalogId, catalogDbId, productSetId: '' });
+                  onChange={(catalogId, catalogDbId, catalogName) => {
+                    updateConfig({ catalogId, catalogDbId, catalogName, productSetId: '' });
                   }}
                   businessManagerId={config.selectedBusinessManagerId}
                   selectedAccounts={config.selectedAccounts}

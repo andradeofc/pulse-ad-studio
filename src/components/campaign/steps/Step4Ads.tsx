@@ -103,7 +103,7 @@ export function Step4Ads() {
                   </div>
                   <PageSelector
                     selectedPages={config.selectedPages}
-                    onSelectionChange={(pages) => updateConfig({ selectedPages: pages })}
+                    onSelectionChange={(pages, pageNames) => updateConfig({ selectedPages: pages, pageNames })}
                     multiSelect={true}
                     totalAdsToCreate={totalAds}
                   />
@@ -111,7 +111,7 @@ export function Step4Ads() {
               ) : (
                 <PageSelector
                   selectedPages={config.selectedPages}
-                  onSelectionChange={(pages) => updateConfig({ selectedPages: pages })}
+                  onSelectionChange={(pages, pageNames) => updateConfig({ selectedPages: pages, pageNames })}
                   multiSelect={false}
                   totalAdsToCreate={totalAds}
                 />
