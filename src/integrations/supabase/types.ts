@@ -140,6 +140,83 @@ export type Database = {
         }
         Relationships: []
       }
+      catalog_schedules: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          creative_id: string
+          error_message: string | null
+          id: string
+          processed_at: string | null
+          product_set_id: string
+          products_updated: number | null
+          profile_id: string
+          scheduled_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          creative_id: string
+          error_message?: string | null
+          id?: string
+          processed_at?: string | null
+          product_set_id: string
+          products_updated?: number | null
+          profile_id: string
+          scheduled_at: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          creative_id?: string
+          error_message?: string | null
+          id?: string
+          processed_at?: string | null
+          product_set_id?: string
+          products_updated?: number | null
+          profile_id?: string
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_schedules_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_schedules_creative_id_fkey"
+            columns: ["creative_id"]
+            isOneToOne: false
+            referencedRelation: "creatives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_schedules_product_set_id_fkey"
+            columns: ["product_set_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_product_sets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_schedules_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creatives: {
         Row: {
           created_at: string
