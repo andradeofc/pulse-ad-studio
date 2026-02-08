@@ -3,8 +3,16 @@
  * 
  * Standard Access Tier:
  * - 9,000 points per 5-minute window per ad account
- * - POST operations cost 3 points each
+ * - POST operations cost ~3 points each
+ * - Batch API: up to 50 requests per batch (each counts individually)
  * - QPS limit: 100 requests per second per account
+ * 
+ * Our Implementation:
+ * - Adaptive batch sizes (15-40 items per batch)
+ * - Progressive throttling starting at 40% usage
+ * - Soft pause at 80%, hard pause at 90%
+ * - Expected throughput: ~30-50 items/second under normal conditions
+ * - With rate limiting: ~10-20 items/second average
  * 
  * Reference: https://developers.facebook.com/docs/marketing-api/overview/rate-limiting
  */
@@ -21,8 +29,19 @@ export const RATE_LIMIT_CONFIG = {
   // QPS limit
   MAX_QPS: 100,
   
-  // Safety margin (keep 10% buffer)
-  SAFETY_MARGIN: 0.9,
+  // Batch configuration (matching edge function)
+  BATCH_SIZE_CAMPAIGNS: 15,
+  BATCH_SIZE_ADSETS: 40,
+  BATCH_SIZE_ADS: 40,
+  BATCH_SIZE_CREATIVES: 40,
+  
+  // Safety margin (keep 20% buffer due to adaptive throttling)
+  SAFETY_MARGIN: 0.8,
+  
+  // Realistic throughput estimates (items per second)
+  THROUGHPUT_NORMAL: 35, // When under 40% usage
+  THROUGHPUT_THROTTLED: 15, // When 40-80% usage
+  THROUGHPUT_PAUSED: 5, // When pausing and resuming
 };
 
 export interface RateLimitEstimate {
@@ -36,9 +55,11 @@ export interface RateLimitEstimate {
   usagePercent: number;
   isOverLimit: boolean;
   estimatedTimeSeconds: number;
+  estimatedTimeFormatted: string;
   recommendedMaxStructures: number;
   warningLevel: 'safe' | 'warning' | 'danger';
   message: string;
+  pausesExpected: number;
 }
 
 /**
@@ -79,45 +100,60 @@ export function estimateRateLimitUsage(
   currentUsagePercent: number = 0,
   accountsCount: number = 1
 ): RateLimitEstimate {
-  const { STANDARD_ACCESS_POINTS, POINTS_PER_POST, MAX_QPS, SAFETY_MARGIN } = RATE_LIMIT_CONFIG;
+  const { STANDARD_ACCESS_POINTS, POINTS_PER_POST, SAFETY_MARGIN, WINDOW_MINUTES } = RATE_LIMIT_CONFIG;
   
   const calls = calculateApiCallsForStructure(campaigns, adsetsPerCampaign, adsPerAdset, useCatalog);
   const totalApiCalls = calls.total * accountsCount;
   const totalPoints = totalApiCalls * POINTS_PER_POST;
   
-  // Available points after current usage
+  // Available points after current usage (per account)
   const usedPoints = (currentUsagePercent / 100) * STANDARD_ACCESS_POINTS;
-  const availablePoints = Math.floor((STANDARD_ACCESS_POINTS * SAFETY_MARGIN) - usedPoints);
+  const availablePointsPerWindow = Math.floor((STANDARD_ACCESS_POINTS * SAFETY_MARGIN) - usedPoints);
+  const availablePoints = availablePointsPerWindow * accountsCount;
   
-  const usagePercent = Math.min(100, Math.round(((usedPoints + totalPoints) / STANDARD_ACCESS_POINTS) * 100));
-  const isOverLimit = totalPoints > availablePoints;
+  const usagePercent = Math.min(100, Math.round(((usedPoints + totalPoints / accountsCount) / STANDARD_ACCESS_POINTS) * 100));
+  const isOverLimit = (totalPoints / accountsCount) > availablePointsPerWindow;
   
-  // Estimate time based on QPS limit
-  const estimatedTimeSeconds = Math.ceil(totalApiCalls / MAX_QPS);
+  // Calculate number of pause cycles needed
+  const pointsPerAccount = totalPoints / accountsCount;
+  const pausesExpected = Math.max(0, Math.ceil(pointsPerAccount / (STANDARD_ACCESS_POINTS * SAFETY_MARGIN)) - 1);
+  
+  // Estimate time more realistically based on expected throughput
+  let estimatedTimeSeconds: number;
+  if (pausesExpected === 0) {
+    // No pauses needed - use normal throughput
+    estimatedTimeSeconds = Math.ceil(totalApiCalls / RATE_LIMIT_CONFIG.THROUGHPUT_NORMAL);
+  } else if (pausesExpected <= 2) {
+    // Some throttling expected
+    estimatedTimeSeconds = Math.ceil(totalApiCalls / RATE_LIMIT_CONFIG.THROUGHPUT_THROTTLED) + (pausesExpected * 60);
+  } else {
+    // Many pauses expected - add pause time (up to 5 min per pause)
+    const processingTime = Math.ceil(totalApiCalls / RATE_LIMIT_CONFIG.THROUGHPUT_PAUSED);
+    const pauseTime = pausesExpected * (WINDOW_MINUTES * 60 * 0.5); // Assume 50% of window for pause
+    estimatedTimeSeconds = processingTime + pauseTime;
+  }
   
   // Calculate recommended max structures that fit in available points
   const pointsPerStructure = (1 + adsetsPerCampaign + (adsetsPerCampaign * adsPerAdset) + 
     (useCatalog ? adsetsPerCampaign * adsPerAdset : 0)) * POINTS_PER_POST * accountsCount;
-  const recommendedMaxStructures = Math.floor(availablePoints / pointsPerStructure);
+  const recommendedMaxStructures = Math.floor(availablePointsPerWindow / (pointsPerStructure / accountsCount));
   
-  // Determine warning level
+  // Determine warning level and message
   let warningLevel: 'safe' | 'warning' | 'danger' = 'safe';
   let message = '';
   
-  if (isOverLimit) {
+  if (pausesExpected >= 3) {
     warningLevel = 'danger';
-    const batches = Math.ceil(totalPoints / (RATE_LIMIT_CONFIG.STANDARD_ACCESS_POINTS * SAFETY_MARGIN));
-    const estimatedWaitMinutes = (batches - 1) * 5;
-    message = `📦 Job grande (${batches} lotes). Será processado automaticamente em ~${estimatedWaitMinutes + Math.ceil(estimatedTimeSeconds / 60)} min com pausas.`;
-  } else if (usagePercent > 80) {
+    message = `⏳ Job muito grande (${pausesExpected + 1} ciclos). Tempo estimado: ${formatEstimatedTime(estimatedTimeSeconds)}. O sistema pausará automaticamente para respeitar os limites.`;
+  } else if (pausesExpected > 0) {
     warningLevel = 'warning';
-    message = `⚡ Uso alto (${usagePercent}%). O sistema pausará automaticamente se necessário.`;
-  } else if (usagePercent > 50) {
+    message = `📊 Job médio (${pausesExpected + 1} ciclos). Tempo estimado: ${formatEstimatedTime(estimatedTimeSeconds)}. Pode haver pausas automáticas.`;
+  } else if (usagePercent > 60) {
     warningLevel = 'warning';
-    message = `📊 Uso moderado (${usagePercent}%). Processamento pode pausar e retomar automaticamente.`;
+    message = `⚡ Uso moderado (${usagePercent}%). Tempo estimado: ${formatEstimatedTime(estimatedTimeSeconds)}.`;
   } else {
     warningLevel = 'safe';
-    message = `✅ Uso seguro (${usagePercent}%). Processamento deve ser contínuo.`;
+    message = `✅ Dentro do limite. Tempo estimado: ${formatEstimatedTime(estimatedTimeSeconds)}.`;
   }
   
   return {
@@ -131,9 +167,11 @@ export function estimateRateLimitUsage(
     usagePercent,
     isOverLimit,
     estimatedTimeSeconds,
+    estimatedTimeFormatted: formatEstimatedTime(estimatedTimeSeconds),
     recommendedMaxStructures,
     warningLevel,
     message,
+    pausesExpected,
   };
 }
 
