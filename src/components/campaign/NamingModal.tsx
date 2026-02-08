@@ -371,8 +371,12 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
       return;
     }
 
-    // Replace sequencial placeholder with configured start
-    let finalTemplate = template.replace(/\{\{sequencial\}\}/g, `{{sequencial:${sequentialStart}}}`);
+    // Only add start number to {{sequencial}} if user configured a custom start (not default 01)
+    // If sequentialStart is "01", keep {{sequencial}} as-is (resolver defaults to 1)
+    let finalTemplate = template;
+    if (sequentialStart !== '01' && template.includes('{{sequencial}}')) {
+      finalTemplate = template.replace(/\{\{sequencial\}\}/g, `{{sequencial:${sequentialStart}}}`);
+    }
     
     // Build custom variables map for saving
     const customVarsMap: Record<string, string> = {};
