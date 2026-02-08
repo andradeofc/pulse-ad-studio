@@ -1,12 +1,23 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useCreateCampaignJob } from '@/hooks/useCampaignJobs';
 import { useToast } from '@/hooks/use-toast';
+import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import { WizardStepper } from '@/components/campaign/WizardStepper';
 import { CampaignSummary } from '@/components/campaign/CampaignSummary';
@@ -40,11 +51,25 @@ export default function CreateCampaignPage() {
     resetConfig 
   } = useCampaignStore();
   const [isCreating, setIsCreating] = useState(false);
+  const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
   const createJobMutation = useCreateCampaignJob();
 
   const totalCampaigns = getTotalCampaigns();
   const totalAdsets = getTotalAdsets();
   const totalAds = getTotalAds();
+
+  // Calculate rate limit estimate
+  const rateLimitEstimate = useMemo(() => {
+    const accountsCount = config.selectedAccounts.length || 1;
+    return estimateRateLimitUsage(
+      totalCampaigns,
+      config.adsetsPerCampaign,
+      config.adsPerAdset,
+      config.useCatalog,
+      0,
+      accountsCount
+    );
+  }, [totalCampaigns, config.adsetsPerCampaign, config.adsPerAdset, config.useCatalog, config.selectedAccounts.length]);
 
   const handleCreate = async () => {
     const requiresPixel = config.objective === 'OUTCOME_SALES';
@@ -57,6 +82,28 @@ export default function CreateCampaignPage() {
       setStep(3);
       return;
     }
+
+    // Check rate limit before proceeding
+    if (rateLimitEstimate.isOverLimit) {
+      toast({
+        title: 'Limite de API excedido',
+        description: `Esta operação requer ${rateLimitEstimate.totalPoints.toLocaleString()} pontos, mas o limite é 9.000. Reduza para no máximo ${rateLimitEstimate.recommendedMaxStructures} campanha(s).`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Show warning if usage is high
+    if (rateLimitEstimate.warningLevel === 'warning' && !showRateLimitWarning) {
+      setShowRateLimitWarning(true);
+      return;
+    }
+
+    await proceedWithCreation();
+  };
+
+  const proceedWithCreation = async () => {
+    setShowRateLimitWarning(false);
 
     setIsCreating(true);
     
@@ -246,6 +293,38 @@ export default function CreateCampaignPage() {
           <CampaignSummary />
         </div>
       </div>
+
+      {/* Rate Limit Warning Dialog */}
+      <AlertDialog open={showRateLimitWarning} onOpenChange={setShowRateLimitWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Uso Alto de API
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                Esta operação utilizará <strong>{rateLimitEstimate.usagePercent}%</strong> do limite 
+                de rate limit da API do Facebook.
+              </p>
+              <div className="bg-muted p-3 rounded-lg text-sm space-y-1">
+                <p>• <strong>{rateLimitEstimate.totalApiCalls}</strong> chamadas de API</p>
+                <p>• <strong>{rateLimitEstimate.totalPoints.toLocaleString()}</strong> pontos (limite: 9.000)</p>
+                <p>• Tempo estimado: <strong>~{Math.ceil(rateLimitEstimate.estimatedTimeSeconds / 60)} minuto(s)</strong></p>
+              </div>
+              <p className="text-amber-600 dark:text-amber-400">
+                Continuar pode causar lentidão ou bloqueio temporário se você já usou a API recentemente.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={proceedWithCreation} className="bg-amber-600 hover:bg-amber-700">
+              Continuar Mesmo Assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

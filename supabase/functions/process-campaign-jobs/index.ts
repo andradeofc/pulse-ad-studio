@@ -37,6 +37,131 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const igActorIdCache = new Map<string, string | null>();
 const pageTokenCache = new Map<string, string | null>();
 
+// Rate limit tracking per ad account
+interface RateLimitInfo {
+  usagePercent: number;
+  lastUpdated: number;
+  requestCount: number;
+  windowStart: number;
+}
+
+const rateLimitTracker = new Map<string, RateLimitInfo>();
+
+// Rate limit constants (Standard Access tier)
+const RATE_LIMIT_CONFIG = {
+  MAX_USAGE_PERCENT: 85, // Stop if usage exceeds this
+  MAX_QPS: 100, // Max 100 requests per second
+  MIN_DELAY_MS: 10, // Minimum 10ms between requests (100 QPS)
+  BACKOFF_THRESHOLD: 50, // Start slowing down at 50% usage
+  WINDOW_MS: 5 * 60 * 1000, // 5 minute window
+};
+
+// QPS throttling: track last request time
+let lastRequestTime = 0;
+let requestsInCurrentSecond = 0;
+let currentSecondStart = 0;
+
+async function throttleRequest(): Promise<void> {
+  const now = Date.now();
+  
+  // Reset counter if we're in a new second
+  if (now - currentSecondStart >= 1000) {
+    currentSecondStart = now;
+    requestsInCurrentSecond = 0;
+  }
+  
+  // If we've hit the QPS limit, wait until the next second
+  if (requestsInCurrentSecond >= RATE_LIMIT_CONFIG.MAX_QPS) {
+    const waitTime = 1000 - (now - currentSecondStart);
+    if (waitTime > 0) {
+      console.log(`[rate-limit] QPS limit reached, waiting ${waitTime}ms`);
+      await sleep(waitTime);
+      currentSecondStart = Date.now();
+      requestsInCurrentSecond = 0;
+    }
+  }
+  
+  // Ensure minimum delay between requests
+  const timeSinceLastRequest = now - lastRequestTime;
+  if (timeSinceLastRequest < RATE_LIMIT_CONFIG.MIN_DELAY_MS) {
+    await sleep(RATE_LIMIT_CONFIG.MIN_DELAY_MS - timeSinceLastRequest);
+  }
+  
+  lastRequestTime = Date.now();
+  requestsInCurrentSecond++;
+}
+
+function parseRateLimitHeader(header: string | null): number {
+  if (!header) return 0;
+  
+  try {
+    // Facebook returns JSON like: {"acc_id_util_pct": 15.50, ...}
+    const parsed = JSON.parse(header);
+    if (parsed.acc_id_util_pct !== undefined) {
+      return parseFloat(parsed.acc_id_util_pct);
+    }
+    // Sometimes it's a simpler format
+    const match = header.match(/acc_id_util_pct["\s:]+(\d+(?:\.\d+)?)/);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+  } catch {
+    // Try regex if JSON parsing fails
+    const match = header.match(/acc_id_util_pct["\s:]+(\d+(?:\.\d+)?)/);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+  }
+  
+  return 0;
+}
+
+function updateRateLimitInfo(accountId: string, usagePercent: number): void {
+  const now = Date.now();
+  const existing = rateLimitTracker.get(accountId);
+  
+  if (existing && now - existing.windowStart < RATE_LIMIT_CONFIG.WINDOW_MS) {
+    // Same window, update
+    rateLimitTracker.set(accountId, {
+      usagePercent: Math.max(existing.usagePercent, usagePercent),
+      lastUpdated: now,
+      requestCount: existing.requestCount + 1,
+      windowStart: existing.windowStart,
+    });
+  } else {
+    // New window
+    rateLimitTracker.set(accountId, {
+      usagePercent,
+      lastUpdated: now,
+      requestCount: 1,
+      windowStart: now,
+    });
+  }
+}
+
+function shouldPauseForRateLimit(accountId: string): { pause: boolean; usagePercent: number; waitMs: number } {
+  const info = rateLimitTracker.get(accountId);
+  if (!info) {
+    return { pause: false, usagePercent: 0, waitMs: 0 };
+  }
+  
+  // If usage is above threshold, calculate adaptive delay
+  if (info.usagePercent >= RATE_LIMIT_CONFIG.MAX_USAGE_PERCENT) {
+    // Wait longer when close to limit
+    const waitMs = Math.min(30000, Math.round((info.usagePercent - 50) * 200));
+    return { pause: true, usagePercent: info.usagePercent, waitMs };
+  }
+  
+  // Adaptive slowdown between 50-85%
+  if (info.usagePercent >= RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) {
+    const slowdownFactor = (info.usagePercent - RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) / 35; // 0-1
+    const additionalDelay = Math.round(slowdownFactor * 500); // Up to 500ms extra delay
+    return { pause: false, usagePercent: info.usagePercent, waitMs: additionalDelay };
+  }
+  
+  return { pause: false, usagePercent: info.usagePercent, waitMs: 0 };
+}
+
 // Get a Page Access Token using the user's access token (fallback when DB token is missing)
 async function getPageAccessTokenFromUserToken(
   userAccessToken: string,
@@ -171,26 +296,59 @@ async function fetchWithRetry(
   url: string,
   options: RequestInit,
   maxAttempts = 3,
-): Promise<{ ok: boolean; status: number; json: any }> {
+  accountId?: string,
+): Promise<{ ok: boolean; status: number; json: any; rateLimitPercent: number }> {
+  // Apply QPS throttling before each request
+  await throttleRequest();
+  
+  // Check if we should pause for rate limits
+  if (accountId) {
+    const rateLimitCheck = shouldPauseForRateLimit(accountId);
+    if (rateLimitCheck.pause) {
+      console.warn(`[rate-limit] Account ${accountId} at ${rateLimitCheck.usagePercent}% usage, waiting ${rateLimitCheck.waitMs}ms`);
+      await sleep(rateLimitCheck.waitMs);
+    } else if (rateLimitCheck.waitMs > 0) {
+      // Adaptive slowdown
+      await sleep(rateLimitCheck.waitMs);
+    }
+  }
+  
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(url, options);
       const json = await res.json();
+      
+      // Parse and track rate limit from response header
+      const rateLimitHeader = res.headers.get('x-ad-account-usage') || res.headers.get('X-Ad-Account-Usage');
+      const rateLimitPercent = parseRateLimitHeader(rateLimitHeader);
+      
+      if (rateLimitPercent > 0 && accountId) {
+        updateRateLimitInfo(accountId, rateLimitPercent);
+        if (rateLimitPercent > 50) {
+          console.log(`[rate-limit] Account ${accountId} usage: ${rateLimitPercent.toFixed(1)}%`);
+        }
+      }
 
-      // Rate limit handling
-      if (res.status === 429 || (json.error?.code === 17 || json.error?.code === 4)) {
-        const waitMs = Math.min(10000, 1000 * Math.pow(2, attempt));
-        console.warn(`[process-jobs] Rate limited, waiting ${waitMs}ms (attempt ${attempt})`);
+      // Rate limit handling - exponential backoff
+      if (res.status === 429 || json.error?.code === 17 || json.error?.code === 4 || json.error?.code === 80004) {
+        const baseWait = Math.min(30000, 2000 * Math.pow(2, attempt));
+        // Add jitter to prevent thundering herd
+        const jitter = Math.random() * 1000;
+        const waitMs = baseWait + jitter;
+        
+        console.warn(`[rate-limit] Rate limited (code: ${json.error?.code || res.status}), waiting ${Math.round(waitMs)}ms (attempt ${attempt}/${maxAttempts})`);
         await sleep(waitMs);
         continue;
       }
 
-      return { ok: res.ok, status: res.status, json };
+      return { ok: res.ok, status: res.status, json, rateLimitPercent };
     } catch (err: any) {
       if (attempt === maxAttempts) {
         throw err;
       }
-      await sleep(1000 * attempt);
+      const waitMs = 1000 * attempt + Math.random() * 500;
+      console.warn(`[fetch-retry] Network error, retrying in ${Math.round(waitMs)}ms:`, err.message);
+      await sleep(waitMs);
     }
   }
   throw new Error('Max retries exceeded');
@@ -242,11 +400,16 @@ async function createFacebookCampaign(
     formData.append(key, String(value));
   }
 
-  const { ok, json } = await fetchWithRetry(`${GRAPH_BASE_URL}/${actId}/campaigns`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: formData.toString(),
-  });
+  const { ok, json } = await fetchWithRetry(
+    `${GRAPH_BASE_URL}/${actId}/campaigns`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString(),
+    },
+    3,
+    adAccountId,
+  );
 
   if (!ok || json.error) {
     const fbError = json?.error;
@@ -399,11 +562,16 @@ async function createFacebookAdset(
     formData.append(key, String(value));
   }
 
-  const { ok, json } = await fetchWithRetry(`${GRAPH_BASE_URL}/${actId}/adsets`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: formData.toString(),
-  });
+  const { ok, json } = await fetchWithRetry(
+    `${GRAPH_BASE_URL}/${actId}/adsets`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString(),
+    },
+    3,
+    adAccountId,
+  );
 
   if (!ok || json.error) {
     const fbError = json?.error;
@@ -536,11 +704,16 @@ async function createFacebookAd(
       if (value) creativeFormData.append(key, String(value));
     }
 
-    const creativeResult = await fetchWithRetry(`${GRAPH_BASE_URL}/${actId}/adcreatives`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: creativeFormData.toString(),
-    });
+    const creativeResult = await fetchWithRetry(
+      `${GRAPH_BASE_URL}/${actId}/adcreatives`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: creativeFormData.toString(),
+      },
+      3,
+      adAccountId,
+    );
 
     if (!creativeResult.ok || creativeResult.json.error) {
       const fbError = creativeResult.json?.error;
@@ -583,11 +756,16 @@ async function createFacebookAd(
       adFormData.append(key, String(value));
     }
 
-    const { ok, json } = await fetchWithRetry(`${GRAPH_BASE_URL}/${actId}/ads`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: adFormData.toString(),
-    });
+    const { ok, json } = await fetchWithRetry(
+      `${GRAPH_BASE_URL}/${actId}/ads`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: adFormData.toString(),
+      },
+      3,
+      adAccountId,
+    );
 
     if (!ok || json.error) {
       const fbError = json?.error;
