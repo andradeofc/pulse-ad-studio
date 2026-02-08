@@ -50,7 +50,7 @@ interface BatchRequest {
 interface BatchResponse {
   handles?: string[];
   validation_status?: Array<{
-    retailer_id: string;
+    retailer_id?: string;
     status: string;
     errors?: Array<{ message: string }>;
     warnings?: Array<{ message: string }>;
@@ -219,15 +219,37 @@ Deno.serve(async (req) => {
         console.log(`[process-catalog-schedules] Found ${allProducts.length} products in set (before dedup)`);
 
         // Deduplicate products by retailer_id (Facebook can return duplicates for variants)
+        // Also normalize retailer_id (trim) because the Batch API can treat whitespace variants as duplicates.
         const uniqueProductsMap = new Map<string, FacebookProduct>();
+        const duplicateRetailerIds: string[] = [];
+
         for (const product of allProducts) {
-          if (product.retailer_id && !uniqueProductsMap.has(product.retailer_id)) {
-            uniqueProductsMap.set(product.retailer_id, product);
+          const canonicalRetailerId = (product.retailer_id ?? '').trim();
+          if (!canonicalRetailerId) continue;
+
+          if (uniqueProductsMap.has(canonicalRetailerId)) {
+            if (duplicateRetailerIds.length < 20) duplicateRetailerIds.push(canonicalRetailerId);
+            continue;
           }
+
+          uniqueProductsMap.set(canonicalRetailerId, { ...product, retailer_id: canonicalRetailerId });
         }
+
         const uniqueProducts = Array.from(uniqueProductsMap.values());
 
         console.log(`[process-catalog-schedules] Unique products after dedup: ${uniqueProducts.length}`);
+        if (duplicateRetailerIds.length > 0) {
+          console.warn(
+            `[process-catalog-schedules] Detected ${duplicateRetailerIds.length} duplicate retailer_id values (showing up to 20): ${duplicateRetailerIds.join(', ')}`
+          );
+        }
+
+        // Helpful debug for small sets
+        if (uniqueProducts.length > 0 && uniqueProducts.length <= 50) {
+          console.log(
+            `[process-catalog-schedules] Retailer IDs to update (<=50): ${uniqueProducts.map((p) => p.retailer_id).join(', ')}`
+          );
+        }
 
         if (uniqueProducts.length === 0) {
           throw new Error('No products found in the product set');
@@ -242,10 +264,26 @@ Deno.serve(async (req) => {
         for (let i = 0; i < uniqueProducts.length; i += BATCH_SIZE) {
           const productBatch = uniqueProducts.slice(i, i + BATCH_SIZE);
           
+          // Safety: ensure uniqueness inside the batch (defensive, should already be unique)
+          const seenRetailerIds = new Set<string>();
+          const dedupedBatch = productBatch.filter((p) => {
+            const id = (p.retailer_id ?? '').trim();
+            if (!id) return false;
+            if (seenRetailerIds.has(id)) return false;
+            seenRetailerIds.add(id);
+            return true;
+          });
+
+          if (dedupedBatch.length !== productBatch.length) {
+            console.warn(
+              `[process-catalog-schedules] Dropped ${productBatch.length - dedupedBatch.length} duplicate/invalid retailer_id entries inside batch ${Math.floor(i / BATCH_SIZE) + 1}`
+            );
+          }
+
           // Prepare batch requests
-          const batchRequests: BatchRequest[] = productBatch.map((product) => {
+          const batchRequests: BatchRequest[] = dedupedBatch.map((product) => {
             const data: Record<string, string> = {};
-            
+
             if (typedCreative.type === 'video') {
               // For video, use the video field with array of objects
               data.video = JSON.stringify([{ url: typedCreative.url }]);
@@ -253,7 +291,7 @@ Deno.serve(async (req) => {
               // For images, use additional_image_link (comma-separated URLs)
               data.additional_image_link = typedCreative.url;
             }
-            
+
             return {
               method: 'UPDATE' as const,
               retailer_id: product.retailer_id,
@@ -294,13 +332,14 @@ Deno.serve(async (req) => {
               if (status.status === 'success') {
                 productsUpdated++;
               } else {
-                const errorMsg = status.errors?.map(e => e.message).join(', ') || 'Unknown error';
-                errors.push(`${status.retailer_id}: ${errorMsg}`);
+                const errorMsg = status.errors?.map((e) => e.message).join(', ') || 'Unknown error';
+                const retailerIdLabel = status.retailer_id ? status.retailer_id : 'batch';
+                errors.push(`${retailerIdLabel}: ${errorMsg}`);
               }
             }
           } else if (batchResult.handles && batchResult.handles.length > 0) {
             // If we got handles, the batch was accepted for processing
-            productsUpdated += productBatch.length;
+            productsUpdated += batchRequests.length;
             console.log(`[process-catalog-schedules] Batch accepted with handles: ${batchResult.handles.join(', ')}`);
           }
 
