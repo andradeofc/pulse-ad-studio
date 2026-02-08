@@ -216,9 +216,20 @@ Deno.serve(async (req) => {
           }
         }
 
-        console.log(`[process-catalog-schedules] Found ${allProducts.length} products in set`);
+        console.log(`[process-catalog-schedules] Found ${allProducts.length} products in set (before dedup)`);
 
-        if (allProducts.length === 0) {
+        // Deduplicate products by retailer_id (Facebook can return duplicates for variants)
+        const uniqueProductsMap = new Map<string, FacebookProduct>();
+        for (const product of allProducts) {
+          if (product.retailer_id && !uniqueProductsMap.has(product.retailer_id)) {
+            uniqueProductsMap.set(product.retailer_id, product);
+          }
+        }
+        const uniqueProducts = Array.from(uniqueProductsMap.values());
+
+        console.log(`[process-catalog-schedules] Unique products after dedup: ${uniqueProducts.length}`);
+
+        if (uniqueProducts.length === 0) {
           throw new Error('No products found in the product set');
         }
 
@@ -228,8 +239,8 @@ Deno.serve(async (req) => {
         // Process products in batches of 5000 (Facebook's limit per request)
         const BATCH_SIZE = 4999;
         
-        for (let i = 0; i < allProducts.length; i += BATCH_SIZE) {
-          const productBatch = allProducts.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < uniqueProducts.length; i += BATCH_SIZE) {
+          const productBatch = uniqueProducts.slice(i, i + BATCH_SIZE);
           
           // Prepare batch requests
           const batchRequests: BatchRequest[] = productBatch.map((product) => {
@@ -294,7 +305,7 @@ Deno.serve(async (req) => {
           }
 
           // Small delay between batches to avoid rate limiting
-          if (i + BATCH_SIZE < allProducts.length) {
+          if (i + BATCH_SIZE < uniqueProducts.length) {
             await sleep(500);
           }
         }
@@ -317,11 +328,11 @@ Deno.serve(async (req) => {
           scheduleId: schedule.id,
           status: finalStatus,
           productsUpdated,
-          totalProducts: allProducts.length,
+          totalProducts: uniqueProducts.length,
           errorsCount: errors.length,
         });
 
-        console.log(`[process-catalog-schedules] Schedule ${schedule.id} completed: ${productsUpdated}/${allProducts.length} products updated`);
+        console.log(`[process-catalog-schedules] Schedule ${schedule.id} completed: ${productsUpdated}/${uniqueProducts.length} products updated`);
 
       } catch (error) {
         console.error(`[process-catalog-schedules] Error processing schedule ${schedule.id}:`, error);
