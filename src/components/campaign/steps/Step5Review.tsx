@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { getCountryByCode } from '../GeoLocationSelector';
 import { getLocaleById } from '../LocaleSelector';
+import { AdLimitWarning } from '../AdLimitWarning';
 import { 
   formatCurrency as formatCurrencyUtil, 
   formatMultiCurrencyBudget,
@@ -172,6 +173,9 @@ export function Step5Review() {
           Revise todas as configurações antes de criar suas campanhas
         </p>
       </div>
+
+      {/* Ad Limit Warning */}
+      <AdLimitWarning adsToCreate={totalAds * config.selectedAccounts.length} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Column - Configuration */}

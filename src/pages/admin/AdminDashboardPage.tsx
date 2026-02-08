@@ -12,15 +12,18 @@ import {
   AlertTriangle,
   Activity,
   Zap,
+  BarChart3,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { UserAdUsageTable } from '@/components/admin/UserAdUsageTable';
 import { formatCurrency } from '@/lib/currencyUtils';
 
 interface PlatformMetrics {
@@ -418,6 +421,22 @@ export default function AdminDashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* User Ad Usage Table */}
+        <Card className="glass-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-primary" />
+              Uso de Anúncios por Usuário
+            </CardTitle>
+            <CardDescription>
+              Monitoramento de limites de anúncios por plano
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <UserAdUsageTable />
+          </CardContent>
+        </Card>
       </div>
     </AdminLayout>
   );

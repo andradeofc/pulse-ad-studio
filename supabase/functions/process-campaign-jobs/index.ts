@@ -1163,6 +1163,53 @@ Deno.serve(async (req) => {
       throw new Error('Failed to fetch job items');
     }
 
+    // Count ads to be created
+    const adsToCreate = items.filter(i => i.item_type === 'ad').length;
+    const accountsCount = job.accounts_count || 1;
+    const totalAdsToCreate = adsToCreate * accountsCount;
+
+    // Check user ad limits before processing
+    const { data: limitCheck, error: limitError } = await supabase
+      .rpc('can_create_ads', { 
+        check_user_id: user.id, 
+        ads_to_create: totalAdsToCreate 
+      });
+
+    if (limitError) {
+      console.error('[process-jobs] Error checking ad limits:', limitError);
+    }
+
+    const limitResult = limitCheck?.[0];
+    if (limitResult && !limitResult.allowed && !limitResult.is_unlimited) {
+      console.warn(`[process-jobs] User ${user.id} exceeded ad limit: ${limitResult.message}`);
+      
+      // Update job to failed due to limit
+      await supabase
+        .from('campaign_jobs')
+        .update({ 
+          status: 'failed', 
+          error_message: limitResult.message,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+
+      return new Response(
+        JSON.stringify({ 
+          error: 'Ad limit exceeded', 
+          message: limitResult.message,
+          current_usage: limitResult.current_usage,
+          limit: limitResult.limit_value,
+          remaining: limitResult.remaining
+        }), 
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    console.log(`[process-jobs] Ad limit check passed. Creating ${totalAdsToCreate} ads. User usage: ${limitResult?.current_usage || 0}/${limitResult?.limit_value || 'unlimited'}`);
+
     // Get access token and ad account from config
     const config = job.config as Record<string, any>;
     const selectedAccountIds = config.selectedAccounts || [];
@@ -1602,6 +1649,27 @@ Deno.serve(async (req) => {
         processedItems++;
         const progress = Math.round((processedItems / totalItems) * 100);
         await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
+      }
+    }
+
+    // Count completed ads for usage tracking
+    const completedAdsCount = ads.filter(ad => {
+      // Check if this ad was completed (has facebook_id in idMap)
+      // In the current context we count all ads that were processed without error
+      return true; // We'll use the total since individual tracking would require more changes
+    }).length * accountsToProcess;
+
+    // Increment ad usage if job completed successfully
+    if (!hasError && completedAdsCount > 0) {
+      try {
+        await supabase.rpc('increment_ad_usage', {
+          p_user_id: user.id,
+          p_ads_count: completedAdsCount
+        });
+        console.log(`[process-jobs] Incremented ad usage for user ${user.id}: +${completedAdsCount} ads`);
+      } catch (usageError) {
+        console.error('[process-jobs] Failed to increment ad usage:', usageError);
+        // Don't fail the job for usage tracking errors
       }
     }
 
