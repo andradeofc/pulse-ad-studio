@@ -1,4 +1,4 @@
-import { RefreshCw, Clock, CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, Inbox, Play, RotateCcw } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle, XCircle, Loader2, ChevronDown, ChevronRight, Inbox, Play, RotateCcw, PauseCircle, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 const statusIcons = {
   queued: Clock,
   processing: Loader2,
+  paused: PauseCircle,
   completed: CheckCircle,
   failed: XCircle,
 };
@@ -23,6 +24,7 @@ const statusIcons = {
 const statusLabels = {
   queued: 'Na Fila',
   processing: 'Processando',
+  paused: 'Pausado',
   completed: 'Concluído',
   failed: 'Falha',
 };
@@ -75,6 +77,7 @@ export default function ProcessingQueuePage() {
   const stats = {
     queued: jobs.filter(j => j.status === 'queued').length,
     processing: jobs.filter(j => j.status === 'processing').length,
+    paused: jobs.filter(j => j.status === 'paused').length,
     completed: jobs.filter(j => j.status === 'completed').length,
     failed: jobs.filter(j => j.status === 'failed').length,
   };
@@ -104,6 +107,12 @@ export default function ProcessingQueuePage() {
             {stats.processing > 0 && (
               <Badge className="badge-info">{stats.processing} ativo(s)</Badge>
             )}
+            {stats.paused > 0 && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <PauseCircle className="w-3 h-3" />
+                {stats.paused} pausado(s)
+              </Badge>
+            )}
           </h1>
           <p className="text-muted-foreground">Acompanhe o status das suas campanhas</p>
         </div>
@@ -118,6 +127,7 @@ export default function ProcessingQueuePage() {
         {[
           { label: 'Na Fila', value: stats.queued, icon: Clock, color: 'text-muted-foreground' },
           { label: 'Processando', value: stats.processing, icon: Loader2, color: 'text-ads-info', animate: true },
+          { label: 'Pausados', value: stats.paused, icon: PauseCircle, color: 'text-amber-500' },
           { label: 'Concluídos', value: stats.completed, icon: CheckCircle, color: 'text-ads-success' },
           { label: 'Com Falha', value: stats.failed, icon: XCircle, color: 'text-ads-danger' },
         ].map((stat) => (
@@ -176,6 +186,7 @@ export default function ProcessingQueuePage() {
                         "w-5 h-5 flex-shrink-0",
                         job.status === 'queued' && "text-muted-foreground",
                         job.status === 'processing' && "animate-spin text-ads-info",
+                        job.status === 'paused' && "text-amber-500",
                         job.status === 'completed' && "text-ads-success",
                         job.status === 'failed' && "text-ads-danger"
                       )} />
@@ -184,7 +195,8 @@ export default function ProcessingQueuePage() {
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <Badge variant={
                             job.status === 'completed' ? 'default' :
-                            job.status === 'failed' ? 'destructive' : 'secondary'
+                            job.status === 'failed' ? 'destructive' : 
+                            job.status === 'paused' ? 'outline' : 'secondary'
                           }>
                             {statusLabels[job.status]}
                           </Badge>
@@ -202,6 +214,14 @@ export default function ProcessingQueuePage() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Paused status indicator */}
+                        {job.status === 'paused' && (
+                          <div className="flex items-center gap-1 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
+                            <Timer className="w-3 h-3" />
+                            <span>Retomando automaticamente...</span>
+                          </div>
+                        )}
+
                         {/* Process button for queued/failed jobs */}
                         {(job.status === 'queued' || job.status === 'failed') && (
                           <Button
@@ -230,7 +250,7 @@ export default function ProcessingQueuePage() {
                           </Button>
                         )}
 
-                        {(job.status === 'processing' || job.status === 'queued') && (
+                        {(job.status === 'processing' || job.status === 'queued' || job.status === 'paused') && (
                           <div className="w-24">
                             <Progress value={job.progress} className="h-2" />
                             <p className="text-xs text-muted-foreground mt-1 text-right">{job.progress}%</p>

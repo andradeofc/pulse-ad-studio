@@ -7,7 +7,7 @@ export interface CampaignJob {
   user_id: string;
   hash: string;
   name: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: 'queued' | 'processing' | 'paused' | 'completed' | 'failed';
   progress: number;
   total_campaigns: number;
   total_adsets: number;
