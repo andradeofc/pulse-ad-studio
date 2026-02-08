@@ -399,11 +399,12 @@ Deno.serve(async (req) => {
             };
 
             if (typedCreative.type === 'video') {
-              // For video, use the video field with array of objects
+              // For video, use the video field - JSON array of objects with url property
               data.video = JSON.stringify([{ url: typedCreative.url }]);
             } else {
-              // For images, use additional_image_link (comma-separated URLs)
-              data.additional_image_link = typedCreative.url;
+              // For images, additional_image_link must be a JSON array of strings (up to 50 URLs)
+              // This ADDS images to the product, not replaces the main image
+              data.additional_image_link = JSON.stringify([typedCreative.url]);
             }
 
             return {
