@@ -19,7 +19,9 @@ import {
   AlertCircle,
   RefreshCw,
   Briefcase,
+  Eye,
 } from 'lucide-react';
+import { ScheduleProductsModal } from '@/components/catalog/ScheduleProductsModal';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -144,6 +146,7 @@ export default function CatalogSchedulingPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSyncingCatalogs, setIsSyncingCatalogs] = useState(false);
   const [isSyncingProductSets, setIsSyncingProductSets] = useState(false);
+  const [selectedScheduleForProducts, setSelectedScheduleForProducts] = useState<string | null>(null);
   
   // Form state
   const [selectedCreative, setSelectedCreative] = useState<string>('');
@@ -947,10 +950,20 @@ export default function CatalogSchedulingPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {schedule.status === 'completed' ? (
-                          <span className="text-sm font-medium text-success">
-                            {schedule.products_updated} atualizados
-                          </span>
+                        {schedule.status === 'completed' || schedule.status === 'failed' ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedScheduleForProducts(schedule.id)}
+                            className="text-sm font-medium"
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            {schedule.products_updated > 0 ? (
+                              <span className="text-success">{schedule.products_updated} atualizados</span>
+                            ) : (
+                              <span className="text-muted-foreground">Ver detalhes</span>
+                            )}
+                          </Button>
                         ) : (
                           <span className="text-sm text-muted-foreground">
                             {schedule.product_set?.product_count || '-'}
@@ -1012,6 +1025,13 @@ export default function CatalogSchedulingPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Products Modal */}
+      <ScheduleProductsModal
+        scheduleId={selectedScheduleForProducts}
+        isOpen={!!selectedScheduleForProducts}
+        onClose={() => setSelectedScheduleForProducts(null)}
+      />
     </div>
   );
 }
