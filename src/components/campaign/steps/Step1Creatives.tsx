@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useCampaignStore, Creative } from '@/stores/campaignStore';
 import { fetchCreatives, deleteCreative, CreativeMetadata } from '@/services/creativesService';
 import { CreativeUploadModal } from '@/components/campaign/CreativeUploadModal';
+import { TemplateSelector } from '@/components/campaign/TemplateSelector';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -143,11 +144,14 @@ export function Step1Creatives() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground mb-2">Selecione os Criativos</h2>
-        <p className="text-muted-foreground">
-          Escolha imagens e/ou vídeos para seus anúncios. Cada criativo será um anúncio separado.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground mb-2">Selecione os Criativos</h2>
+          <p className="text-muted-foreground">
+            Escolha imagens e/ou vídeos para seus anúncios. Cada criativo será um anúncio separado.
+          </p>
+        </div>
+        <TemplateSelector />
       </div>
 
       {/* Toolbar */}
