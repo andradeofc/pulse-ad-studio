@@ -69,6 +69,7 @@ export default function CreateCampaignPage() {
   
   const [isCreating, setIsCreating] = useState(false);
   const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
+  const [jobSubmitted, setJobSubmitted] = useState(false); // Prevent double submission
   const createJobMutation = useCreateCampaignJob();
 
   const totalCampaigns = getTotalCampaigns();
@@ -106,6 +107,12 @@ export default function CreateCampaignPage() {
   }, [totalCampaigns, config.adsetsPerCampaign, config.adsPerAdset, config.useCatalog, config.selectedAccounts.length]);
 
   const handleCreate = async () => {
+    // CRITICAL: Prevent double submission
+    if (isCreating || jobSubmitted || createJobMutation.isPending) {
+      console.warn('[CreateCampaignPage] Blocked duplicate submission attempt');
+      return;
+    }
+
     const requiresPixel = config.objective === 'OUTCOME_SALES';
     if (requiresPixel && !config.pixelId) {
       toast({
@@ -127,8 +134,14 @@ export default function CreateCampaignPage() {
   };
 
   const proceedWithCreation = async () => {
+    // CRITICAL: Mark as submitted immediately to prevent any race conditions
+    if (jobSubmitted) {
+      console.warn('[CreateCampaignPage] Job already submitted, blocking duplicate');
+      return;
+    }
+    
+    setJobSubmitted(true);
     setShowRateLimitWarning(false);
-
     setIsCreating(true);
     
     try {
@@ -280,6 +293,8 @@ export default function CreateCampaignPage() {
       navigate('/fila-processamento');
     } catch (error) {
       console.error('Error creating campaign job:', error);
+      // Reset the submission flag on error so user can retry
+      setJobSubmitted(false);
     } finally {
       setIsCreating(false);
     }
@@ -405,13 +420,13 @@ export default function CreateCampaignPage() {
             ) : (
               <Button 
                 onClick={handleCreate}
-                disabled={isCreating || !validation.step5.isValid}
+                disabled={isCreating || jobSubmitted || createJobMutation.isPending || !validation.step5.isValid}
                 className="glow-primary bg-ads-success hover:bg-ads-success/90"
               >
-                {isCreating ? (
+                {isCreating || jobSubmitted || createJobMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Criando...
+                    {jobSubmitted ? 'Enviando...' : 'Criando...'}
                   </>
                 ) : (
                   <>
