@@ -65,14 +65,34 @@ export function useCampaignJobItems(jobId: string | null) {
     queryFn: async () => {
       if (!jobId) return [];
 
-      const { data, error } = await supabase
-        .from('campaign_job_items')
-        .select('*')
-        .eq('job_id', jobId)
-        .order('created_at', { ascending: true });
+      // Supabase has a default limit of 1000 rows per query
+      // We need to paginate to fetch all items for large jobs
+      const PAGE_SIZE = 1000;
+      let allItems: CampaignJobItem[] = [];
+      let offset = 0;
+      let hasMore = true;
 
-      if (error) throw error;
-      return data as CampaignJobItem[];
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('campaign_job_items')
+          .select('*')
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1);
+
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allItems = [...allItems, ...(data as CampaignJobItem[])];
+          offset += data.length;
+          hasMore = data.length === PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`[useCampaignJobItems] Fetched ${allItems.length} items for job ${jobId}`);
+      return allItems;
     },
     enabled: !!jobId,
   });
