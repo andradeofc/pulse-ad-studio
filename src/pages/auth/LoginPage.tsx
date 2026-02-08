@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Megaphone, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuthStore } from '@/stores/authStore';
 import { useToast } from '@/hooks/use-toast';
+import logoImage from '@/assets/logo.png';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -50,9 +51,7 @@ export default function LoginPage() {
         >
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-glow-sm">
-              <Megaphone className="w-5 h-5 text-primary-foreground" />
-            </div>
+            <img src={logoImage} alt="AdStorm" className="w-10 h-10 object-contain" />
             <span className="font-bold text-xl text-foreground">AdStorm</span>
           </Link>
 
@@ -143,9 +142,11 @@ export default function LoginPage() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 }}
           >
-            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center mx-auto mb-8 shadow-glow animate-float">
-              <Megaphone className="w-12 h-12 text-primary-foreground" />
-            </div>
+            <img 
+              src={logoImage} 
+              alt="AdStorm" 
+              className="w-24 h-24 object-contain mx-auto mb-8 drop-shadow-2xl animate-float" 
+            />
             <h2 className="text-2xl font-bold text-foreground mb-4">
               Gestão de Anúncios Simplificada
             </h2>

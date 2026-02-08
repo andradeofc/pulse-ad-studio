@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Users,
   CreditCard,
-  Megaphone,
   FileText,
   Clock,
   Image,
@@ -21,12 +20,14 @@ import {
   LogOut,
   Menu,
   X,
+  Megaphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
 import { SyncProgressBadge } from './SyncProgressBadge';
+import logoImage from '@/assets/logo.png';
 
 interface NavItem {
   title: string;
@@ -96,9 +97,7 @@ export function DashboardSidebar() {
     <>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-6 border-b border-border">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
-          <Megaphone className="w-4 h-4 text-primary-foreground" />
-        </div>
+        <img src={logoImage} alt="AdStorm" className="w-8 h-8 object-contain" />
         {!isCollapsed && (
           <div className="flex flex-col">
             <span className="font-bold text-foreground">AdStorm</span>
