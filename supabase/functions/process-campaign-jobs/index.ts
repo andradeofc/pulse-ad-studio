@@ -1392,14 +1392,28 @@ Deno.serve(async (req) => {
         ? (config.pageNames?.[0] || resolvedPages[0]?.pageId || '')
         : '';
 
+      // Helper to get first name from a full name (e.g., "Alana Martins Santos" -> "Alana")
+      const getFirstName = (fullName: string): string => {
+        if (!fullName) return '';
+        return fullName.trim().split(/\s+/)[0] || fullName;
+      };
+
+      // Helper to get account code (first 7 chars of account name)
+      const getAccountCode = (accountName: string): string => {
+        if (!accountName) return '';
+        return accountName.trim().slice(0, 7);
+      };
+
       // Helper to replace all naming variables (including custom ones)
       const replaceNamingVariables = (name: string): string => {
         let result = name
           .replace(/\{\{conta_apelido\}\}/g, accountNickname)
           .replace(/\{\{conta_nome\}\}/g, currentAccount.name || '')
+          .replace(/\{\{conta_codigo\}\}/g, getAccountCode(currentAccount.name || ''))
           .replace(/\{\{conta_id\}\}/g, accountId)
           .replace(/\{\{conjunto_catalogo\}\}/g, productSetName)
-          .replace(/\{\{pagina_nome\}\}/g, firstPageName);
+          .replace(/\{\{pagina_nome\}\}/g, firstPageName)
+          .replace(/\{\{pagina_nome1\}\}/g, getFirstName(firstPageName));
         
         // Replace custom naming variables from config
         const customVars = config.customNamingVariables as Record<string, string> || {};
