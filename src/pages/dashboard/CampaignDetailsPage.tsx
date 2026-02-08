@@ -266,46 +266,63 @@ export default function CampaignDetailsPage() {
         </motion.div>
       )}
 
-      {/* Progress Section */}
-      <Card className="glass-card">
+      {/* Progress Section - Redesigned */}
+      <Card className="glass-card overflow-hidden">
+        <div className={`h-1.5 ${campaign.status === 'completed' ? 'bg-gradient-to-r from-ads-success via-ads-success to-ads-success/50' : campaign.status === 'failed' ? 'bg-gradient-to-r from-destructive to-destructive/50' : 'bg-gradient-to-r from-primary via-primary to-primary/50'}`} 
+             style={{ width: `${campaign.progress}%`, transition: 'width 0.5s ease' }} />
         <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row md:items-center gap-6">
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-foreground">Progresso Geral</span>
-                <span className="text-2xl font-bold text-primary">{campaign.progress}%</span>
+          <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+            {/* Progress Info */}
+            <div className="flex-1 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-foreground">Progresso do Processamento</span>
+                  {campaign.status === 'processing' && (
+                    <span className="flex items-center gap-1.5 text-xs text-ads-info">
+                      <span className="w-1.5 h-1.5 rounded-full bg-ads-info animate-pulse" />
+                      Em andamento
+                    </span>
+                  )}
+                </div>
+                <span className="text-3xl font-bold text-foreground">{campaign.progress}<span className="text-lg text-muted-foreground">%</span></span>
               </div>
               <Progress 
                 value={campaign.progress} 
-                className="h-3" 
-                indicatorClassName={campaign.status === 'failed' ? 'bg-destructive' : undefined}
+                className="h-2.5" 
+                indicatorClassName={campaign.status === 'failed' ? 'bg-destructive' : campaign.status === 'completed' ? 'bg-ads-success' : undefined}
               />
-              <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{itemStats.completed} de {items.length} itens processados</span>
-                {itemStats.failed > 0 && (
-                  <span className="text-destructive">{itemStats.failed} com erro</span>
-                )}
+                <div className="flex items-center gap-3">
+                  {itemStats.completed > 0 && (
+                    <span className="text-ads-success">{itemStats.completed} ✓</span>
+                  )}
+                  {itemStats.failed > 0 && (
+                    <span className="text-destructive">{itemStats.failed} erros</span>
+                  )}
+                </div>
               </div>
             </div>
 
-            <Separator orientation="vertical" className="hidden md:block h-16" />
+            <Separator orientation="vertical" className="hidden lg:block h-20" />
 
-            <div className="grid grid-cols-4 gap-6 text-center">
-              <div>
-                <p className="text-2xl font-bold text-foreground">{campaign.total_campaigns}</p>
-                <p className="text-xs text-muted-foreground">Campanhas</p>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-4 gap-4 lg:gap-6">
+              <div className="text-center p-3 rounded-lg bg-primary/5 border border-primary/10">
+                <p className="text-xl font-bold text-primary">{campaign.total_campaigns}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Campanhas</p>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{campaign.total_adsets}</p>
-                <p className="text-xs text-muted-foreground">Conjuntos</p>
+              <div className="text-center p-3 rounded-lg bg-ads-info/5 border border-ads-info/10">
+                <p className="text-xl font-bold text-ads-info">{campaign.total_adsets}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Conjuntos</p>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{campaign.total_ads}</p>
-                <p className="text-xs text-muted-foreground">Anúncios</p>
+              <div className="text-center p-3 rounded-lg bg-ads-warning/5 border border-ads-warning/10">
+                <p className="text-xl font-bold text-ads-warning">{campaign.total_ads}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Anúncios</p>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{campaign.accounts_count}</p>
-                <p className="text-xs text-muted-foreground">Contas</p>
+              <div className="text-center p-3 rounded-lg bg-ads-success/5 border border-ads-success/10">
+                <p className="text-xl font-bold text-ads-success">{campaign.accounts_count}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">Contas</p>
               </div>
             </div>
           </div>
@@ -562,14 +579,113 @@ export default function CampaignDetailsPage() {
 
         {/* Structure Tab */}
         <TabsContent value="structure" className="space-y-6">
+          {/* Structure Summary Card */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="glass-card overflow-hidden">
+              <div className="h-1 bg-gradient-to-r from-primary to-primary/50" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Megaphone className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{campaign.total_campaigns}</p>
+                    <p className="text-xs text-muted-foreground">Campanhas</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass-card overflow-hidden">
+              <div className="h-1 bg-gradient-to-r from-ads-info to-ads-info/50" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-ads-info/10 flex items-center justify-center">
+                    <Layers className="w-5 h-5 text-ads-info" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{campaign.total_adsets}</p>
+                    <p className="text-xs text-muted-foreground">Conjuntos</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass-card overflow-hidden">
+              <div className="h-1 bg-gradient-to-r from-ads-warning to-ads-warning/50" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-ads-warning/10 flex items-center justify-center">
+                    <Image className="w-5 h-5 text-ads-warning" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{campaign.total_ads}</p>
+                    <p className="text-xs text-muted-foreground">Anúncios</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glass-card overflow-hidden">
+              <div className="h-1 bg-gradient-to-r from-ads-success to-ads-success/50" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-ads-success/10 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-ads-success" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-foreground">{campaign.accounts_count}</p>
+                    <p className="text-xs text-muted-foreground">Contas</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Distribution Model Badge */}
           <Card className="glass-card">
-            <CardHeader>
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Modelo de Distribuição:</span>
+                    <Badge variant="outline" className="text-lg font-mono font-bold px-3 py-1 border-primary/30 bg-primary/5">
+                      {campaign.total_campaigns}-{campaign.total_adsets}-{campaign.total_ads}
+                    </Badge>
+                  </div>
+                  <Separator orientation="vertical" className="h-6 hidden sm:block" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Tipo:</span>
+                    <Badge variant="secondary">
+                      {config.useCBO ? 'CBO' : 'ABO'} • {config.useCatalog ? 'Catálogo' : 'Padrão'}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="px-2 py-1 rounded bg-ads-success/10 text-ads-success font-medium">
+                    {itemStats.completed} ok
+                  </span>
+                  {itemStats.failed > 0 && (
+                    <span className="px-2 py-1 rounded bg-destructive/10 text-destructive font-medium">
+                      {itemStats.failed} erro
+                    </span>
+                  )}
+                  {itemStats.pending > 0 && (
+                    <span className="px-2 py-1 rounded bg-muted text-muted-foreground font-medium">
+                      {itemStats.pending} pendente
+                    </span>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Structure Tree */}
+          <Card className="glass-card">
+            <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Layers className="w-5 h-5 text-primary" />
-                Estrutura da Campanha
+                Árvore de Itens
               </CardTitle>
               <CardDescription>
-                Visualize todos os itens criados nesta campanha
+                Hierarquia completa: Campanha → Conjuntos → Anúncios
               </CardDescription>
             </CardHeader>
             <CardContent>
