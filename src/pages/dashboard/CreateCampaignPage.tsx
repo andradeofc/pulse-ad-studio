@@ -8,8 +8,9 @@ import { useState, useMemo } from 'react';
 import { useCreateCampaignJob } from '@/hooks/useCampaignJobs';
 import { useToast } from '@/hooks/use-toast';
 import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
-import { resolveTemplate, getFirstName, getAccountCode } from '@/lib/namingResolver';
+import { resolveTemplate } from '@/lib/namingResolver';
 import { useStepValidation } from '@/hooks/useStepValidation';
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,8 @@ import {
 
 import { WizardStepper } from '@/components/campaign/WizardStepper';
 import { CampaignSummary } from '@/components/campaign/CampaignSummary';
+import { NamingPreview } from '@/components/campaign/NamingPreview';
+import { UnsavedChangesDialog } from '@/components/campaign/UnsavedChangesDialog';
 import { Step1Creatives } from '@/components/campaign/steps/Step1Creatives';
 import { Step2Campaign } from '@/components/campaign/steps/Step2Campaign';
 import { Step3Adsets } from '@/components/campaign/steps/Step3Adsets';
@@ -70,6 +73,23 @@ export default function CreateCampaignPage() {
   const totalCampaigns = getTotalCampaigns();
   const totalAdsets = getTotalAdsets();
   const totalAds = getTotalAds();
+
+  // Check if user has started filling the wizard (has unsaved changes)
+  const hasUnsavedChanges = useMemo(() => {
+    return (
+      config.selectedCreatives.length > 0 ||
+      config.selectedAccounts.length > 0 ||
+      config.selectedPages.length > 0 ||
+      config.campaignName !== '' ||
+      currentStep > 1
+    );
+  }, [config.selectedCreatives, config.selectedAccounts, config.selectedPages, config.campaignName, currentStep]);
+
+  // Unsaved changes warning
+  const { isBlocked, proceed, reset, message } = useUnsavedChangesWarning({
+    hasUnsavedChanges,
+    message: 'Você tem uma campanha em criação. Deseja realmente sair?',
+  });
 
   // Calculate rate limit estimate
   const rateLimitEstimate = useMemo(() => {
@@ -364,10 +384,26 @@ export default function CreateCampaignPage() {
         </div>
 
         {/* Summary Sidebar */}
-        <div className="hidden lg:block">
+        <div className="hidden lg:block space-y-4">
           <CampaignSummary />
+          
+          {/* Dynamic Naming Preview */}
+          {currentStep >= 2 && (
+            <NamingPreview compact />
+          )}
         </div>
       </div>
+
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        open={isBlocked}
+        onCancel={() => reset?.()}
+        onConfirm={() => {
+          resetConfig();
+          proceed?.();
+        }}
+        message={message}
+      />
 
       {/* Rate Limit Info Dialog */}
       <AlertDialog open={showRateLimitWarning} onOpenChange={setShowRateLimitWarning}>
