@@ -1415,15 +1415,31 @@ Deno.serve(async (req) => {
       };
 
       // Helper to replace all naming variables (including custom ones)
-      const replaceNamingVariables = (name: string): string => {
-        let result = name
+      // This is synchronized with src/lib/namingResolver.ts to ensure parity
+      const replaceNamingVariables = (name: string, context: { campaignIndex?: number; adsetIndex?: number; adIndex?: number; creativeName?: string } = {}): string => {
+        let result = name;
+        
+        // Account variables
+        result = result
           .replace(/\{\{conta_apelido\}\}/g, accountNickname)
           .replace(/\{\{conta_nome\}\}/g, currentAccount.name || '')
           .replace(/\{\{conta_codigo\}\}/g, getAccountCode(currentAccount.name || ''))
-          .replace(/\{\{conta_id\}\}/g, accountId)
-          .replace(/\{\{conjunto_catalogo\}\}/g, productSetName)
+          .replace(/\{\{conta_id\}\}/g, accountId);
+        
+        // Page variables
+        result = result
           .replace(/\{\{pagina_nome\}\}/g, firstPageName)
           .replace(/\{\{pagina_nome1\}\}/g, getFirstName(firstPageName));
+        
+        // Catalog variables
+        result = result.replace(/\{\{conjunto_catalogo\}\}/g, productSetName);
+        const catalogName = (config.catalogName as string) || '';
+        result = result.replace(/\{\{catalogo\}\}/g, catalogName);
+        
+        // Creative variables
+        if (context.creativeName) {
+          result = result.replace(/\{\{criativo\}\}/g, context.creativeName);
+        }
         
         // Replace custom naming variables from config
         const customVars = config.customNamingVariables as Record<string, string> || {};
@@ -1431,7 +1447,7 @@ Deno.serve(async (req) => {
           result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
         }
         
-        // Replace date/time variables
+        // Date/time variables
         const now = new Date();
         result = result
           .replace(/\{\{ano\}\}/g, now.getFullYear().toString())
@@ -1441,20 +1457,39 @@ Deno.serve(async (req) => {
           .replace(/\{\{hora\}\}/g, String(now.getHours()).padStart(2, '0'))
           .replace(/\{\{minuto\}\}/g, String(now.getMinutes()).padStart(2, '0'));
         
-        // Replace budget variable
+        // Budget variable
         result = result.replace(/\{\{budget\}\}/g, config.useCBO ? 'CBO' : 'ABO');
         
-        // Replace structure variable
+        // Structure variable
         const structure = `${job.total_campaigns}-${config.adsetsPerCampaign || 1}-${config.adsPerAdset || 1}`;
         result = result.replace(/\{\{estrutura\}\}/g, structure);
+        
+        // Sequential variable with starting number: {{sequencial:300}} or {{sequencial:01}}
+        result = result.replace(/\{\{sequencial(?::(\d+))?\}\}/g, (match, start) => {
+          const startNum = start ? parseInt(start, 10) : 1;
+          const currentIndex = context.campaignIndex ?? 0;
+          const value = startNum + currentIndex;
+          
+          // Preserve padding based on original format
+          if (start) {
+            return String(value).padStart(start.length, '0');
+          }
+          return String(value).padStart(2, '0');
+        });
+        
+        // Adset conjunto variable: {{conjunto}}
+        result = result.replace(/\{\{conjunto\}\}/g, () => {
+          return String((context.adsetIndex ?? 0) + 1).padStart(2, '0');
+        });
         
         return result;
       };
 
       // Process campaigns for this account
+      let campaignIndex = 0;
       for (const campaign of campaigns) {
-        // Replace all variables in campaign name
-        let campaignName = replaceNamingVariables(campaign.name);
+        // Replace all variables in campaign name with campaign index for sequencial
+        let campaignName = replaceNamingVariables(campaign.name, { campaignIndex });
 
         console.log(`[process-jobs] Creating campaign: ${campaignName} for account ${currentAccount.name}`);
 
@@ -1494,11 +1529,13 @@ Deno.serve(async (req) => {
         }
 
         processedItems++;
+        campaignIndex++;
         const progress = Math.round((processedItems / totalItems) * 100);
         await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
       }
 
       // Process adsets for this account
+      let adsetIndex = 0;
       for (const adset of adsets) {
         const parentFbId = adset.parent_id ? idMap.get(adset.parent_id) : null;
 
@@ -1514,8 +1551,8 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Replace all variables in adset name
-        let adsetName = replaceNamingVariables(adset.name);
+        // Replace all variables in adset name with adset index for conjunto
+        let adsetName = replaceNamingVariables(adset.name, { adsetIndex });
 
         console.log(`[process-jobs] Creating adset: ${adsetName} for account ${currentAccount.name}`);
 
@@ -1553,6 +1590,7 @@ Deno.serve(async (req) => {
         }
 
         processedItems++;
+        adsetIndex++;
         const progress = Math.round((processedItems / totalItems) * 100);
         await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
       }
@@ -1605,9 +1643,6 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Replace all variables in ad name
-        let adName = replaceNamingVariables(ad.name);
-
         // For non-catalog ads, get the creative to use
         // Distribution logic: distribute creatives based on distribution mode
         let creativeForAd: { id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string } | null = null;
@@ -1624,6 +1659,12 @@ Deno.serve(async (req) => {
           }
           console.log(`[process-jobs] Using creative for ad: ${creativeForAd?.name} (${creativeForAd?.type}), thumbnail: ${creativeForAd?.thumbnailUrl ? 'yes' : 'no'}`);
         }
+
+        // Replace all variables in ad name with ad index and creative name
+        let adName = replaceNamingVariables(ad.name, { 
+          adIndex, 
+          creativeName: creativeForAd?.name || '' 
+        });
 
         console.log(`[process-jobs] Creating ad: ${adName} with page: ${currentPageId} for account ${currentAccount.name}`);
 

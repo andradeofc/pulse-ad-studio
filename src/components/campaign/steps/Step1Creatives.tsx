@@ -44,6 +44,10 @@ export function Step1Creatives() {
   const [isLoading, setIsLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<CreativeMetadata | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
 
   const loadCreatives = async () => {
     setIsLoading(true);
@@ -69,6 +73,17 @@ export function Step1Creatives() {
   const filteredCreatives = creatives.filter((creative) =>
     creative.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredCreatives.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedCreatives = filteredCreatives.slice(startIndex, endIndex);
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   const isSelected = (id: string) => config.selectedCreatives.some((c) => c.id === id);
 
@@ -227,7 +242,7 @@ export function Step1Creatives() {
               ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
               : "space-y-2"
           )}>
-            {filteredCreatives.map((creative) => (
+            {paginatedCreatives.map((creative) => (
               <motion.div
                 key={creative.id}
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -328,13 +343,29 @@ export function Step1Creatives() {
           {/* Pagination */}
           <div className="flex items-center justify-between pt-4 border-t border-border">
             <p className="text-sm text-muted-foreground">
-              Mostrando 1-{filteredCreatives.length} de {creatives.length}
+              Mostrando {startIndex + 1}-{Math.min(endIndex, filteredCreatives.length)} de {filteredCreatives.length}
+              {filteredCreatives.length !== creatives.length && ` (${creatives.length} total)`}
             </p>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled>
+              {totalPages > 1 && (
+                <span className="text-sm text-muted-foreground mr-2">
+                  Página {currentPage} de {totalPages}
+                </span>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              >
                 Anterior
               </Button>
-              <Button variant="outline" size="sm" disabled>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              >
                 Próximo
               </Button>
             </div>

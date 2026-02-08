@@ -120,6 +120,7 @@ interface CampaignState {
   getTotalAdsets: () => number;
   getTotalAds: () => number;
   getTotalBudget: () => number;
+  getBudgetsByCurrency: () => Record<string, number>;
 }
 
 const defaultConfig: CampaignConfig = {
@@ -266,6 +267,17 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     const { config } = get();
     const totalCampaigns = get().getTotalCampaigns();
     
+    // Check if we have multi-currency budgets configured
+    const budgetConfig = config.useCBO ? config.budgetByCurrency : config.adsetBudgetByCurrency;
+    const hasMultiCurrency = Object.keys(budgetConfig).some(c => budgetConfig[c] > 0);
+    
+    if (hasMultiCurrency) {
+      // Return sum of all currency budgets (for display purposes only)
+      // Note: This is a simplified total - actual per-currency totals should use getBudgetsByCurrency
+      const multiplier = config.useCBO ? totalCampaigns : get().getTotalAdsets();
+      return Object.values(budgetConfig).reduce((sum, v) => sum + (v * multiplier), 0);
+    }
+    
     if (!config.useCBO) {
       // ABO mode: budget is per ad set
       const totalAdsets = get().getTotalAdsets();
@@ -274,5 +286,35 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
     
     // CBO mode: budget is per campaign
     return totalCampaigns * config.budget;
+  },
+  
+  /**
+   * Get total budgets per currency for multi-currency campaigns
+   * Returns an object like { "BRL": 5000, "USD": 1000 }
+   */
+  getBudgetsByCurrency: () => {
+    const { config } = get();
+    const totalCampaigns = get().getTotalCampaigns();
+    const totalAdsets = get().getTotalAdsets();
+    
+    const budgetConfig = config.useCBO ? config.budgetByCurrency : config.adsetBudgetByCurrency;
+    const multiplier = config.useCBO ? totalCampaigns : totalAdsets;
+    const baseBudget = config.useCBO ? config.budget : config.adsetBudget;
+    
+    // Check if we have specific currency budgets
+    const hasMultiCurrency = Object.keys(budgetConfig).some(c => budgetConfig[c] > 0);
+    
+    if (hasMultiCurrency) {
+      const result: Record<string, number> = {};
+      for (const [currency, value] of Object.entries(budgetConfig)) {
+        if (value > 0) {
+          result[currency] = value * multiplier;
+        }
+      }
+      return result;
+    }
+    
+    // Fallback to single default budget (BRL as default)
+    return { 'BRL': baseBudget * multiplier };
   },
 }));
