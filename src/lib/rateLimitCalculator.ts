@@ -106,16 +106,18 @@ export function estimateRateLimitUsage(
   
   if (isOverLimit) {
     warningLevel = 'danger';
-    message = `⚠️ Limite excedido! Esta operação requer ${totalPoints.toLocaleString()} pontos, mas você tem apenas ${availablePoints.toLocaleString()} disponíveis. Reduza para no máximo ${recommendedMaxStructures} campanha(s).`;
+    const batches = Math.ceil(totalPoints / (RATE_LIMIT_CONFIG.STANDARD_ACCESS_POINTS * SAFETY_MARGIN));
+    const estimatedWaitMinutes = (batches - 1) * 5;
+    message = `📦 Job grande (${batches} lotes). Será processado automaticamente em ~${estimatedWaitMinutes + Math.ceil(estimatedTimeSeconds / 60)} min com pausas.`;
   } else if (usagePercent > 80) {
     warningLevel = 'warning';
-    message = `⚡ Uso alto (${usagePercent}%). Você está próximo do limite. Considere aguardar 5 minutos antes de criar mais campanhas.`;
+    message = `⚡ Uso alto (${usagePercent}%). O sistema pausará automaticamente se necessário.`;
   } else if (usagePercent > 50) {
     warningLevel = 'warning';
-    message = `📊 Uso moderado (${usagePercent}%). ${recommendedMaxStructures} estrutura(s) ainda podem ser criadas nesta janela.`;
+    message = `📊 Uso moderado (${usagePercent}%). Processamento pode pausar e retomar automaticamente.`;
   } else {
     warningLevel = 'safe';
-    message = `✅ Uso seguro (${usagePercent}%). Você pode criar até ${recommendedMaxStructures} estrutura(s) adicionais.`;
+    message = `✅ Uso seguro (${usagePercent}%). Processamento deve ser contínuo.`;
   }
   
   return {
