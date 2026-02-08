@@ -154,10 +154,16 @@ export default function CreateCampaignPage() {
 
       const accountsToProcess = config.selectedAccounts.length || 1;
       
+      // IMPORTANT: totalCampaigns/totalAdsets/totalAds are PER ACCOUNT, not global
+      // The store returns the structure for ONE account
+      const campaignsPerAccount = totalCampaigns;
+      const adsetsPerAccount = totalAdsets;
+      const adsPerAccount = totalAds;
+      
       // Build context for name resolution
       const baseContext = {
         budget: config.useCBO ? 'CBO' as const : 'ABO' as const,
-        structure: `${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}`,
+        structure: `${campaignsPerAccount}-${config.adsetsPerCampaign}-${config.adsPerAdset}`,
         productSetName: config.productSetName,
         catalogName: config.catalogName,
         pageNames: config.pageNames,
@@ -174,7 +180,8 @@ export default function CreateCampaignPage() {
         const { accountId, accountName } = accountInfo;
         
         // Generate campaigns, adsets, and ads for THIS account
-        for (let c = 0; c < totalCampaigns; c++) {
+        // Use campaignsPerAccount (NOT totalCampaigns which could be multiplied elsewhere)
+        for (let c = 0; c < campaignsPerAccount; c++) {
           // Resolve campaign name using the naming resolver
           const campaignName = resolveTemplate(config.campaignName, {
             ...baseContext,
@@ -194,8 +201,8 @@ export default function CreateCampaignPage() {
           });
           itemIndex++;
 
-          // Adsets per campaign
-          const adsetsForThisCampaign = Math.ceil(totalAdsets / totalCampaigns);
+          // Adsets per campaign - calculate correctly based on per-account values
+          const adsetsForThisCampaign = Math.ceil(adsetsPerAccount / campaignsPerAccount);
           for (let a = 0; a < adsetsForThisCampaign; a++) {
             const creativeName = config.selectedCreatives[a % config.selectedCreatives.length]?.name || `Criativo${a + 1}`;
             
@@ -220,8 +227,8 @@ export default function CreateCampaignPage() {
             });
             itemIndex++;
 
-            // Ads per adset
-            const adsForThisAdset = Math.ceil(totalAds / totalAdsets);
+            // Ads per adset - calculate correctly based on per-account values
+            const adsForThisAdset = Math.ceil(adsPerAccount / adsetsPerAccount);
             for (let ad = 0; ad < adsForThisAdset; ad++) {
               const adCreativeName = config.selectedCreatives[ad % config.selectedCreatives.length]?.name || `Criativo${ad + 1}`;
               
@@ -255,10 +262,10 @@ export default function CreateCampaignPage() {
       const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }).replace(':', '_');
       const jobName = `[${config.useCatalog ? 'CAT' : 'CRE'}|${config.useCBO ? 'CBO' : 'ABO'}][${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}][${dateStr}][${timeStr}]`;
 
-      // Total counts now reflect multi-account multiplication
-      const finalTotalCampaigns = totalCampaigns * accountsToProcess;
-      const finalTotalAdsets = totalAdsets * accountsToProcess;
-      const finalTotalAds = totalAds * accountsToProcess;
+      // Total counts: per-account values multiplied by number of accounts
+      const finalTotalCampaigns = campaignsPerAccount * accountsToProcess;
+      const finalTotalAdsets = adsetsPerAccount * accountsToProcess;
+      const finalTotalAds = adsPerAccount * accountsToProcess;
 
       await createJobMutation.mutateAsync({
         name: jobName,
