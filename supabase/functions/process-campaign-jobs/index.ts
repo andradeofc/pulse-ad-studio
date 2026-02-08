@@ -9,6 +9,16 @@ const corsHeaders = {
 const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
+// Batch API Configuration
+const BATCH_CONFIG = {
+  MAX_BATCH_SIZE: 50, // Facebook max is 50 per request
+  CAMPAIGN_BATCH_SIZE: 10, // Conservative for campaigns
+  ADSET_BATCH_SIZE: 25, // Adsets can be batched more aggressively
+  AD_BATCH_SIZE: 10, // Facebook recommends 10 or less for ads
+  PARALLEL_BATCHES: 3, // Number of parallel batch requests
+  BATCH_DELAY_MS: 100, // Delay between batch requests
+};
+
 interface JobItem {
   id: string;
   job_id: string;
@@ -31,6 +41,19 @@ interface Job {
   total_ads: number;
 }
 
+interface BatchRequestItem {
+  method: string;
+  relative_url: string;
+  body?: string;
+  name?: string; // For referencing in dependent requests
+}
+
+interface BatchResponseItem {
+  code: number;
+  headers?: Array<{ name: string; value: string }>;
+  body: string;
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Cache per-request to avoid repeated Graph calls
@@ -49,64 +72,24 @@ const rateLimitTracker = new Map<string, RateLimitInfo>();
 
 // Rate limit constants (Standard Access tier)
 const RATE_LIMIT_CONFIG = {
-  MAX_USAGE_PERCENT: 85, // Stop if usage exceeds this
-  MAX_QPS: 100, // Max 100 requests per second
-  MIN_DELAY_MS: 10, // Minimum 10ms between requests (100 QPS)
-  BACKOFF_THRESHOLD: 50, // Start slowing down at 50% usage
-  WINDOW_MS: 5 * 60 * 1000, // 5 minute window
+  MAX_USAGE_PERCENT: 85,
+  BACKOFF_THRESHOLD: 50,
+  WINDOW_MS: 5 * 60 * 1000,
 };
-
-// QPS throttling: track last request time
-let lastRequestTime = 0;
-let requestsInCurrentSecond = 0;
-let currentSecondStart = 0;
-
-async function throttleRequest(): Promise<void> {
-  const now = Date.now();
-  
-  // Reset counter if we're in a new second
-  if (now - currentSecondStart >= 1000) {
-    currentSecondStart = now;
-    requestsInCurrentSecond = 0;
-  }
-  
-  // If we've hit the QPS limit, wait until the next second
-  if (requestsInCurrentSecond >= RATE_LIMIT_CONFIG.MAX_QPS) {
-    const waitTime = 1000 - (now - currentSecondStart);
-    if (waitTime > 0) {
-      console.log(`[rate-limit] QPS limit reached, waiting ${waitTime}ms`);
-      await sleep(waitTime);
-      currentSecondStart = Date.now();
-      requestsInCurrentSecond = 0;
-    }
-  }
-  
-  // Ensure minimum delay between requests
-  const timeSinceLastRequest = now - lastRequestTime;
-  if (timeSinceLastRequest < RATE_LIMIT_CONFIG.MIN_DELAY_MS) {
-    await sleep(RATE_LIMIT_CONFIG.MIN_DELAY_MS - timeSinceLastRequest);
-  }
-  
-  lastRequestTime = Date.now();
-  requestsInCurrentSecond++;
-}
 
 function parseRateLimitHeader(header: string | null): number {
   if (!header) return 0;
   
   try {
-    // Facebook returns JSON like: {"acc_id_util_pct": 15.50, ...}
     const parsed = JSON.parse(header);
     if (parsed.acc_id_util_pct !== undefined) {
       return parseFloat(parsed.acc_id_util_pct);
     }
-    // Sometimes it's a simpler format
     const match = header.match(/acc_id_util_pct["\s:]+(\d+(?:\.\d+)?)/);
     if (match) {
       return parseFloat(match[1]);
     }
   } catch {
-    // Try regex if JSON parsing fails
     const match = header.match(/acc_id_util_pct["\s:]+(\d+(?:\.\d+)?)/);
     if (match) {
       return parseFloat(match[1]);
@@ -121,7 +104,6 @@ function updateRateLimitInfo(accountId: string, usagePercent: number): void {
   const existing = rateLimitTracker.get(accountId);
   
   if (existing && now - existing.windowStart < RATE_LIMIT_CONFIG.WINDOW_MS) {
-    // Same window, update
     rateLimitTracker.set(accountId, {
       usagePercent: Math.max(existing.usagePercent, usagePercent),
       lastUpdated: now,
@@ -129,7 +111,6 @@ function updateRateLimitInfo(accountId: string, usagePercent: number): void {
       windowStart: existing.windowStart,
     });
   } else {
-    // New window
     rateLimitTracker.set(accountId, {
       usagePercent,
       lastUpdated: now,
@@ -145,24 +126,21 @@ function shouldPauseForRateLimit(accountId: string): { pause: boolean; usagePerc
     return { pause: false, usagePercent: 0, waitMs: 0 };
   }
   
-  // If usage is above threshold, calculate adaptive delay
   if (info.usagePercent >= RATE_LIMIT_CONFIG.MAX_USAGE_PERCENT) {
-    // Wait longer when close to limit
     const waitMs = Math.min(30000, Math.round((info.usagePercent - 50) * 200));
     return { pause: true, usagePercent: info.usagePercent, waitMs };
   }
   
-  // Adaptive slowdown between 50-85%
   if (info.usagePercent >= RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) {
-    const slowdownFactor = (info.usagePercent - RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) / 35; // 0-1
-    const additionalDelay = Math.round(slowdownFactor * 500); // Up to 500ms extra delay
+    const slowdownFactor = (info.usagePercent - RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) / 35;
+    const additionalDelay = Math.round(slowdownFactor * 300);
     return { pause: false, usagePercent: info.usagePercent, waitMs: additionalDelay };
   }
   
   return { pause: false, usagePercent: info.usagePercent, waitMs: 0 };
 }
 
-// Get a Page Access Token using the user's access token (fallback when DB token is missing)
+// Get a Page Access Token using the user's access token
 async function getPageAccessTokenFromUserToken(
   userAccessToken: string,
   pageId: string,
@@ -173,15 +151,11 @@ async function getPageAccessTokenFromUserToken(
     let url: string | null = `${GRAPH_BASE_URL}/me/accounts?fields=id,access_token&limit=500&access_token=${userAccessToken}`;
 
     for (let i = 0; i < 5 && url; i++) {
-      const { ok, json } = await fetchWithRetry(url, { method: 'GET' });
+      const res = await fetch(url);
+      const json = await res.json();
 
-      if (!ok || json?.error) {
-        const fbError = json?.error;
-        console.warn(
-          `[process-jobs] Could not fetch page tokens from /me/accounts: ${fbError?.message || 'unknown error'}${
-            fbError?.code !== undefined ? ` | code=${fbError.code}` : ''
-          }${fbError?.error_subcode !== undefined ? ` | subcode=${fbError.error_subcode}` : ''}`,
-        );
+      if (!res.ok || json?.error) {
+        console.warn(`[process-jobs] Could not fetch page tokens: ${json?.error?.message || 'unknown'}`);
         break;
       }
 
@@ -197,14 +171,13 @@ async function getPageAccessTokenFromUserToken(
     pageTokenCache.set(pageId, null);
     return null;
   } catch (err) {
-    console.warn(`[process-jobs] Error while fetching page access token via /me/accounts:`, err);
+    console.warn(`[process-jobs] Error fetching page access token:`, err);
     pageTokenCache.set(pageId, null);
     return null;
   }
 }
 
-// Resolve the correct Instagram Actor ID for a Page ("Use selected Page" behavior)
-// For ads, instagram_actor_id must be an IGUser id (often a Page-backed IG account).
+// Resolve Instagram Actor ID for a Page
 async function resolveInstagramActorIdForPage(params: {
   userAccessToken: string;
   pageId: string;
@@ -215,284 +188,193 @@ async function resolveInstagramActorIdForPage(params: {
   if (igActorIdCache.has(pageId)) return igActorIdCache.get(pageId) ?? null;
 
   try {
-    const pageAccessToken =
-      pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId));
+    const pageAccessToken = pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId));
 
-    // 1) Preferred: Page-backed IG account(s) for this Page (requires Page access token)
     if (pageAccessToken) {
+      // Try page_backed_instagram_accounts first
       const pbiaUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?fields=id,username&access_token=${pageAccessToken}`;
-      const pbiaRes = await fetchWithRetry(pbiaUrl, { method: 'GET' });
+      const pbiaRes = await fetch(pbiaUrl);
+      const pbiaJson = await pbiaRes.json();
 
-      if (pbiaRes.ok && !pbiaRes.json?.error && Array.isArray(pbiaRes.json?.data) && pbiaRes.json.data.length > 0) {
-        const igId = pbiaRes.json.data[0].id as string;
-        console.log(`[process-jobs] Resolved Page-backed Instagram account ${igId} for page ${pageId}`);
+      if (pbiaRes.ok && !pbiaJson?.error && Array.isArray(pbiaJson?.data) && pbiaJson.data.length > 0) {
+        const igId = pbiaJson.data[0].id as string;
+        console.log(`[process-jobs] Resolved Page-backed Instagram account ${igId}`);
         igActorIdCache.set(pageId, igId);
         return igId;
       }
 
-      if (pbiaRes.json?.error) {
-        const e = pbiaRes.json.error;
-        console.warn(
-          `[process-jobs] page_backed_instagram_accounts error: ${e?.message || 'unknown'}${
-            e?.code !== undefined ? ` | code=${e.code}` : ''
-          }${e?.error_subcode !== undefined ? ` | subcode=${e.error_subcode}` : ''}`,
-        );
-      }
-
-      // 2) Next: instagram_accounts edge (requires Page access token)
+      // Try instagram_accounts
       const iaUrl = `${GRAPH_BASE_URL}/${pageId}/instagram_accounts?fields=id,username&access_token=${pageAccessToken}`;
-      const iaRes = await fetchWithRetry(iaUrl, { method: 'GET' });
+      const iaRes = await fetch(iaUrl);
+      const iaJson = await iaRes.json();
 
-      if (iaRes.ok && !iaRes.json?.error && Array.isArray(iaRes.json?.data) && iaRes.json.data.length > 0) {
-        const igId = iaRes.json.data[0].id as string;
-        console.log(`[process-jobs] Resolved Instagram account ${igId} for page ${pageId}`);
+      if (iaRes.ok && !iaJson?.error && Array.isArray(iaJson?.data) && iaJson.data.length > 0) {
+        const igId = iaJson.data[0].id as string;
         igActorIdCache.set(pageId, igId);
         return igId;
       }
-
-      if (iaRes.json?.error) {
-        const e = iaRes.json.error;
-        console.warn(
-          `[process-jobs] instagram_accounts error: ${e?.message || 'unknown'}${
-            e?.code !== undefined ? ` | code=${e.code}` : ''
-          }${e?.error_subcode !== undefined ? ` | subcode=${e.error_subcode}` : ''}`,
-        );
-      }
-    } else {
-      console.warn(`[process-jobs] No Page access token available for page ${pageId}; cannot query instagram_accounts endpoints.`);
     }
 
-    // 3) Last fallback: try reading instagram_business_account via user token (may work depending on permissions)
+    // Fallback: instagram_business_account
     const ibaUrl = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${userAccessToken}`;
-    const ibaRes = await fetchWithRetry(ibaUrl, { method: 'GET' });
+    const ibaRes = await fetch(ibaUrl);
+    const ibaJson = await ibaRes.json();
 
-    if (ibaRes.ok && !ibaRes.json?.error && ibaRes.json?.instagram_business_account?.id) {
-      const igId = ibaRes.json.instagram_business_account.id as string;
-      console.log(`[process-jobs] Resolved instagram_business_account ${igId} for page ${pageId}`);
+    if (ibaRes.ok && !ibaJson?.error && ibaJson?.instagram_business_account?.id) {
+      const igId = ibaJson.instagram_business_account.id as string;
       igActorIdCache.set(pageId, igId);
       return igId;
     }
 
-    if (ibaRes.json?.error) {
-      const e = ibaRes.json.error;
-      console.warn(
-        `[process-jobs] instagram_business_account error: ${e?.message || 'unknown'}${
-          e?.code !== undefined ? ` | code=${e.code}` : ''
-        }${e?.error_subcode !== undefined ? ` | subcode=${e.error_subcode}` : ''}`,
-      );
-    }
-
-    console.log(`[process-jobs] Could not resolve an Instagram actor for page ${pageId}`);
     igActorIdCache.set(pageId, null);
     return null;
   } catch (err) {
-    console.error(`[process-jobs] Error resolving Instagram actor for page ${pageId}:`, err);
+    console.error(`[process-jobs] Error resolving Instagram actor:`, err);
     igActorIdCache.set(pageId, null);
     return null;
   }
 }
 
-async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
-  maxAttempts = 3,
+// Execute a batch request to Facebook Graph API
+async function executeBatchRequest(
+  accessToken: string,
+  batch: BatchRequestItem[],
   accountId?: string,
-): Promise<{ ok: boolean; status: number; json: any; rateLimitPercent: number }> {
-  // Apply QPS throttling before each request
-  await throttleRequest();
+): Promise<BatchResponseItem[]> {
+  if (batch.length === 0) return [];
   
-  // Check if we should pause for rate limits
+  // Check rate limits before batch
   if (accountId) {
     const rateLimitCheck = shouldPauseForRateLimit(accountId);
     if (rateLimitCheck.pause) {
-      console.warn(`[rate-limit] Account ${accountId} at ${rateLimitCheck.usagePercent}% usage, waiting ${rateLimitCheck.waitMs}ms`);
+      console.warn(`[batch] Account ${accountId} at ${rateLimitCheck.usagePercent}% usage, waiting ${rateLimitCheck.waitMs}ms`);
       await sleep(rateLimitCheck.waitMs);
     } else if (rateLimitCheck.waitMs > 0) {
-      // Adaptive slowdown
       await sleep(rateLimitCheck.waitMs);
     }
   }
-  
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const res = await fetch(url, options);
-      const json = await res.json();
-      
-      // Parse and track rate limit from response header
-      const rateLimitHeader = res.headers.get('x-ad-account-usage') || res.headers.get('X-Ad-Account-Usage');
-      const rateLimitPercent = parseRateLimitHeader(rateLimitHeader);
-      
-      if (rateLimitPercent > 0 && accountId) {
-        updateRateLimitInfo(accountId, rateLimitPercent);
-        if (rateLimitPercent > 50) {
-          console.log(`[rate-limit] Account ${accountId} usage: ${rateLimitPercent.toFixed(1)}%`);
-        }
-      }
 
-      // Rate limit handling - exponential backoff
-      if (res.status === 429 || json.error?.code === 17 || json.error?.code === 4 || json.error?.code === 80004) {
-        const baseWait = Math.min(30000, 2000 * Math.pow(2, attempt));
-        // Add jitter to prevent thundering herd
-        const jitter = Math.random() * 1000;
-        const waitMs = baseWait + jitter;
-        
-        console.warn(`[rate-limit] Rate limited (code: ${json.error?.code || res.status}), waiting ${Math.round(waitMs)}ms (attempt ${attempt}/${maxAttempts})`);
-        await sleep(waitMs);
-        continue;
-      }
+  const formData = new URLSearchParams();
+  formData.append('access_token', accessToken);
+  formData.append('batch', JSON.stringify(batch));
+  formData.append('include_headers', 'true');
 
-      return { ok: res.ok, status: res.status, json, rateLimitPercent };
-    } catch (err: any) {
-      if (attempt === maxAttempts) {
-        throw err;
+  console.log(`[batch] Executing batch request with ${batch.length} operations`);
+
+  try {
+    const res = await fetch(`${GRAPH_BASE_URL}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString(),
+    });
+
+    // Parse rate limit from response header
+    const rateLimitHeader = res.headers.get('x-ad-account-usage') || res.headers.get('X-Ad-Account-Usage');
+    const rateLimitPercent = parseRateLimitHeader(rateLimitHeader);
+    
+    if (rateLimitPercent > 0 && accountId) {
+      updateRateLimitInfo(accountId, rateLimitPercent);
+      if (rateLimitPercent > 50) {
+        console.log(`[batch] Account ${accountId} usage: ${rateLimitPercent.toFixed(1)}%`);
       }
-      const waitMs = 1000 * attempt + Math.random() * 500;
-      console.warn(`[fetch-retry] Network error, retrying in ${Math.round(waitMs)}ms:`, err.message);
-      await sleep(waitMs);
     }
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[batch] Batch request failed with status ${res.status}:`, errorText);
+      throw new Error(`Batch request failed: ${res.status}`);
+    }
+
+    const results: BatchResponseItem[] = await res.json();
+    
+    // Log any errors in batch responses
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].code >= 400) {
+        console.warn(`[batch] Item ${i} failed with code ${results[i].code}`);
+      }
+    }
+
+    return results;
+  } catch (err: any) {
+    console.error(`[batch] Batch request error:`, err);
+    throw err;
   }
-  throw new Error('Max retries exceeded');
 }
 
-async function createFacebookCampaign(
-  accessToken: string,
-  adAccountId: string,
-  config: Record<string, any>,
-  name: string,
-): Promise<{ success: boolean; id?: string; error?: string }> {
-  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+// Helper to chunk array into smaller arrays
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
 
-  // Facebook requires special_ad_categories to always be present.
-  // When there is no special category, it MUST contain "NONE".
+// Build campaign creation params
+function buildCampaignParams(config: Record<string, any>, name: string): Record<string, string> {
   const specialAdCategory = (config.specialAdCategory || 'NONE') as string;
   const specialAdCategories = [specialAdCategory];
 
-  const params: Record<string, any> = {
-    access_token: accessToken,
+  const params: Record<string, string> = {
     name,
     objective: config.objective || 'OUTCOME_SALES',
     status: config.isPaused ? 'PAUSED' : 'ACTIVE',
     special_ad_categories: JSON.stringify(specialAdCategories),
   };
 
-  // For Dynamic Product Ads (DPA/Catalog), add product_catalog_id at CAMPAIGN level
   if (config.useCatalog && config.catalogId) {
     params.promoted_object = JSON.stringify({
       product_catalog_id: config.catalogId,
     });
   }
 
-  const logParams = { ...params, access_token: '[REDACTED]' };
-  console.log(`[process-jobs] Campaign params:`, JSON.stringify(logParams, null, 2));
-
-  // CBO: set campaign budget
   if (config.useCBO) {
-    params.daily_budget = Math.round((config.budget || 50) * 100); // cents
+    params.daily_budget = String(Math.round((config.budget || 50) * 100));
     params.bid_strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
   } else {
-    // ABO: Facebook requires is_adset_budget_sharing_enabled when not using CBO
-    // Setting to false avoids the need for bid_strategy at campaign level
-    params.is_adset_budget_sharing_enabled = false;
+    params.is_adset_budget_sharing_enabled = 'false';
   }
 
-  const formData = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    formData.append(key, String(value));
-  }
-
-  const { ok, json } = await fetchWithRetry(
-    `${GRAPH_BASE_URL}/${actId}/campaigns`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData.toString(),
-    },
-    3,
-    adAccountId,
-  );
-
-  if (!ok || json.error) {
-    const fbError = json?.error;
-    console.error('[process-jobs] Facebook campaign error:', JSON.stringify(fbError ?? json, null, 2));
-
-    const msg = fbError?.message || 'Failed to create campaign';
-    const code = fbError?.code;
-    const subcode = fbError?.error_subcode;
-    const userMsg = fbError?.error_user_msg;
-
-    const details = [
-      msg,
-      code !== undefined ? `code=${code}` : null,
-      subcode !== undefined ? `subcode=${subcode}` : null,
-      userMsg ? `user_msg=${userMsg}` : null,
-    ]
-      .filter(Boolean)
-      .join(' | ');
-
-    return { success: false, error: details };
-  }
-
-  return { success: true, id: json.id };
+  return params;
 }
 
-async function createFacebookAdset(
-  accessToken: string,
-  adAccountId: string,
+// Build adset creation params
+function buildAdsetParams(
   campaignId: string,
   config: Record<string, any>,
   name: string,
-  placementTargeting?: Record<string, any>,
-): Promise<{ success: boolean; id?: string; error?: string }> {
-  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
-
+): Record<string, string> {
   const targetingObj: Record<string, any> = {
     geo_locations: config.geoLocations || { countries: ['BR'] },
     age_min: config.ageMin || 18,
     age_max: config.ageMax || 65,
     locales: config.locales || [24],
-    ...(placementTargeting || {}),
-    // REQUIRED by Meta API: targeting_automation must explicitly set advantage_audience
-    // 1 = Advantage+ Audience enabled (Meta expands targeting)
-    // 0 = Advantage+ Audience disabled (use exact targeting provided)
     targeting_automation: {
       advantage_audience: config.advantagePlus ? 1 : 0,
     },
   };
 
-  const params: Record<string, any> = {
-    access_token: accessToken,
+  const params: Record<string, string> = {
     campaign_id: campaignId,
     name,
-    // Adsets are always created ACTIVE - campaign pause controls delivery
     status: 'ACTIVE',
-
-    // Required for most website conversion/ad catalog flows
     destination_type: 'WEBSITE',
-
     billing_event: 'IMPRESSIONS',
     optimization_goal: 'OFFSITE_CONVERSIONS',
-
-    // Explicit bidding strategy. Fixes cases where FB assumes a strategy that requires bid_amount/bid_constraints.
     bid_strategy: config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
-
     targeting: JSON.stringify(targetingObj),
   };
 
-  // Attribution Settings (conversion window)
-  // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-campaign
+  // Attribution settings
   const attributionSpec: Array<{ event_type: string; window_days: number }> = [];
-  
-  // Click-through attribution (1 or 7 days)
   const clickDays = config.attributionClickDays ?? 7;
   attributionSpec.push({ event_type: 'CLICK_THROUGH', window_days: clickDays });
   
-  // View-through attribution (0 or 1 day)
   const viewDays = config.attributionViewDays ?? 1;
   if (viewDays > 0) {
     attributionSpec.push({ event_type: 'VIEW_THROUGH', window_days: viewDays });
   }
   
-  // Engaged video view attribution (0 or 1 day) - for video ads
   const engagedViewDays = config.attributionEngagedViewDays ?? 1;
   if (engagedViewDays > 0) {
     attributionSpec.push({ event_type: 'ENGAGED_VIDEO_VIEW', window_days: engagedViewDays });
@@ -502,117 +384,537 @@ async function createFacebookAdset(
     params.attribution_spec = JSON.stringify(attributionSpec);
   }
 
-  // Start time (schedule) - User enters time in EST (Eastern Standard Time)
-  // Facebook API expects ISO 8601 format with timezone
+  // Schedule
   if (config.scheduleStart) {
-    // Accept both Date objects (from frontend) and ISO strings
     const startDate = typeof config.scheduleStart === 'string' 
       ? new Date(config.scheduleStart) 
       : config.scheduleStart;
     
     if (startDate instanceof Date && !isNaN(startDate.getTime())) {
-      // Format the date in EST timezone (America/New_York)
-      // Facebook API accepts ISO 8601 with timezone offset
-      // EST is UTC-5, EDT is UTC-4 (we use -05:00 for consistency as "EST")
       const year = startDate.getFullYear();
       const month = String(startDate.getMonth() + 1).padStart(2, '0');
       const day = String(startDate.getDate()).padStart(2, '0');
       const hours = String(startDate.getHours()).padStart(2, '0');
       const minutes = String(startDate.getMinutes()).padStart(2, '0');
       const seconds = String(startDate.getSeconds()).padStart(2, '0');
-      
-      // Format as ISO 8601 with EST offset (-05:00)
       params.start_time = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}-05:00`;
-      console.log(`[process-jobs] Schedule start time (EST): ${params.start_time}`);
     }
   }
 
-  // ABO: set adset budget
+  // ABO budget
   if (!config.useCBO) {
-    params.daily_budget = Math.round((config.adsetBudget || 10) * 100);
+    params.daily_budget = String(Math.round((config.adsetBudget || 10) * 100));
   }
 
-  // Promoted object (combine Pixel + Catalog when available)
-  // For OUTCOME_SALES with OFFSITE_CONVERSIONS, pixel_id is REQUIRED to track conversions.
-  // For other objectives (TRAFFIC, ENGAGEMENT, etc.), pixel is optional.
+  // Promoted object
   const promotedObject: Record<string, any> = {};
-
-  // Determine if pixel is required based on objective
-  // OUTCOME_SALES requires a Pixel for OFFSITE_CONVERSIONS optimization
-  const objectiveRequiresPixel = config.objective === 'OUTCOME_SALES';
   
-  if (objectiveRequiresPixel && !config.pixelId) {
-    console.error('[process-jobs] Missing pixelId for OUTCOME_SALES with OFFSITE_CONVERSIONS optimization');
-    return {
-      success: false,
-      error: 'Para o objetivo VENDAS com otimização de conversões no site, é necessário selecionar um Pixel. Por favor, edite a campanha e selecione um Pixel no Step 3 (Conjuntos).',
-    };
-  }
-
-  // Add pixel if available (required for SALES, optional for other objectives)
   if (config.pixelId) {
     promotedObject.pixel_id = config.pixelId;
     promotedObject.custom_event_type = 'PURCHASE';
   }
 
-  // For DPA mode: only include product_set_id at adset level (product_catalog_id goes at campaign level)
   if (config.useCatalog && config.productSetId) {
     promotedObject.product_set_id = config.productSetId;
   }
 
-  // Only set promoted_object if we have any values
   if (Object.keys(promotedObject).length > 0) {
     params.promoted_object = JSON.stringify(promotedObject);
   }
 
-  const logParams = { ...params, access_token: '[REDACTED]' };
-  console.log(`[process-jobs] Adset params:`, JSON.stringify(logParams, null, 2));
-
-  const formData = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    formData.append(key, String(value));
-  }
-
-  const { ok, json } = await fetchWithRetry(
-    `${GRAPH_BASE_URL}/${actId}/adsets`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData.toString(),
-    },
-    3,
-    adAccountId,
-  );
-
-  if (!ok || json.error) {
-    const fbError = json?.error;
-    console.error('[process-jobs] Facebook adset error:', JSON.stringify(fbError ?? json, null, 2));
-
-    const msg = fbError?.message || 'Failed to create adset';
-    const code = fbError?.code;
-    const subcode = fbError?.error_subcode;
-    const userMsg = fbError?.error_user_msg;
-    const blame = fbError?.error_data?.blame_field_specs
-      ? JSON.stringify(fbError.error_data.blame_field_specs)
-      : null;
-
-    const details = [
-      msg,
-      code !== undefined ? `code=${code}` : null,
-      subcode !== undefined ? `subcode=${subcode}` : null,
-      userMsg ? `user_msg=${userMsg}` : null,
-      blame ? `blame_field_specs=${blame}` : null,
-    ]
-      .filter(Boolean)
-      .join(' | ');
-
-    return { success: false, error: details };
-  }
-
-  return { success: true, id: json.id };
+  return params;
 }
 
-async function createFacebookAd(
+// Build catalog ad creative params
+function buildCatalogCreativeParams(
+  config: Record<string, any>,
+  name: string,
+  pageId: string,
+  instagramUserId: string | null,
+): Record<string, string> {
+  const finalDestinationUrl = config.destinationUrl || 'https://example.com';
+
+  const templateData: Record<string, any> = {
+    call_to_action: {
+      type: config.ctaType || 'SHOP_NOW',
+      value: { link: finalDestinationUrl },
+    },
+    link: finalDestinationUrl,
+    message: config.primaryText || '{{product.name}}',
+    name: config.headline || '{{product.name}}',
+    description: config.description || '{{product.price}}',
+    format_option: 'single_video',
+  };
+
+  const objectStorySpec: Record<string, any> = {
+    page_id: pageId,
+    template_data: templateData,
+  };
+
+  if (instagramUserId) {
+    objectStorySpec.instagram_user_id = instagramUserId;
+  }
+
+  const degreesOfFreedomSpec = {
+    creative_features_spec: {
+      media_type_automation: {
+        customizations: { video_crop_style: 'AUTO' },
+        enroll_status: 'OPT_IN',
+      },
+    },
+  };
+
+  const params: Record<string, string> = {
+    name: `Creative_${name}`,
+    object_story_spec: JSON.stringify(objectStorySpec),
+    product_set_id: config.productSetId,
+    use_page_actor_override: 'true',
+    degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
+    template_url_spec: JSON.stringify({ web: { url: finalDestinationUrl } }),
+    applink_treatment: 'web_only',
+    contextual_multi_ads: JSON.stringify({
+      enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
+    }),
+  };
+
+  const urlParams = config.urlParams || '';
+  if (urlParams && urlParams.trim()) {
+    params.url_tags = urlParams.trim();
+  }
+
+  return params;
+}
+
+// Build ad params
+function buildAdParams(
+  adsetId: string,
+  creativeId: string,
+  name: string,
+): Record<string, string> {
+  return {
+    name,
+    adset_id: adsetId,
+    creative: JSON.stringify({ creative_id: creativeId }),
+    status: 'ACTIVE',
+  };
+}
+
+// Simple fetch with retry for non-batch operations
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxAttempts = 3,
+  accountId?: string,
+): Promise<{ ok: boolean; status: number; json: any; rateLimitPercent: number }> {
+  if (accountId) {
+    const rateLimitCheck = shouldPauseForRateLimit(accountId);
+    if (rateLimitCheck.pause) {
+      await sleep(rateLimitCheck.waitMs);
+    } else if (rateLimitCheck.waitMs > 0) {
+      await sleep(rateLimitCheck.waitMs);
+    }
+  }
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      const json = await res.json();
+      
+      const rateLimitHeader = res.headers.get('x-ad-account-usage') || res.headers.get('X-Ad-Account-Usage');
+      const rateLimitPercent = parseRateLimitHeader(rateLimitHeader);
+      
+      if (rateLimitPercent > 0 && accountId) {
+        updateRateLimitInfo(accountId, rateLimitPercent);
+      }
+
+      // Rate limit handling
+      if (res.status === 429 || json.error?.code === 17 || json.error?.code === 4 || json.error?.code === 80004) {
+        const waitMs = Math.min(30000, 2000 * Math.pow(2, attempt)) + Math.random() * 1000;
+        console.warn(`[rate-limit] Rate limited, waiting ${Math.round(waitMs)}ms (attempt ${attempt}/${maxAttempts})`);
+        await sleep(waitMs);
+        continue;
+      }
+
+      return { ok: res.ok, status: res.status, json, rateLimitPercent };
+    } catch (err: any) {
+      if (attempt === maxAttempts) throw err;
+      const waitMs = 1000 * attempt + Math.random() * 500;
+      console.warn(`[fetch-retry] Network error, retrying in ${Math.round(waitMs)}ms:`, err.message);
+      await sleep(waitMs);
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
+// Create campaigns using batch API
+async function createCampaignsBatch(
+  accessToken: string,
+  adAccountId: string,
+  campaigns: Array<{ id: string; name: string; config: Record<string, any> }>,
+  config: Record<string, any>,
+  supabase: any,
+): Promise<Map<string, string>> {
+  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  const idMap = new Map<string, string>();
+  
+  // Build batch requests
+  const batchItems: Array<{ item: typeof campaigns[0]; batchItem: BatchRequestItem }> = [];
+  
+  for (let i = 0; i < campaigns.length; i++) {
+    const campaign = campaigns[i];
+    const params = buildCampaignParams(config, campaign.name);
+    
+    const body = new URLSearchParams(params).toString();
+    
+    batchItems.push({
+      item: campaign,
+      batchItem: {
+        method: 'POST',
+        relative_url: `${actId}/campaigns`,
+        body,
+        name: `campaign_${i}`,
+      },
+    });
+  }
+
+  // Execute in chunks
+  const chunks = chunkArray(batchItems, BATCH_CONFIG.CAMPAIGN_BATCH_SIZE);
+  
+  for (const chunk of chunks) {
+    const batch = chunk.map(c => c.batchItem);
+    
+    try {
+      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      
+      // Process results
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const item = chunk[i].item;
+        
+        let parsedBody: any;
+        try {
+          parsedBody = JSON.parse(result.body);
+        } catch {
+          parsedBody = { error: { message: 'Failed to parse response' } };
+        }
+        
+        if (result.code === 200 && parsedBody.id) {
+          idMap.set(item.id, parsedBody.id);
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'completed', facebook_id: parsedBody.id })
+            .eq('id', item.id);
+        } else {
+          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+          console.error(`[batch] Campaign failed:`, errorMsg);
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'failed', error_message: errorMsg })
+            .eq('id', item.id);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[batch] Campaign batch failed:`, err.message);
+      for (const c of chunk) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'failed', error_message: err.message })
+          .eq('id', c.item.id);
+      }
+    }
+    
+    await sleep(BATCH_CONFIG.BATCH_DELAY_MS);
+  }
+  
+  return idMap;
+}
+
+// Create adsets using batch API
+async function createAdsetsBatch(
+  accessToken: string,
+  adAccountId: string,
+  adsets: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any> }>,
+  campaignIdMap: Map<string, string>,
+  config: Record<string, any>,
+  supabase: any,
+): Promise<Map<string, string>> {
+  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  const idMap = new Map<string, string>();
+  
+  // Filter adsets with valid parent campaigns
+  const validAdsets = adsets.filter(adset => {
+    const parentFbId = adset.parent_id ? campaignIdMap.get(adset.parent_id) : null;
+    if (!parentFbId) {
+      supabase
+        .from('campaign_job_items')
+        .update({ status: 'failed', error_message: 'Parent campaign failed' })
+        .eq('id', adset.id);
+      return false;
+    }
+    return true;
+  });
+  
+  // Build batch requests
+  const batchItems: Array<{ item: typeof validAdsets[0]; batchItem: BatchRequestItem; parentFbId: string }> = [];
+  
+  for (let i = 0; i < validAdsets.length; i++) {
+    const adset = validAdsets[i];
+    const parentFbId = campaignIdMap.get(adset.parent_id!)!;
+    const params = buildAdsetParams(parentFbId, config, adset.name);
+    
+    const body = new URLSearchParams(params).toString();
+    
+    batchItems.push({
+      item: adset,
+      parentFbId,
+      batchItem: {
+        method: 'POST',
+        relative_url: `${actId}/adsets`,
+        body,
+        name: `adset_${i}`,
+      },
+    });
+  }
+
+  // Execute in chunks
+  const chunks = chunkArray(batchItems, BATCH_CONFIG.ADSET_BATCH_SIZE);
+  
+  for (const chunk of chunks) {
+    const batch = chunk.map(c => c.batchItem);
+    
+    try {
+      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const item = chunk[i].item;
+        
+        let parsedBody: any;
+        try {
+          parsedBody = JSON.parse(result.body);
+        } catch {
+          parsedBody = { error: { message: 'Failed to parse response' } };
+        }
+        
+        if (result.code === 200 && parsedBody.id) {
+          idMap.set(item.id, parsedBody.id);
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'completed', facebook_id: parsedBody.id })
+            .eq('id', item.id);
+        } else {
+          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+          console.error(`[batch] Adset failed:`, errorMsg);
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'failed', error_message: errorMsg })
+            .eq('id', item.id);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[batch] Adset batch failed:`, err.message);
+      for (const c of chunk) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'failed', error_message: err.message })
+          .eq('id', c.item.id);
+      }
+    }
+    
+    await sleep(BATCH_CONFIG.BATCH_DELAY_MS);
+  }
+  
+  return idMap;
+}
+
+// Create catalog creatives using batch API
+async function createCatalogCreativesBatch(
+  accessToken: string,
+  adAccountId: string,
+  ads: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any> }>,
+  config: Record<string, any>,
+  pageId: string,
+  instagramUserId: string | null,
+  supabase: any,
+): Promise<Map<string, string>> {
+  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  const creativeIdMap = new Map<string, string>();
+  
+  // Build batch requests for creatives
+  const batchItems: Array<{ item: typeof ads[0]; batchItem: BatchRequestItem }> = [];
+  
+  for (let i = 0; i < ads.length; i++) {
+    const ad = ads[i];
+    const params = buildCatalogCreativeParams(config, ad.name, pageId, instagramUserId);
+    
+    const body = new URLSearchParams(params).toString();
+    
+    batchItems.push({
+      item: ad,
+      batchItem: {
+        method: 'POST',
+        relative_url: `${actId}/adcreatives`,
+        body,
+        name: `creative_${i}`,
+      },
+    });
+  }
+
+  // Execute in chunks
+  const chunks = chunkArray(batchItems, BATCH_CONFIG.AD_BATCH_SIZE);
+  
+  for (const chunk of chunks) {
+    const batch = chunk.map(c => c.batchItem);
+    
+    try {
+      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const item = chunk[i].item;
+        
+        let parsedBody: any;
+        try {
+          parsedBody = JSON.parse(result.body);
+        } catch {
+          parsedBody = { error: { message: 'Failed to parse response' } };
+        }
+        
+        if (result.code === 200 && parsedBody.id) {
+          creativeIdMap.set(item.id, parsedBody.id);
+        } else {
+          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+          console.error(`[batch] Creative failed for ad ${item.id}:`, errorMsg);
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'failed', error_message: `Creative: ${errorMsg}` })
+            .eq('id', item.id);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[batch] Creative batch failed:`, err.message);
+      for (const c of chunk) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'failed', error_message: `Creative batch: ${err.message}` })
+          .eq('id', c.item.id);
+      }
+    }
+    
+    await sleep(BATCH_CONFIG.BATCH_DELAY_MS);
+  }
+  
+  return creativeIdMap;
+}
+
+// Create ads using batch API (for catalog ads)
+async function createAdsBatch(
+  accessToken: string,
+  adAccountId: string,
+  ads: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any> }>,
+  adsetIdMap: Map<string, string>,
+  creativeIdMap: Map<string, string>,
+  supabase: any,
+): Promise<number> {
+  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  let successCount = 0;
+  
+  // Filter ads with valid parent adsets and creatives
+  const validAds = ads.filter(ad => {
+    const parentFbId = ad.parent_id ? adsetIdMap.get(ad.parent_id) : null;
+    const creativeId = creativeIdMap.get(ad.id);
+    
+    if (!parentFbId) {
+      supabase
+        .from('campaign_job_items')
+        .update({ status: 'failed', error_message: 'Parent adset failed' })
+        .eq('id', ad.id);
+      return false;
+    }
+    
+    if (!creativeId) {
+      // Creative already marked as failed, skip
+      return false;
+    }
+    
+    return true;
+  });
+  
+  // Build batch requests
+  const batchItems: Array<{ item: typeof validAds[0]; batchItem: BatchRequestItem }> = [];
+  
+  for (let i = 0; i < validAds.length; i++) {
+    const ad = validAds[i];
+    const parentFbId = adsetIdMap.get(ad.parent_id!)!;
+    const creativeId = creativeIdMap.get(ad.id)!;
+    const params = buildAdParams(parentFbId, creativeId, ad.name);
+    
+    const body = new URLSearchParams(params).toString();
+    
+    batchItems.push({
+      item: ad,
+      batchItem: {
+        method: 'POST',
+        relative_url: `${actId}/ads`,
+        body,
+        name: `ad_${i}`,
+      },
+    });
+  }
+
+  // Execute in chunks
+  const chunks = chunkArray(batchItems, BATCH_CONFIG.AD_BATCH_SIZE);
+  
+  for (const chunk of chunks) {
+    const batch = chunk.map(c => c.batchItem);
+    
+    try {
+      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const item = chunk[i].item;
+        
+        let parsedBody: any;
+        try {
+          parsedBody = JSON.parse(result.body);
+        } catch {
+          parsedBody = { error: { message: 'Failed to parse response' } };
+        }
+        
+        if (result.code === 200 && parsedBody.id) {
+          successCount++;
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'completed', facebook_id: parsedBody.id })
+            .eq('id', item.id);
+        } else {
+          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+          console.error(`[batch] Ad failed:`, errorMsg);
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'failed', error_message: errorMsg })
+            .eq('id', item.id);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[batch] Ad batch failed:`, err.message);
+      for (const c of chunk) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'failed', error_message: err.message })
+          .eq('id', c.item.id);
+      }
+    }
+    
+    await sleep(BATCH_CONFIG.BATCH_DELAY_MS);
+  }
+  
+  return successCount;
+}
+
+// Create non-catalog ad (video upload + creative + ad) - must be sequential per ad
+async function createNonCatalogAd(
   accessToken: string,
   adAccountId: string,
   adsetId: string,
@@ -620,488 +922,233 @@ async function createFacebookAd(
   name: string,
   pageId: string,
   instagramUserId: string | null,
-  creative?: { id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string } | null,
+  creative: { id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string },
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  const finalDestinationUrl = config.destinationUrl || 'https://example.com';
+  const urlParams = config.urlParams || '';
 
-  // For catalog ads, we use a template creative
-  if (config.useCatalog && config.catalogId) {
-    // Create ad creative for dynamic ads
-    // Facebook DPA requires specific structure for template_data
-    
-    // Build the destination URL with URL params if provided
-    let finalDestinationUrl = config.destinationUrl || 'https://example.com';
-    const urlParams = config.urlParams || '';
-    
-    // Template data for single image/video format (not carousel)
-    // NOTE: Do NOT use force_single_link here - it conflicts with format_option and degrees_of_freedom_spec
-    // The deep link override is handled via template_url_spec at the ad creative level instead
-    const templateData: Record<string, any> = {
-      call_to_action: {
-        type: config.ctaType || 'SHOP_NOW',
-        value: { link: finalDestinationUrl },
+  let adCreativeId: string;
+
+  if (creative.type === 'video') {
+    // Upload video
+    const videoUploadParams = new URLSearchParams({
+      access_token: accessToken,
+      file_url: creative.url,
+      title: creative.name,
+    });
+
+    const videoUploadResult = await fetchWithRetry(
+      `${GRAPH_BASE_URL}/${actId}/advideos`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: videoUploadParams.toString(),
       },
+      3,
+      adAccountId,
+    );
 
-      link: finalDestinationUrl,
-
-      message: config.primaryText || '{{product.name}}',
-      name: config.headline || '{{product.name}}',
-      description: config.description || '{{product.price}}',
-
-      // Force single image/video format (not carousel) AND prioritize video
-      // "single_video" = formato único com priorização de vídeo do catálogo
-      format_option: 'single_video',
-    };
-
-    const objectStorySpec: Record<string, any> = {
-      page_id: pageId,
-      template_data: templateData,
-    };
-
-    // IMPORTANT (Meta API): use instagram_user_id (IGUser id). instagram_actor_id is deprecated.
-    if (instagramUserId) {
-      objectStorySpec.instagram_user_id = instagramUserId;
+    if (!videoUploadResult.ok || videoUploadResult.json.error) {
+      return { success: false, error: videoUploadResult.json?.error?.message || 'Video upload failed' };
     }
 
-    // Dynamic Media (Meta):
-    // - media_type_automation OPT_IN => enables videos from the catalog to surface
-    // - video_crop_style AUTO       => "Corte de vídeo automático" (auto-crop when needed)
-    // Reference: https://developers.facebook.com/docs/marketing-api/advantage-catalog-ads/dynamic-media/
-    const degreesOfFreedomSpec: Record<string, any> = {
-      creative_features_spec: {
-        media_type_automation: {
-          customizations: {
-            video_crop_style: 'AUTO',
-          },
-          enroll_status: 'OPT_IN',
-        },
-      },
+    const videoId = videoUploadResult.json.id;
+
+    // Wait for video processing (max 30 seconds)
+    for (let attempt = 0; attempt < 15; attempt++) {
+      await sleep(2000);
+      const statusResult = await fetchWithRetry(
+        `${GRAPH_BASE_URL}/${videoId}?fields=status&access_token=${accessToken}`,
+        { method: 'GET' },
+        3,
+        adAccountId,
+      );
+
+      if (statusResult.ok && statusResult.json.status?.video_status === 'ready') {
+        break;
+      }
+    }
+
+    // Create video creative
+    const videoData: Record<string, any> = {
+      video_id: videoId,
+      call_to_action: { type: config.ctaType || 'LEARN_MORE', value: { link: finalDestinationUrl } },
+      message: config.primaryText || '',
+      title: config.headline || '',
+      link_description: config.description || '',
+      image_url: creative.thumbnailUrl || creative.url,
     };
 
-    const creativeParams: Record<string, any> = {
+    const objectStorySpec: Record<string, any> = { page_id: pageId, video_data: videoData };
+    if (instagramUserId) objectStorySpec.instagram_user_id = instagramUserId;
+
+    const creativeParams = new URLSearchParams({
       access_token: accessToken,
       name: `Creative_${name}`,
       object_story_spec: JSON.stringify(objectStorySpec),
-      product_set_id: config.productSetId,
-      
-      // Use page identity for Instagram placements
-      use_page_actor_override: 'true',
-      
-      // "Mídia dinâmica" / "Priorizar vídeo" - enable video priority from catalog
-      degrees_of_freedom_spec: JSON.stringify(degreesOfFreedomSpec),
-      
-      // "Substituir deep links do site do catálogo" - override catalog links with ad destination URL
-      // template_url_spec defines the URL templates per platform (web, ios, android)
-      // Using only web.url to force all clicks to go to the specified website URL
-      // Reference: https://developers.facebook.com/docs/marketing-api/reference/ad-creative-template-url-spec
-      template_url_spec: JSON.stringify({
-        web: { url: finalDestinationUrl },
-      }),
-      
-      // applink_treatment: web_only ensures app deep links in the feed are ignored
-      applink_treatment: 'web_only',
-      
-      // Multi-Advertiser Ads: OPT_IN allows Facebook to show your ad with others
-      // OPT_OUT keeps your ad standalone. Since August 2024, default is OPT_IN.
-      // Reference: https://developers.facebook.com/docs/marketing-api/creative/multi-advertiser-ads/
-      contextual_multi_ads: JSON.stringify({
-        enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
-      }),
-    };
-
-    // Add URL parameters if provided (utm_medium, utm_source, etc.)
-    if (urlParams && urlParams.trim()) {
-      creativeParams.url_tags = urlParams.trim();
-    }
-
-    // Log creative params for debugging
-    const logCreativeParams = { ...creativeParams, access_token: '[REDACTED]' };
-    console.log(`[process-jobs] Creative params:`, JSON.stringify(logCreativeParams, null, 2));
-
-    const creativeFormData = new URLSearchParams();
-    for (const [key, value] of Object.entries(creativeParams)) {
-      if (value) creativeFormData.append(key, String(value));
-    }
+      contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
+    });
+    if (urlParams) creativeParams.append('url_tags', urlParams.trim());
 
     const creativeResult = await fetchWithRetry(
       `${GRAPH_BASE_URL}/${actId}/adcreatives`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: creativeFormData.toString(),
+        body: creativeParams.toString(),
       },
       3,
       adAccountId,
     );
 
     if (!creativeResult.ok || creativeResult.json.error) {
-      const fbError = creativeResult.json?.error;
-      console.error('[process-jobs] Facebook creative error:', JSON.stringify(fbError ?? creativeResult.json, null, 2));
-      
-      const msg = fbError?.message || 'Failed to create ad creative';
-      const code = fbError?.code;
-      const subcode = fbError?.error_subcode;
-      const userMsg = fbError?.error_user_msg;
-      
-      const details = [
-        msg,
-        code !== undefined ? `code=${code}` : null,
-        subcode !== undefined ? `subcode=${subcode}` : null,
-        userMsg ? `user_msg=${userMsg}` : null,
-      ]
-        .filter(Boolean)
-        .join(' | ');
-      
-      return { success: false, error: details };
+      return { success: false, error: creativeResult.json?.error?.message || 'Video creative failed' };
     }
 
-    const creativeId = creativeResult.json.id;
-    console.log(`[process-jobs] Creative created: ${creativeId}`);
-
-    // Create the ad
-    const adParams: Record<string, any> = {
-      access_token: accessToken,
-      name,
-      adset_id: adsetId,
-      creative: JSON.stringify({ creative_id: creativeId }),
-      // Ads are always created ACTIVE - campaign pause controls delivery
-      status: 'ACTIVE',
-    };
-
-    const logAdParams = { ...adParams, access_token: '[REDACTED]' };
-    console.log(`[process-jobs] Ad params:`, JSON.stringify(logAdParams, null, 2));
-
-    const adFormData = new URLSearchParams();
-    for (const [key, value] of Object.entries(adParams)) {
-      adFormData.append(key, String(value));
-    }
-
-    const { ok, json } = await fetchWithRetry(
-      `${GRAPH_BASE_URL}/${actId}/ads`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: adFormData.toString(),
-      },
-      3,
-      adAccountId,
-    );
-
-    if (!ok || json.error) {
-      const fbError = json?.error;
-      console.error('[process-jobs] Facebook ad error:', JSON.stringify(fbError ?? json, null, 2));
-      
-      const msg = fbError?.message || 'Failed to create ad';
-      const code = fbError?.code;
-      const subcode = fbError?.error_subcode;
-      const userMsg = fbError?.error_user_msg;
-      
-      const details = [
-        msg,
-        code !== undefined ? `code=${code}` : null,
-        subcode !== undefined ? `subcode=${subcode}` : null,
-        userMsg ? `user_msg=${userMsg}` : null,
-      ]
-        .filter(Boolean)
-        .join(' | ');
-      
-      return { success: false, error: details };
-    }
-
-    console.log(`[process-jobs] Ad created: ${json.id}`);
-    return { success: true, id: json.id };
+    adCreativeId = creativeResult.json.id;
   } else {
-    // ============================================================
-    // NON-CATALOG ADS: Use creative from Step 1 (image/video upload)
-    // ============================================================
-    
-    if (!creative || !creative.url) {
-      return { success: false, error: 'Nenhum criativo selecionado. Selecione criativos no Step 1 do wizard.' };
-    }
-
-    const finalDestinationUrl = config.destinationUrl || 'https://example.com';
-    const urlParams = config.urlParams || '';
-
-    console.log(`[process-jobs] Creating non-catalog ad with creative: ${creative.name} (${creative.type})`);
-
-    let adCreativeId: string;
-
-    if (creative.type === 'video') {
-      // Step 1: Upload video to ad account via URL
-      // Facebook requires the video to be uploaded to the ad account first
-      console.log(`[process-jobs] Uploading video from URL: ${creative.url}`);
-      
-      const videoUploadParams: Record<string, any> = {
-        access_token: accessToken,
-        file_url: creative.url,
-        title: creative.name,
-      };
-
-      const videoUploadFormData = new URLSearchParams();
-      for (const [key, value] of Object.entries(videoUploadParams)) {
-        videoUploadFormData.append(key, String(value));
-      }
-
-      const videoUploadResult = await fetchWithRetry(
-        `${GRAPH_BASE_URL}/${actId}/advideos`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: videoUploadFormData.toString(),
-        },
-        3,
-        adAccountId,
-      );
-
-      if (!videoUploadResult.ok || videoUploadResult.json.error) {
-        const fbError = videoUploadResult.json?.error;
-        console.error('[process-jobs] Facebook video upload error:', JSON.stringify(fbError ?? videoUploadResult.json, null, 2));
-        
-        const msg = fbError?.message || 'Falha ao fazer upload do vídeo';
-        const code = fbError?.code;
-        const subcode = fbError?.error_subcode;
-        const userMsg = fbError?.error_user_msg;
-        
-        const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
-          .filter(Boolean).join(' | ');
-        
-        return { success: false, error: details };
-      }
-
-      const videoId = videoUploadResult.json.id;
-      console.log(`[process-jobs] Video uploaded: ${videoId}`);
-
-      // Step 2: Wait for video to be ready (polling)
-      // Videos need processing time before they can be used in creatives
-      let videoReady = false;
-      for (let attempt = 0; attempt < 30; attempt++) {
-        await sleep(2000); // Wait 2 seconds between checks
-        
-        const statusResult = await fetchWithRetry(
-          `${GRAPH_BASE_URL}/${videoId}?fields=status&access_token=${accessToken}`,
-          { method: 'GET' },
-          3,
-          adAccountId,
-        );
-
-        if (statusResult.ok && statusResult.json.status) {
-          const status = statusResult.json.status.video_status;
-          console.log(`[process-jobs] Video status: ${status} (attempt ${attempt + 1})`);
-          
-          if (status === 'ready') {
-            videoReady = true;
-            break;
-          } else if (status === 'error') {
-            return { success: false, error: 'Erro ao processar vídeo no Facebook' };
-          }
-        }
-      }
-
-      if (!videoReady) {
-        console.warn(`[process-jobs] Video not ready after 60 seconds, proceeding anyway...`);
-      }
-
-      // Step 3: Create ad creative with video
-      // Facebook requires a thumbnail (image_url) for video ads
-      const videoData: Record<string, any> = {
-        video_id: videoId,
-        call_to_action: {
-          type: config.ctaType || 'LEARN_MORE',
-          value: { link: finalDestinationUrl },
-        },
-        message: config.primaryText || '',
-        title: config.headline || '',
-        link_description: config.description || '',
-        // Use the stored thumbnail or fallback to the video URL (FB will extract a frame)
-        image_url: creative.thumbnailUrl || creative.url,
-      };
-
-      const objectStorySpec: Record<string, any> = {
-        page_id: pageId,
-        video_data: videoData,
-      };
-
-      if (instagramUserId) {
-        objectStorySpec.instagram_user_id = instagramUserId;
-      }
-
-      const creativeParams: Record<string, any> = {
-        access_token: accessToken,
-        name: `Creative_${name}`,
-        object_story_spec: JSON.stringify(objectStorySpec),
-        // Multi-Advertiser Ads: OPT_IN allows Facebook to show your ad with others
-        // OPT_OUT keeps your ad standalone. Since August 2024, default is OPT_IN.
-        contextual_multi_ads: JSON.stringify({
-          enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
-        }),
-      };
-
-      if (urlParams && urlParams.trim()) {
-        creativeParams.url_tags = urlParams.trim();
-      }
-
-      const logCreativeParams = { ...creativeParams, access_token: '[REDACTED]' };
-      console.log(`[process-jobs] Video creative params:`, JSON.stringify(logCreativeParams, null, 2));
-
-      const creativeFormData = new URLSearchParams();
-      for (const [key, value] of Object.entries(creativeParams)) {
-        if (value) creativeFormData.append(key, String(value));
-      }
-
-      const creativeResult = await fetchWithRetry(
-        `${GRAPH_BASE_URL}/${actId}/adcreatives`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: creativeFormData.toString(),
-        },
-        3,
-        adAccountId,
-      );
-
-      if (!creativeResult.ok || creativeResult.json.error) {
-        const fbError = creativeResult.json?.error;
-        console.error('[process-jobs] Facebook video creative error:', JSON.stringify(fbError ?? creativeResult.json, null, 2));
-        
-        const msg = fbError?.message || 'Falha ao criar criativo de vídeo';
-        const code = fbError?.code;
-        const subcode = fbError?.error_subcode;
-        const userMsg = fbError?.error_user_msg;
-        
-        const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
-          .filter(Boolean).join(' | ');
-        
-        return { success: false, error: details };
-      }
-
-      adCreativeId = creativeResult.json.id;
-      console.log(`[process-jobs] Video creative created: ${adCreativeId}`);
-
-    } else {
-      // IMAGE creative
-      console.log(`[process-jobs] Creating image creative from URL: ${creative.url}`);
-
-      // For images, we can use image_url directly in the link_data
-      const linkData: Record<string, any> = {
-        link: finalDestinationUrl,
-        message: config.primaryText || '',
-        name: config.headline || '',
-        description: config.description || '',
-        image_url: creative.url,
-        call_to_action: {
-          type: config.ctaType || 'LEARN_MORE',
-          value: { link: finalDestinationUrl },
-        },
-      };
-
-      const objectStorySpec: Record<string, any> = {
-        page_id: pageId,
-        link_data: linkData,
-      };
-
-      if (instagramUserId) {
-        objectStorySpec.instagram_user_id = instagramUserId;
-      }
-
-      const creativeParams: Record<string, any> = {
-        access_token: accessToken,
-        name: `Creative_${name}`,
-        object_story_spec: JSON.stringify(objectStorySpec),
-        // Multi-Advertiser Ads: OPT_IN allows Facebook to show your ad with others
-        // OPT_OUT keeps your ad standalone. Since August 2024, default is OPT_IN.
-        contextual_multi_ads: JSON.stringify({
-          enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT',
-        }),
-      };
-
-      if (urlParams && urlParams.trim()) {
-        creativeParams.url_tags = urlParams.trim();
-      }
-
-      const logCreativeParams = { ...creativeParams, access_token: '[REDACTED]' };
-      console.log(`[process-jobs] Image creative params:`, JSON.stringify(logCreativeParams, null, 2));
-
-      const creativeFormData = new URLSearchParams();
-      for (const [key, value] of Object.entries(creativeParams)) {
-        if (value) creativeFormData.append(key, String(value));
-      }
-
-      const creativeResult = await fetchWithRetry(
-        `${GRAPH_BASE_URL}/${actId}/adcreatives`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: creativeFormData.toString(),
-        },
-        3,
-        adAccountId,
-      );
-
-      if (!creativeResult.ok || creativeResult.json.error) {
-        const fbError = creativeResult.json?.error;
-        console.error('[process-jobs] Facebook image creative error:', JSON.stringify(fbError ?? creativeResult.json, null, 2));
-        
-        const msg = fbError?.message || 'Falha ao criar criativo de imagem';
-        const code = fbError?.code;
-        const subcode = fbError?.error_subcode;
-        const userMsg = fbError?.error_user_msg;
-        
-        const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
-          .filter(Boolean).join(' | ');
-        
-        return { success: false, error: details };
-      }
-
-      adCreativeId = creativeResult.json.id;
-      console.log(`[process-jobs] Image creative created: ${adCreativeId}`);
-    }
-
-    // Step 4: Create the ad with the creative
-    const adParams: Record<string, any> = {
-      access_token: accessToken,
-      name,
-      adset_id: adsetId,
-      creative: JSON.stringify({ creative_id: adCreativeId }),
-      status: 'ACTIVE',
+    // Image creative
+    const linkData: Record<string, any> = {
+      link: finalDestinationUrl,
+      picture: creative.url,
+      message: config.primaryText || '',
+      name: config.headline || '',
+      description: config.description || '',
+      call_to_action: { type: config.ctaType || 'LEARN_MORE', value: { link: finalDestinationUrl } },
     };
 
-    const logAdParams = { ...adParams, access_token: '[REDACTED]' };
-    console.log(`[process-jobs] Ad params:`, JSON.stringify(logAdParams, null, 2));
+    const objectStorySpec: Record<string, any> = { page_id: pageId, link_data: linkData };
+    if (instagramUserId) objectStorySpec.instagram_user_id = instagramUserId;
 
-    const adFormData = new URLSearchParams();
-    for (const [key, value] of Object.entries(adParams)) {
-      adFormData.append(key, String(value));
-    }
+    const creativeParams = new URLSearchParams({
+      access_token: accessToken,
+      name: `Creative_${name}`,
+      object_story_spec: JSON.stringify(objectStorySpec),
+      contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
+    });
+    if (urlParams) creativeParams.append('url_tags', urlParams.trim());
 
-    const { ok, json } = await fetchWithRetry(
-      `${GRAPH_BASE_URL}/${actId}/ads`,
+    const creativeResult = await fetchWithRetry(
+      `${GRAPH_BASE_URL}/${actId}/adcreatives`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: adFormData.toString(),
+        body: creativeParams.toString(),
       },
       3,
       adAccountId,
     );
 
-    if (!ok || json.error) {
-      const fbError = json?.error;
-      console.error('[process-jobs] Facebook ad error:', JSON.stringify(fbError ?? json, null, 2));
-      
-      const msg = fbError?.message || 'Falha ao criar anúncio';
-      const code = fbError?.code;
-      const subcode = fbError?.error_subcode;
-      const userMsg = fbError?.error_user_msg;
-      
-      const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
-        .filter(Boolean).join(' | ');
-      
-      return { success: false, error: details };
+    if (!creativeResult.ok || creativeResult.json.error) {
+      return { success: false, error: creativeResult.json?.error?.message || 'Image creative failed' };
     }
 
-    console.log(`[process-jobs] Ad created: ${json.id}`);
-    return { success: true, id: json.id };
+    adCreativeId = creativeResult.json.id;
   }
+
+  // Create the ad
+  const adParams = new URLSearchParams({
+    access_token: accessToken,
+    name,
+    adset_id: adsetId,
+    creative: JSON.stringify({ creative_id: adCreativeId }),
+    status: 'ACTIVE',
+  });
+
+  const adResult = await fetchWithRetry(
+    `${GRAPH_BASE_URL}/${actId}/ads`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: adParams.toString(),
+    },
+    3,
+    adAccountId,
+  );
+
+  if (!adResult.ok || adResult.json.error) {
+    return { success: false, error: adResult.json?.error?.message || 'Ad creation failed' };
+  }
+
+  return { success: true, id: adResult.json.id };
+}
+
+// Naming variable replacer
+function createNamingReplacer(
+  account: { name: string; account_id: string },
+  config: Record<string, any>,
+  resolvedPages: Array<{ pageId: string }>,
+  job: { total_campaigns: number },
+) {
+  const accountNickname = account.name?.split(' - ')[0] || account.name || 'Conta';
+  const accountId = account.account_id?.replace('act_', '') || '';
+  const productSetName = config.productSetName || '';
+  const firstPageName = resolvedPages.length > 0 ? (config.pageNames?.[0] || resolvedPages[0]?.pageId || '') : '';
+
+  const getFirstName = (fullName: string): string => fullName ? fullName.trim().split(/\s+/)[0] || fullName : '';
+  const getAccountCode = (accountName: string): string => accountName ? accountName.trim().slice(0, 7) : '';
+
+  return (name: string, context: { campaignIndex?: number; adsetIndex?: number; adIndex?: number; creativeName?: string } = {}): string => {
+    let result = name;
+    
+    // Account variables
+    result = result
+      .replace(/\{\{conta_apelido\}\}/g, accountNickname)
+      .replace(/\{\{conta_nome\}\}/g, account.name || '')
+      .replace(/\{\{conta_codigo\}\}/g, getAccountCode(account.name || ''))
+      .replace(/\{\{conta_id\}\}/g, accountId);
+    
+    // Page variables
+    result = result
+      .replace(/\{\{pagina_nome\}\}/g, firstPageName)
+      .replace(/\{\{pagina_nome1\}\}/g, getFirstName(firstPageName));
+    
+    // Catalog variables
+    result = result.replace(/\{\{conjunto_catalogo\}\}/g, productSetName);
+    result = result.replace(/\{\{catalogo\}\}/g, (config.catalogName as string) || '');
+    
+    // Creative variables
+    if (context.creativeName) {
+      result = result.replace(/\{\{criativo\}\}/g, context.creativeName);
+    }
+    
+    // Custom variables
+    const customVars = config.customNamingVariables as Record<string, string> || {};
+    for (const [key, value] of Object.entries(customVars)) {
+      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+    }
+    
+    // Date/time variables
+    const now = new Date();
+    result = result
+      .replace(/\{\{ano\}\}/g, now.getFullYear().toString())
+      .replace(/\{\{ano2\}\}/g, now.getFullYear().toString().slice(-2))
+      .replace(/\{\{mes\}\}/g, String(now.getMonth() + 1).padStart(2, '0'))
+      .replace(/\{\{dia\}\}/g, String(now.getDate()).padStart(2, '0'))
+      .replace(/\{\{hora\}\}/g, String(now.getHours()).padStart(2, '0'))
+      .replace(/\{\{minuto\}\}/g, String(now.getMinutes()).padStart(2, '0'));
+    
+    // Budget variable
+    result = result.replace(/\{\{budget\}\}/g, config.useCBO ? 'CBO' : 'ABO');
+    
+    // Structure variable
+    const structure = `${job.total_campaigns}-${config.adsetsPerCampaign || 1}-${config.adsPerAdset || 1}`;
+    result = result.replace(/\{\{estrutura\}\}/g, structure);
+    
+    // Sequential variable
+    result = result.replace(/\{\{sequencial(?::(\d+))?\}\}/g, (match, start) => {
+      const startNum = start ? parseInt(start, 10) : 1;
+      const currentIndex = context.campaignIndex ?? 0;
+      const value = startNum + currentIndex;
+      return start ? String(value).padStart(start.length, '0') : String(value).padStart(2, '0');
+    });
+    
+    // Adset variable
+    result = result.replace(/\{\{conjunto\}\}/g, () => String((context.adsetIndex ?? 0) + 1).padStart(2, '0'));
+    
+    return result;
+  };
 }
 
 Deno.serve(async (req) => {
@@ -1133,7 +1180,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse job_id from request
+    // Parse job_id
     let jobId: string | null = null;
     try {
       const body = await req.json();
@@ -1190,66 +1237,39 @@ Deno.serve(async (req) => {
       throw new Error('Failed to fetch job items');
     }
 
-    // Count ads to be created
+    // Count ads to create
     const adsToCreate = items.filter(i => i.item_type === 'ad').length;
     const accountsCount = job.accounts_count || 1;
     const totalAdsToCreate = adsToCreate * accountsCount;
 
-    // Check user ad limits before processing
-    const { data: limitCheck, error: limitError } = await supabase
-      .rpc('can_create_ads', { 
-        check_user_id: user.id, 
-        ads_to_create: totalAdsToCreate 
-      });
-
-    if (limitError) {
-      console.error('[process-jobs] Error checking ad limits:', limitError);
-    }
+    // Check ad limits
+    const { data: limitCheck } = await supabase
+      .rpc('can_create_ads', { check_user_id: user.id, ads_to_create: totalAdsToCreate });
 
     const limitResult = limitCheck?.[0];
     if (limitResult && !limitResult.allowed && !limitResult.is_unlimited) {
-      console.warn(`[process-jobs] User ${user.id} exceeded ad limit: ${limitResult.message}`);
-      
-      // Update job to failed due to limit
       await supabase
         .from('campaign_jobs')
-        .update({ 
-          status: 'failed', 
-          error_message: limitResult.message,
-          completed_at: new Date().toISOString()
-        })
+        .update({ status: 'failed', error_message: limitResult.message, completed_at: new Date().toISOString() })
         .eq('id', jobId);
 
-      return new Response(
-        JSON.stringify({ 
-          error: 'Ad limit exceeded', 
-          message: limitResult.message,
-          current_usage: limitResult.current_usage,
-          limit: limitResult.limit_value,
-          remaining: limitResult.remaining
-        }), 
-        {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return new Response(JSON.stringify({ error: 'Ad limit exceeded', message: limitResult.message }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    console.log(`[process-jobs] Ad limit check passed. Creating ${totalAdsToCreate} ads. User usage: ${limitResult?.current_usage || 0}/${limitResult?.limit_value || 'unlimited'}`);
+    console.log(`[process-jobs] Ad limit check passed. Creating ${totalAdsToCreate} ads.`);
 
-    // Get access token and ad account from config
+    // Get config and accounts
     const config = job.config as Record<string, any>;
     const selectedAccountIds = config.selectedAccounts || [];
 
     if (selectedAccountIds.length === 0) {
-      throw new Error('No ad accounts selected in job config');
+      throw new Error('No ad accounts selected');
     }
 
-    // Multi-account mode: process all selected accounts
-    const isMultiAccountMode = config.multiAccountMode === true && selectedAccountIds.length > 1;
-    console.log(`[process-jobs] Multi-account mode: ${isMultiAccountMode}, accounts: ${selectedAccountIds.length}`);
-
-    // Fetch all selected ad accounts
+    // Fetch ad accounts
     const { data: allAdAccounts, error: accError } = await supabase
       .from('facebook_ad_accounts')
       .select('id, account_id, profile_id, name')
@@ -1259,54 +1279,38 @@ Deno.serve(async (req) => {
       throw new Error('No ad accounts found');
     }
 
-    console.log(`[process-jobs] Found ${allAdAccounts.length} ad accounts to process`);
+    console.log(`[process-jobs] Found ${allAdAccounts.length} ad accounts`);
 
-    // Get page info (shared across all accounts, resolved once)
-    // First we need to get access token from first account's profile for page resolution
+    // Get first account's token for page resolution
     const firstAccountProfileId = allAdAccounts[0].profile_id;
     
-    // Get access token securely from facebook_credentials (service role has access)
     const { data: credentials } = await supabase
       .from('facebook_credentials')
       .select('access_token')
       .eq('profile_id', firstAccountProfileId)
       .single();
 
-    // Fallback to facebook_profiles.access_token if credentials not found (migration period)
-    let firstAccessToken: string | null = null;
-    if (credentials?.access_token) {
-      firstAccessToken = credentials.access_token;
-      console.log(`[process-jobs] Using secure credentials for profile ${firstAccountProfileId}`);
-    } else {
-      // Fallback during migration - need to check profile ownership
+    let firstAccessToken: string | null = credentials?.access_token || null;
+    if (!firstAccessToken) {
       const { data: fallbackProfile } = await supabase
         .from('facebook_profiles')
         .select('access_token')
         .eq('id', firstAccountProfileId)
         .single();
-      
-      if (fallbackProfile?.access_token) {
-        firstAccessToken = fallbackProfile.access_token;
-        console.warn(`[process-jobs] Using fallback token for profile ${firstAccountProfileId}`);
-      }
+      firstAccessToken = fallbackProfile?.access_token || null;
     }
 
-    // Get page ID (and Page access token) for ads
-    // Note: config.selectedPages may contain either the database UUID or the Facebook page_id
-    // We try to find by database id first, then fallback to page_id
-    // For Anti-Spy mode, we store all resolved pages for round-robin distribution
+    // Resolve pages
     const resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null }> = [];
 
     if (config.selectedPages && config.selectedPages.length > 0 && firstAccessToken) {
       for (const selectedPageValue of config.selectedPages) {
-        // First try to find by database UUID
         let { data: page } = await supabase
           .from('facebook_pages')
           .select('page_id, access_token')
           .eq('id', selectedPageValue)
           .single();
 
-        // If not found, try by Facebook page_id directly
         if (!page) {
           const { data: pageByFbId } = await supabase
             .from('facebook_pages')
@@ -1328,449 +1332,218 @@ Deno.serve(async (req) => {
             accessToken: page.access_token || null,
             instagramActorId,
           });
-          console.log(`[process-jobs] Resolved page: ${page.page_id}, Instagram: ${instagramActorId || 'none'}`);
         }
       }
     }
 
-    // Fallback for backwards compatibility: use first page if available
     const defaultPageId = resolvedPages.length > 0 ? resolvedPages[0].pageId : '';
     const defaultInstagramUserId = resolvedPages.length > 0 ? resolvedPages[0].instagramActorId : null;
 
-    if (resolvedPages.length === 0) {
-      console.warn(`[process-jobs] No pages resolved from selectedPages.`);
-    } else if (config.antiSpyEnabled && resolvedPages.length > 1) {
-      console.log(`[process-jobs] Anti-Spy enabled with ${resolvedPages.length} pages for round-robin distribution`);
-    }
-
-    // Get job items - now items come pre-separated per account (each item has accountId in config)
+    // Separate items by type
     const campaigns = items.filter((i) => i.item_type === 'campaign');
     const adsets = items.filter((i) => i.item_type === 'adset');
     const ads = items.filter((i) => i.item_type === 'ad');
 
-    // Group items by accountId from their config (new approach - items already separated)
-    const itemsByAccount = new Map<string, JobItem[]>();
-    for (const item of items) {
-      const itemConfig = item.config as Record<string, any> || {};
-      const accountId = itemConfig.accountId || '';
-      if (!itemsByAccount.has(accountId)) {
-        itemsByAccount.set(accountId, []);
-      }
-      itemsByAccount.get(accountId)!.push(item);
-    }
+    console.log(`[process-jobs] Processing ${campaigns.length} campaigns, ${adsets.length} adsets, ${ads.length} ads`);
+    console.log(`[process-jobs] Using BATCH API for optimized processing`);
 
-    // Determine processing mode: if items have accountId in config, use new per-item mode
-    // Otherwise, fall back to old mode where items are templates replicated per account
-    const hasPerItemAccounts = items.some(i => (i.config as Record<string, any>)?.accountId);
-    
-    // Calculate total items to process
-    const accountsToProcess = isMultiAccountMode && !hasPerItemAccounts ? allAdAccounts.length : 1;
-    const totalItems = hasPerItemAccounts ? items.length : items.length * accountsToProcess;
-    let processedItems = 0;
+    const startTime = Date.now();
     let hasError = false;
     let lastError = '';
+    let totalAdsCreated = 0;
 
     // Process each account
-    for (let accountIndex = 0; accountIndex < accountsToProcess; accountIndex++) {
+    for (let accountIndex = 0; accountIndex < allAdAccounts.length; accountIndex++) {
       const currentAccount = allAdAccounts[accountIndex];
-      console.log(`[process-jobs] Processing account ${accountIndex + 1}/${accountsToProcess}: ${currentAccount.name} (${currentAccount.account_id})`);
+      console.log(`[process-jobs] Processing account ${accountIndex + 1}/${allAdAccounts.length}: ${currentAccount.name}`);
 
-      // Get access token securely from facebook_credentials (service role has access)
-      const { data: credentials } = await supabase
+      // Get access token
+      const { data: accCredentials } = await supabase
         .from('facebook_credentials')
         .select('access_token')
         .eq('profile_id', currentAccount.profile_id)
         .single();
 
-      // Fallback to facebook_profiles.access_token if credentials not found (migration period)
-      let accessToken: string | null = null;
-      if (credentials?.access_token) {
-        accessToken = credentials.access_token;
-        console.log(`[process-jobs] Using secure credentials for account ${currentAccount.name}`);
-      } else {
-        // Fallback during migration
+      let accessToken: string | null = accCredentials?.access_token || null;
+      if (!accessToken) {
         const { data: fallbackProfile } = await supabase
           .from('facebook_profiles')
           .select('access_token')
           .eq('id', currentAccount.profile_id)
           .single();
-        
-        if (fallbackProfile?.access_token) {
-          accessToken = fallbackProfile.access_token;
-          console.warn(`[process-jobs] Using fallback token for account ${currentAccount.name}`);
-        }
+        accessToken = fallbackProfile?.access_token || null;
       }
 
       if (!accessToken) {
-        console.error(`[process-jobs] No access token found for account ${currentAccount.name}`);
-        // Mark all items for this account as failed
-        for (const item of items) {
-          await supabase
-            .from('campaign_job_items')
-            .update({ 
-              status: 'failed', 
-              error_message: `No access token found for account ${currentAccount.name}` 
-            })
-            .eq('id', item.id);
-          processedItems++;
-        }
+        console.error(`[process-jobs] No access token for account ${currentAccount.name}`);
         hasError = true;
-        lastError = `No access token found for account ${currentAccount.name}`;
+        lastError = `No access token for ${currentAccount.name}`;
         continue;
       }
 
-      // Map of local ID to Facebook ID (per account)
-      const idMap = new Map<string, string>();
+      // Create naming replacer
+      const replaceNamingVariables = createNamingReplacer(currentAccount, config, resolvedPages, job);
 
-      // Get account nickname/alias for naming
-      const accountNickname = currentAccount.name?.split(' - ')[0] || currentAccount.name || 'Conta';
-      const accountId = currentAccount.account_id?.replace('act_', '') || '';
+      // Prepare campaigns with resolved names
+      const campaignsWithNames = campaigns.map((c, i) => ({
+        id: c.id,
+        name: replaceNamingVariables(c.name, { campaignIndex: i }),
+        config: c.config as Record<string, any>,
+      }));
 
-      // Get product set name (conjunto de catálogo) for naming variables
-      const productSetName = config.productSetName || '';
-      
-      // Get first page name for naming variables
-      const firstPageName = resolvedPages.length > 0 
-        ? (config.pageNames?.[0] || resolvedPages[0]?.pageId || '')
-        : '';
+      // Create campaigns in batch
+      console.log(`[process-jobs] Creating ${campaignsWithNames.length} campaigns via batch API...`);
+      const campaignIdMap = await createCampaignsBatch(
+        accessToken,
+        currentAccount.account_id,
+        campaignsWithNames,
+        config,
+        supabase,
+      );
+      console.log(`[process-jobs] Created ${campaignIdMap.size}/${campaignsWithNames.length} campaigns`);
 
-      // Helper to get first name from a full name (e.g., "Alana Martins Santos" -> "Alana")
-      const getFirstName = (fullName: string): string => {
-        if (!fullName) return '';
-        return fullName.trim().split(/\s+/)[0] || fullName;
-      };
+      // Prepare adsets with resolved names
+      const adsetsWithNames = adsets.map((a, i) => ({
+        id: a.id,
+        name: replaceNamingVariables(a.name, { adsetIndex: i }),
+        parent_id: a.parent_id,
+        config: a.config as Record<string, any>,
+      }));
 
-      // Helper to get account code (first 7 chars of account name)
-      const getAccountCode = (accountName: string): string => {
-        if (!accountName) return '';
-        return accountName.trim().slice(0, 7);
-      };
+      // Create adsets in batch
+      console.log(`[process-jobs] Creating ${adsetsWithNames.length} adsets via batch API...`);
+      const adsetIdMap = await createAdsetsBatch(
+        accessToken,
+        currentAccount.account_id,
+        adsetsWithNames,
+        campaignIdMap,
+        config,
+        supabase,
+      );
+      console.log(`[process-jobs] Created ${adsetIdMap.size}/${adsetsWithNames.length} adsets`);
 
-      // Helper to replace all naming variables (including custom ones)
-      // This is synchronized with src/lib/namingResolver.ts to ensure parity
-      const replaceNamingVariables = (name: string, context: { campaignIndex?: number; adsetIndex?: number; adIndex?: number; creativeName?: string } = {}): string => {
-        let result = name;
+      // Prepare ads with resolved names
+      const adsWithNames = ads.map((a, i) => ({
+        id: a.id,
+        name: replaceNamingVariables(a.name, { adIndex: i }),
+        parent_id: a.parent_id,
+        config: a.config as Record<string, any>,
+      }));
+
+      // Create ads based on type (catalog vs non-catalog)
+      if (config.useCatalog) {
+        // Catalog ads: use batch API for creatives and ads
+        console.log(`[process-jobs] Creating ${adsWithNames.length} catalog creatives via batch API...`);
+        const creativeIdMap = await createCatalogCreativesBatch(
+          accessToken,
+          currentAccount.account_id,
+          adsWithNames,
+          config,
+          defaultPageId,
+          defaultInstagramUserId,
+          supabase,
+        );
+        console.log(`[process-jobs] Created ${creativeIdMap.size}/${adsWithNames.length} creatives`);
+
+        console.log(`[process-jobs] Creating ${adsWithNames.length} ads via batch API...`);
+        const adsCreated = await createAdsBatch(
+          accessToken,
+          currentAccount.account_id,
+          adsWithNames,
+          adsetIdMap,
+          creativeIdMap,
+          supabase,
+        );
+        totalAdsCreated += adsCreated;
+        console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} ads`);
+      } else {
+        // Non-catalog ads: sequential processing (video upload required)
+        const selectedCreatives = config.selectedCreatives || [];
+        console.log(`[process-jobs] Creating ${adsWithNames.length} non-catalog ads (sequential for video upload)...`);
         
-        // Account variables
-        result = result
-          .replace(/\{\{conta_apelido\}\}/g, accountNickname)
-          .replace(/\{\{conta_nome\}\}/g, currentAccount.name || '')
-          .replace(/\{\{conta_codigo\}\}/g, getAccountCode(currentAccount.name || ''))
-          .replace(/\{\{conta_id\}\}/g, accountId);
-        
-        // Page variables
-        result = result
-          .replace(/\{\{pagina_nome\}\}/g, firstPageName)
-          .replace(/\{\{pagina_nome1\}\}/g, getFirstName(firstPageName));
-        
-        // Catalog variables
-        result = result.replace(/\{\{conjunto_catalogo\}\}/g, productSetName);
-        const catalogName = (config.catalogName as string) || '';
-        result = result.replace(/\{\{catalogo\}\}/g, catalogName);
-        
-        // Creative variables
-        if (context.creativeName) {
-          result = result.replace(/\{\{criativo\}\}/g, context.creativeName);
-        }
-        
-        // Replace custom naming variables from config
-        const customVars = config.customNamingVariables as Record<string, string> || {};
-        for (const [key, value] of Object.entries(customVars)) {
-          result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-        }
-        
-        // Date/time variables
-        const now = new Date();
-        result = result
-          .replace(/\{\{ano\}\}/g, now.getFullYear().toString())
-          .replace(/\{\{ano2\}\}/g, now.getFullYear().toString().slice(-2))
-          .replace(/\{\{mes\}\}/g, String(now.getMonth() + 1).padStart(2, '0'))
-          .replace(/\{\{dia\}\}/g, String(now.getDate()).padStart(2, '0'))
-          .replace(/\{\{hora\}\}/g, String(now.getHours()).padStart(2, '0'))
-          .replace(/\{\{minuto\}\}/g, String(now.getMinutes()).padStart(2, '0'));
-        
-        // Budget variable
-        result = result.replace(/\{\{budget\}\}/g, config.useCBO ? 'CBO' : 'ABO');
-        
-        // Structure variable
-        const structure = `${job.total_campaigns}-${config.adsetsPerCampaign || 1}-${config.adsPerAdset || 1}`;
-        result = result.replace(/\{\{estrutura\}\}/g, structure);
-        
-        // Sequential variable with starting number: {{sequencial:300}} or {{sequencial:01}}
-        result = result.replace(/\{\{sequencial(?::(\d+))?\}\}/g, (match, start) => {
-          const startNum = start ? parseInt(start, 10) : 1;
-          const currentIndex = context.campaignIndex ?? 0;
-          const value = startNum + currentIndex;
-          
-          // Preserve padding based on original format
-          if (start) {
-            return String(value).padStart(start.length, '0');
-          }
-          return String(value).padStart(2, '0');
-        });
-        
-        // Adset conjunto variable: {{conjunto}}
-        result = result.replace(/\{\{conjunto\}\}/g, () => {
-          return String((context.adsetIndex ?? 0) + 1).padStart(2, '0');
-        });
-        
-        return result;
-      };
+        for (let adIndex = 0; adIndex < adsWithNames.length; adIndex++) {
+          const ad = adsWithNames[adIndex];
+          const parentFbId = ad.parent_id ? adsetIdMap.get(ad.parent_id) : null;
 
-      // Process campaigns for this account
-      let campaignIndex = 0;
-      for (const campaign of campaigns) {
-        // Replace all variables in campaign name with campaign index for sequencial
-        let campaignName = replaceNamingVariables(campaign.name, { campaignIndex });
-
-        console.log(`[process-jobs] Creating campaign: ${campaignName} for account ${currentAccount.name}`);
-
-        // Only update status on first account (to avoid conflicts)
-        if (accountIndex === 0) {
-          await supabase
-            .from('campaign_job_items')
-            .update({ status: 'processing' })
-            .eq('id', campaign.id);
-        }
-
-        const result = await createFacebookCampaign(accessToken, currentAccount.account_id, config, campaignName);
-
-        if (result.success && result.id) {
-          idMap.set(campaign.id, result.id);
-          
-          // Update item status only on last account or if single account
-          if (accountIndex === accountsToProcess - 1) {
-            await supabase
-              .from('campaign_job_items')
-              .update({ 
-                status: 'completed', 
-                facebook_id: isMultiAccountMode ? `${result.id} (+${accountsToProcess - 1})` : result.id 
-              })
-              .eq('id', campaign.id);
-          }
-        } else {
-          hasError = true;
-          lastError = result.error || 'Unknown error';
-          
-          if (accountIndex === accountsToProcess - 1) {
-            await supabase
-              .from('campaign_job_items')
-              .update({ status: 'failed', error_message: result.error })
-              .eq('id', campaign.id);
-          }
-        }
-
-        processedItems++;
-        campaignIndex++;
-        const progress = Math.round((processedItems / totalItems) * 100);
-        await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
-      }
-
-      // Process adsets for this account
-      let adsetIndex = 0;
-      for (const adset of adsets) {
-        const parentFbId = adset.parent_id ? idMap.get(adset.parent_id) : null;
-
-        if (!parentFbId) {
-          if (accountIndex === accountsToProcess - 1) {
-            await supabase
-              .from('campaign_job_items')
-              .update({ status: 'failed', error_message: 'Parent campaign failed' })
-              .eq('id', adset.id);
-          }
-          processedItems++;
-          hasError = true;
-          continue;
-        }
-
-        // Replace all variables in adset name with adset index for conjunto
-        let adsetName = replaceNamingVariables(adset.name, { adsetIndex });
-
-        console.log(`[process-jobs] Creating adset: ${adsetName} for account ${currentAccount.name}`);
-
-        if (accountIndex === 0) {
-          await supabase
-            .from('campaign_job_items')
-            .update({ status: 'processing' })
-            .eq('id', adset.id);
-        }
-
-        const result = await createFacebookAdset(accessToken, currentAccount.account_id, parentFbId, config, adsetName);
-
-        if (result.success && result.id) {
-          idMap.set(adset.id, result.id);
-          
-          if (accountIndex === accountsToProcess - 1) {
-            await supabase
-              .from('campaign_job_items')
-              .update({ 
-                status: 'completed', 
-                facebook_id: isMultiAccountMode ? `${result.id} (+${accountsToProcess - 1})` : result.id 
-              })
-              .eq('id', adset.id);
-          }
-        } else {
-          hasError = true;
-          lastError = result.error || 'Unknown error';
-          
-          if (accountIndex === accountsToProcess - 1) {
-            await supabase
-              .from('campaign_job_items')
-              .update({ status: 'failed', error_message: result.error })
-              .eq('id', adset.id);
-          }
-        }
-
-        processedItems++;
-        adsetIndex++;
-        const progress = Math.round((processedItems / totalItems) * 100);
-        await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
-      }
-
-      // Process ads for this account with Anti-Spy round-robin page distribution
-      // Get selected creatives from config for non-catalog ads
-      const selectedCreatives: Array<{ id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string }> = config.selectedCreatives || [];
-      
-      let adIndex = 0;
-      for (const ad of ads) {
-        const parentFbId = ad.parent_id ? idMap.get(ad.parent_id) : null;
-
-        if (!parentFbId) {
-          if (accountIndex === accountsToProcess - 1) {
+          if (!parentFbId) {
             await supabase
               .from('campaign_job_items')
               .update({ status: 'failed', error_message: 'Parent adset failed' })
               .eq('id', ad.id);
+            continue;
           }
-          processedItems++;
-          hasError = true;
-          adIndex++;
-          continue;
-        }
 
-        // Anti-Spy: distribute pages round-robin across ads
-        let currentPageId = defaultPageId;
-        let currentInstagramUserId = defaultInstagramUserId;
-        
-        if (config.antiSpyEnabled && resolvedPages.length > 1) {
-          // Round-robin: each ad gets a different page
-          const pageIndex = adIndex % resolvedPages.length;
-          const selectedPage = resolvedPages[pageIndex];
-          currentPageId = selectedPage.pageId;
-          currentInstagramUserId = selectedPage.instagramActorId;
-          console.log(`[process-jobs] Anti-Spy: Ad ${adIndex + 1} using page ${currentPageId} (index ${pageIndex})`);
-        }
+          // Get creative for this ad
+          const creativeIndex = adIndex % selectedCreatives.length;
+          const creative = selectedCreatives[creativeIndex];
 
-        if (!currentPageId) {
-          if (accountIndex === accountsToProcess - 1) {
+          if (!creative) {
             await supabase
               .from('campaign_job_items')
-              .update({ status: 'failed', error_message: 'No page selected for ad' })
+              .update({ status: 'failed', error_message: 'No creative available' })
               .eq('id', ad.id);
+            continue;
           }
-          processedItems++;
-          hasError = true;
-          lastError = 'No page selected';
-          adIndex++;
-          continue;
-        }
 
-        // For non-catalog ads, get the creative to use
-        // Distribution logic: distribute creatives based on distribution mode
-        let creativeForAd: { id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl?: string } | null = null;
-        
-        if (!config.useCatalog && selectedCreatives.length > 0) {
-          // Get creative from job item config if stored there, otherwise use round-robin
-          const adConfig = ad.config as Record<string, any> || {};
-          if (adConfig.creativeIndex !== undefined && selectedCreatives[adConfig.creativeIndex]) {
-            creativeForAd = selectedCreatives[adConfig.creativeIndex];
+          // Anti-spy page rotation
+          let currentPageId = defaultPageId;
+          let currentInstagramUserId = defaultInstagramUserId;
+          
+          if (config.antiSpyEnabled && resolvedPages.length > 1) {
+            const pageIndex = adIndex % resolvedPages.length;
+            currentPageId = resolvedPages[pageIndex].pageId;
+            currentInstagramUserId = resolvedPages[pageIndex].instagramActorId;
+          }
+
+          const result = await createNonCatalogAd(
+            accessToken,
+            currentAccount.account_id,
+            parentFbId,
+            config,
+            ad.name,
+            currentPageId,
+            currentInstagramUserId,
+            creative,
+          );
+
+          if (result.success && result.id) {
+            totalAdsCreated++;
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'completed', facebook_id: result.id })
+              .eq('id', ad.id);
           } else {
-            // Round-robin distribution of creatives across ads
-            const creativeIndex = adIndex % selectedCreatives.length;
-            creativeForAd = selectedCreatives[creativeIndex];
-          }
-          console.log(`[process-jobs] Using creative for ad: ${creativeForAd?.name} (${creativeForAd?.type}), thumbnail: ${creativeForAd?.thumbnailUrl ? 'yes' : 'no'}`);
-        }
-
-        // Replace all variables in ad name with ad index and creative name
-        let adName = replaceNamingVariables(ad.name, { 
-          adIndex, 
-          creativeName: creativeForAd?.name || '' 
-        });
-
-        console.log(`[process-jobs] Creating ad: ${adName} with page: ${currentPageId} for account ${currentAccount.name}`);
-
-        if (accountIndex === 0) {
-          await supabase
-            .from('campaign_job_items')
-            .update({ status: 'processing' })
-            .eq('id', ad.id);
-        }
-
-        const result = await createFacebookAd(
-          accessToken, 
-          currentAccount.account_id, 
-          parentFbId, 
-          config, 
-          adName, 
-          currentPageId, 
-          currentInstagramUserId,
-          creativeForAd
-        );
-
-        if (result.success && result.id) {
-          idMap.set(ad.id, result.id);
-          
-          if (accountIndex === accountsToProcess - 1) {
-            await supabase
-              .from('campaign_job_items')
-              .update({ 
-                status: 'completed', 
-                facebook_id: isMultiAccountMode ? `${result.id} (+${accountsToProcess - 1})` : result.id 
-              })
-              .eq('id', ad.id);
-          }
-        } else {
-          hasError = true;
-          lastError = result.error || 'Unknown error';
-          
-          if (accountIndex === accountsToProcess - 1) {
+            hasError = true;
+            lastError = result.error || 'Unknown error';
             await supabase
               .from('campaign_job_items')
               .update({ status: 'failed', error_message: result.error })
               .eq('id', ad.id);
           }
-        }
 
-        adIndex++;
-        processedItems++;
-        const progress = Math.round((processedItems / totalItems) * 100);
-        await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
+          // Update progress
+          const progress = Math.round(((adIndex + 1) / adsWithNames.length) * 100);
+          await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
+        }
       }
     }
 
-    // Count completed ads for usage tracking
-    const completedAdsCount = ads.filter(ad => {
-      // Check if this ad was completed (has facebook_id in idMap)
-      // In the current context we count all ads that were processed without error
-      return true; // We'll use the total since individual tracking would require more changes
-    }).length * accountsToProcess;
+    const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
+    console.log(`[process-jobs] Job completed in ${elapsedSeconds} seconds. Created ${totalAdsCreated} ads total.`);
 
-    // Increment ad usage if job completed successfully
-    if (!hasError && completedAdsCount > 0) {
+    // Increment ad usage
+    if (totalAdsCreated > 0) {
       try {
         await supabase.rpc('increment_ad_usage', {
           p_user_id: user.id,
-          p_ads_count: completedAdsCount
+          p_ads_count: totalAdsCreated * allAdAccounts.length,
         });
-        console.log(`[process-jobs] Incremented ad usage for user ${user.id}: +${completedAdsCount} ads`);
       } catch (usageError) {
         console.error('[process-jobs] Failed to increment ad usage:', usageError);
-        // Don't fail the job for usage tracking errors
       }
     }
 
-    // Final status update
+    // Final status
     const finalStatus = hasError ? 'failed' : 'completed';
     await supabase
       .from('campaign_jobs')
@@ -1782,24 +1555,21 @@ Deno.serve(async (req) => {
       })
       .eq('id', jobId);
 
-    console.log(`[process-jobs] Job ${jobId} finished with status: ${finalStatus} (${accountsToProcess} accounts processed)`);
+    console.log(`[process-jobs] Job ${jobId} finished with status: ${finalStatus}`);
 
     return new Response(
       JSON.stringify({
         success: !hasError,
         status: finalStatus,
-        processed: processedItems,
-        total: totalItems,
+        adsCreated: totalAdsCreated,
+        elapsedSeconds,
         error: hasError ? lastError : null,
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (error: any) {
     console.error('[process-jobs] Fatal error:', error);
 
-    // Try to update job status to failed
     try {
       const body = await req.clone().json();
       if (body?.job_id) {
