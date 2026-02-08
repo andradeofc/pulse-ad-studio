@@ -161,8 +161,10 @@ export function useCreateCampaignJob() {
 
         console.log(`[useCampaignJobs] Inserting ${itemsToInsert.length} items in ${batches.length} batch(es)`);
 
-        // Execute batch inserts in parallel for speed
-        const insertPromises = batches.map(async (batch, batchIndex) => {
+        // Execute batch inserts SEQUENTIALLY to respect parent_id foreign keys
+        // Parents must exist before children can reference them
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex];
           const { error: batchError } = await supabase
             .from('campaign_job_items')
             .insert(batch);
@@ -173,9 +175,8 @@ export function useCreateCampaignJob() {
           }
           
           console.log(`[useCampaignJobs] Batch ${batchIndex + 1}/${batches.length} inserted (${batch.length} items)`);
-        });
+        }
 
-        await Promise.all(insertPromises);
         console.log(`[useCampaignJobs] All ${itemsToInsert.length} items inserted successfully`);
       }
 
