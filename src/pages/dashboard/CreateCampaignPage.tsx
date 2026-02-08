@@ -8,6 +8,7 @@ import { useState, useMemo } from 'react';
 import { useCreateCampaignJob } from '@/hooks/useCampaignJobs';
 import { useToast } from '@/hooks/use-toast';
 import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
+import { resolveTemplate, getFirstName, getAccountCode } from '@/lib/namingResolver';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -108,13 +109,25 @@ export default function CreateCampaignPage() {
 
       let itemIndex = 0;
       
+      // Build context for name resolution
+      const baseContext = {
+        budget: config.useCBO ? 'CBO' as const : 'ABO' as const,
+        structure: `${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}`,
+        productSetName: config.productSetName,
+        catalogName: config.catalogName,
+        pageNames: config.pageNames,
+        pageName: config.pageNames?.[0] || '',
+        customVariables: config.customNamingVariables,
+      };
+      
       // Generate campaigns, adsets, and ads based on config
       for (let c = 0; c < totalCampaigns; c++) {
-        const campaignName = config.campaignName
-          .replace('{{sequencial:01}}', String(c + 1).padStart(2, '0'))
-          .replace('{{budget}}', config.useCBO ? 'CBO' : 'ABO')
-          .replace('{{estrutura}}', `${totalCampaigns}-${config.adsetsPerCampaign}-${config.adsPerAdset}`)
-          .replace('{{conta_apelido}}', 'Conta');
+        // Resolve campaign name using the naming resolver
+        const campaignName = resolveTemplate(config.campaignName, {
+          ...baseContext,
+          campaignIndex: c,
+          accountName: 'Conta', // Will be resolved per-account in edge function
+        });
         
         const campaignIndex = itemIndex;
         items.push({
@@ -127,9 +140,14 @@ export default function CreateCampaignPage() {
         // Adsets per campaign
         const adsetsForThisCampaign = Math.ceil(totalAdsets / totalCampaigns);
         for (let a = 0; a < adsetsForThisCampaign; a++) {
-          const adsetName = config.adsetName
-            .replace('{{criativo}}', config.selectedCreatives[a % config.selectedCreatives.length]?.name || `Criativo${a + 1}`)
-            .replace('{{conjunto}}', String(a + 1).padStart(2, '0'));
+          const creativeName = config.selectedCreatives[a % config.selectedCreatives.length]?.name || `Criativo${a + 1}`;
+          
+          // Resolve adset name
+          const adsetName = resolveTemplate(config.adsetName, {
+            ...baseContext,
+            adsetIndex: a,
+            creativeName,
+          });
 
           const adsetIndex = itemIndex;
           items.push({
@@ -146,8 +164,14 @@ export default function CreateCampaignPage() {
           // Ads per adset
           const adsForThisAdset = Math.ceil(totalAds / totalAdsets);
           for (let ad = 0; ad < adsForThisAdset; ad++) {
-            const adName = config.adName
-              .replace('{{criativo}}', config.selectedCreatives[ad % config.selectedCreatives.length]?.name || `Criativo${ad + 1}`);
+            const adCreativeName = config.selectedCreatives[ad % config.selectedCreatives.length]?.name || `Criativo${ad + 1}`;
+            
+            // Resolve ad name
+            const adName = resolveTemplate(config.adName, {
+              ...baseContext,
+              adIndex: ad,
+              creativeName: adCreativeName,
+            });
 
             items.push({
               item_type: 'ad',

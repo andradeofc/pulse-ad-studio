@@ -48,11 +48,13 @@ interface Variable {
 
 const dataVariables: Variable[] = [
   { key: 'conta_nome', label: 'Conta (Nome)', example: '#1164 - Silv...', category: 'data' },
+  { key: 'conta_codigo', label: 'Conta (Código)', example: 'SC2-133', category: 'data' },
   { key: 'conta_apelido', label: 'Conta (Apelido)', example: 'PP', category: 'data' },
   { key: 'conta_id', label: 'Conta (ID)', example: '544627', category: 'data' },
   { key: 'criativo', label: 'Criativos', example: '990_AD005_V...', category: 'data' },
   { key: 'conjunto_catalogo', label: 'Conjunto Catálogo', example: 'BUSL1', category: 'data' },
   { key: 'pagina_nome', label: 'Página', example: 'Claire', category: 'data' },
+  { key: 'pagina_nome1', label: 'Nome 1 Página', example: 'Alana', category: 'data' },
   { key: 'budget', label: 'Budget', example: 'ABO', category: 'data' },
   { key: 'estrutura', label: 'Estrutura', example: '1-4-1', category: 'data' },
   { key: 'sequencial', label: 'Seq', example: '08+', category: 'data' },
@@ -162,9 +164,12 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     
     const replacements: Record<string, string> = {
       conta_nome: '#1164 - Silva Ads',
+      conta_codigo: 'SC2-133', // Primeiros 7 caracteres do nome da conta
       conta_apelido: 'PP',
       conta_id: '544627',
       criativo: '990_AD005_V01',
+      pagina_nome: 'Alana Martins Santos',
+      pagina_nome1: 'Alana', // Primeiro nome da página
       budget: 'CBO',
       estrutura: '1-4-1',
       ano: now.getFullYear().toString(),
@@ -632,7 +637,8 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                   <h4 className="text-sm font-medium text-amber-400 mb-2">VARIÁVEIS DINÂMICAS</h4>
                   <ul className="text-xs text-muted-foreground space-y-1">
-                    <li><code className="text-amber-400">{'{{conta_apelido}}'}</code> — Apelido da conta</li>
+                    <li><code className="text-amber-400">{'{{conta_codigo}}'}</code> — Primeiros 7 caracteres do nome</li>
+                    <li><code className="text-amber-400">{'{{pagina_nome1}}'}</code> — Primeiro nome da página</li>
                     <li><code className="text-amber-400">{'{{estrutura}}'}</code> — Estrutura (ex: 1-4-1)</li>
                     <li><code className="text-amber-400">{'{{sequencial:08}}'}</code> — Incrementa a partir de 08</li>
                     <li><code className="text-amber-400">Data/Hora</code> — Resolvidas na criação</li>
