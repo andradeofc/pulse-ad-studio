@@ -109,11 +109,13 @@ export interface CampaignConfig {
 interface CampaignState {
   currentStep: number;
   config: CampaignConfig;
+  pageLimitError: string | null; // Track page limit validation errors
   setStep: (step: number) => void;
   nextStep: () => void;
   prevStep: () => void;
   updateConfig: (updates: Partial<CampaignConfig>) => void;
   resetConfig: () => void;
+  setPageLimitError: (error: string | null) => void;
   
   // Computed values
   getTotalCampaigns: () => number;
@@ -196,6 +198,7 @@ const defaultConfig: CampaignConfig = {
 export const useCampaignStore = create<CampaignState>((set, get) => ({
   currentStep: 1,
   config: { ...defaultConfig },
+  pageLimitError: null,
   
   setStep: (step) => set({ currentStep: step }),
   
@@ -213,8 +216,11 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   
   resetConfig: () => set({ 
     currentStep: 1, 
-    config: { ...defaultConfig } 
+    config: { ...defaultConfig },
+    pageLimitError: null,
   }),
+  
+  setPageLimitError: (error) => set({ pageLimitError: error }),
   
   getTotalCampaigns: () => {
     const { config } = get();

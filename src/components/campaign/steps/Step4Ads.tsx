@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Sparkles, Shield, Edit3 } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Sparkles, Shield, Edit3, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { PageSelector } from '@/components/campaign/PageSelector';
 import { NamingModal } from '@/components/campaign/NamingModal';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 // CTA options mapped to Facebook API call_to_action.type values
 const ctaOptions = [
@@ -41,13 +42,20 @@ const ctaOptions = [
 ];
 
 export function Step4Ads() {
-  const { config, updateConfig, getTotalAds } = useCampaignStore();
+  const { config, updateConfig, getTotalAds, setPageLimitError } = useCampaignStore();
   const totalAds = getTotalAds();
+  const accountsCount = config.selectedAccounts.length || 1;
+  const totalAdsAllAccounts = totalAds * accountsCount;
   const [namingModalOpen, setNamingModalOpen] = useState(false);
 
   const handleApplyNaming = (template: string) => {
     updateConfig({ adName: template });
   };
+
+  // Handle page limit validation callback - update store
+  const handlePageValidation = useCallback((isValid: boolean, error?: string) => {
+    setPageLimitError(isValid ? null : (error || 'Limite de páginas excedido'));
+  }, [setPageLimitError]);
 
   return (
     <div className="space-y-8">
@@ -98,23 +106,42 @@ export function Step4Ads() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-muted-foreground">
-                      {totalAds} anúncios a criar
+                      {totalAdsAllAccounts.toLocaleString('pt-BR')} anúncios a criar
+                      {accountsCount > 1 && (
+                        <span className="text-xs ml-1">({totalAds} × {accountsCount} contas)</span>
+                      )}
                     </span>
                   </div>
                   <PageSelector
                     selectedPages={config.selectedPages}
                     onSelectionChange={(pages, pageNames) => updateConfig({ selectedPages: pages, pageNames })}
                     multiSelect={true}
-                    totalAdsToCreate={totalAds}
+                    totalAdsToCreate={totalAdsAllAccounts}
+                    onValidationChange={handlePageValidation}
                   />
                 </div>
               ) : (
-                <PageSelector
-                  selectedPages={config.selectedPages}
-                  onSelectionChange={(pages, pageNames) => updateConfig({ selectedPages: pages, pageNames })}
-                  multiSelect={false}
-                  totalAdsToCreate={totalAds}
-                />
+                <div className="space-y-3">
+                  {/* Warning for single page mode when ads exceed limit */}
+                  {totalAdsAllAccounts > 250 && (
+                    <Alert className="border-ads-warning/30 bg-ads-warning/10">
+                      <AlertTriangle className="h-4 w-4 text-ads-warning" />
+                      <AlertTitle className="text-ads-warning">Ative o Anti-Spy</AlertTitle>
+                      <AlertDescription className="text-ads-warning/80">
+                        Você está criando <strong>{totalAdsAllAccounts.toLocaleString('pt-BR')}</strong> anúncios. 
+                        Uma única página suporta no máximo 250 anúncios ativos. 
+                        Ative o Anti-Spy para distribuir entre múltiplas páginas.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <PageSelector
+                    selectedPages={config.selectedPages}
+                    onSelectionChange={(pages, pageNames) => updateConfig({ selectedPages: pages, pageNames })}
+                    multiSelect={false}
+                    totalAdsToCreate={totalAdsAllAccounts}
+                    onValidationChange={handlePageValidation}
+                  />
+                </div>
               )}
             </div>
           </CardContent>
