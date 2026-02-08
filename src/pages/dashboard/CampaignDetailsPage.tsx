@@ -39,6 +39,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
+import { 
+  formatCurrency, 
+  formatMultiCurrencyBudget,
+  hasMultipleCurrencies,
+  getPrimaryCurrency 
+} from '@/lib/currencyUtils';
 
 interface CampaignJob {
   id: string;
@@ -389,7 +395,16 @@ export default function CampaignDetailsPage() {
                   <div className="p-4 rounded-lg bg-ads-success/5 border border-ads-success/10">
                     <p className="text-xs text-muted-foreground mb-1">Orçamento Diário</p>
                     <p className="text-2xl font-bold text-ads-success">
-                      R$ {config.budget || 0}
+                      {(() => {
+                        // Check if we have multi-currency budgets
+                        const budgetByCurrency = config.budgetByCurrency || config.adsetBudgetByCurrency;
+                        if (budgetByCurrency && hasMultipleCurrencies(budgetByCurrency)) {
+                          return formatMultiCurrencyBudget(budgetByCurrency);
+                        }
+                        // Single currency - determine which one
+                        const currency = getPrimaryCurrency(budgetByCurrency || {}, 'BRL');
+                        return formatCurrency(config.budget || 0, currency);
+                      })()}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg bg-secondary/50">
