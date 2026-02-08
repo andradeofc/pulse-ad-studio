@@ -53,7 +53,7 @@ serve(async (req) => {
     // 1. Get the profile and verify ownership
     const { data: profile, error: profileError } = await supabase
       .from("facebook_profiles")
-      .select("*")
+      .select("id, name, status")
       .eq("id", profileId)
       .eq("user_id", userId)
       .single();
@@ -68,8 +68,43 @@ serve(async (req) => {
 
     console.log("Syncing ad accounts for profile:", profile.id);
 
+    // Get access token securely from facebook_credentials (service role has access)
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      serviceRoleKey
+    );
+
+    const { data: credentials } = await supabaseService
+      .from("facebook_credentials")
+      .select("access_token")
+      .eq("profile_id", profileId)
+      .single();
+
+    // Fallback to facebook_profiles.access_token if credentials not found (migration period)
+    let accessToken: string;
+    if (credentials?.access_token) {
+      accessToken = credentials.access_token;
+      console.log("Using secure credentials");
+    } else {
+      // Fallback during migration
+      const { data: fallbackProfile } = await supabaseService
+        .from("facebook_profiles")
+        .select("access_token")
+        .eq("id", profileId)
+        .single();
+      
+      if (!fallbackProfile?.access_token) {
+        return new Response(
+          JSON.stringify({ error: "No access token found" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      accessToken = fallbackProfile.access_token;
+      console.warn("Using fallback token");
+    }
+
     const syncedAccounts: any[] = [];
-    const accessToken = profile.access_token;
 
     // Helper function to upsert ad account
     const upsertAdAccount = async (account: any, businessId: string | null, businessName: string | null) => {

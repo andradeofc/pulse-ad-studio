@@ -133,10 +133,10 @@ Deno.serve(async (req) => {
       `[sync-catalogs] user=${user.id} business_id=${businessId} ad_accounts=${adAccountDbIds.length}`,
     );
 
-    // Active profiles for this user
+    // Active profiles for this user (without access_token - it's now stored securely)
     const { data: profiles, error: profilesError } = await supabase
       .from('facebook_profiles')
-      .select('id, access_token')
+      .select('id')
       .eq('user_id', user.id)
       .eq('status', 'active');
 
@@ -147,8 +147,37 @@ Deno.serve(async (req) => {
       });
     }
 
-    const profilesById = new Map(profiles.map((p) => [p.id, p]));
+    // Get credentials for all profiles securely
     const profileIds = profiles.map((p) => p.id);
+    const { data: allCredentials } = await supabase
+      .from('facebook_credentials')
+      .select('profile_id, access_token')
+      .in('profile_id', profileIds);
+
+    // Build map with credentials (fallback to facebook_profiles if needed)
+    const profilesById = new Map<string, { id: string; access_token: string | null }>();
+    for (const p of profiles) {
+      const cred = allCredentials?.find(c => c.profile_id === p.id);
+      profilesById.set(p.id, { 
+        id: p.id, 
+        access_token: cred?.access_token || null 
+      });
+    }
+
+    // Fallback: get tokens from facebook_profiles for profiles without credentials
+    const profilesWithoutCreds = profiles.filter(p => !profilesById.get(p.id)?.access_token);
+    if (profilesWithoutCreds.length > 0) {
+      const { data: fallbackProfiles } = await supabase
+        .from('facebook_profiles')
+        .select('id, access_token')
+        .in('id', profilesWithoutCreds.map(p => p.id));
+      
+      for (const fp of fallbackProfiles || []) {
+        if (fp.access_token) {
+          profilesById.set(fp.id, { id: fp.id, access_token: fp.access_token });
+        }
+      }
+    }
 
     // BM row for this user (name + profile reference)
     const { data: bmRows, error: bmError } = await supabase

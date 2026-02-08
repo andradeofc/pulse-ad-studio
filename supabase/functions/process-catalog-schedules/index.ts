@@ -22,10 +22,7 @@ interface Creative {
   type: string;
 }
 
-interface FacebookProfile {
-  id: string;
-  access_token: string;
-}
+// FacebookProfile interface removed - access_token now stored in facebook_credentials
 
 interface FacebookCatalog {
   catalog_id: string;
@@ -250,15 +247,42 @@ Deno.serve(async (req) => {
           throw new Error(`Creative not found: ${schedule.creative_id}`);
         }
 
-        // Get profile with access token
+        // Get profile details (without access token - it's now stored securely)
         const { data: profile, error: profileError } = await supabase
           .from('facebook_profiles')
-          .select('id, access_token')
+          .select('id')
           .eq('id', schedule.profile_id)
           .single();
 
         if (profileError || !profile) {
           throw new Error(`Profile not found: ${schedule.profile_id}`);
+        }
+
+        // Get access token securely from facebook_credentials (service role has access)
+        const { data: credentials, error: credError } = await supabase
+          .from('facebook_credentials')
+          .select('access_token')
+          .eq('profile_id', schedule.profile_id)
+          .single();
+
+        // Fallback to facebook_profiles.access_token if credentials not found (migration period)
+        let accessToken: string;
+        if (credentials?.access_token) {
+          accessToken = credentials.access_token;
+          console.log(`[process-catalog-schedules] Using secure credentials for profile ${schedule.profile_id}`);
+        } else {
+          // Fallback during migration
+          const { data: fallbackProfile } = await supabase
+            .from('facebook_profiles')
+            .select('access_token')
+            .eq('id', schedule.profile_id)
+            .single();
+          
+          if (!fallbackProfile?.access_token) {
+            throw new Error(`No access token found for profile: ${schedule.profile_id}`);
+          }
+          accessToken = fallbackProfile.access_token;
+          console.warn(`[process-catalog-schedules] Using fallback token for profile ${schedule.profile_id}`);
         }
 
         // Get catalog Facebook ID
@@ -283,7 +307,6 @@ Deno.serve(async (req) => {
           throw new Error(`Product set not found: ${schedule.product_set_id}`);
         }
 
-        const typedProfile = profile as FacebookProfile;
         const typedCatalog = catalog as FacebookCatalog;
         const typedProductSet = productSet as FacebookProductSet;
         const typedCreative = creative as Creative;
@@ -292,7 +315,7 @@ Deno.serve(async (req) => {
         console.log(`[process-catalog-schedules] Fetching products from set ${typedProductSet.product_set_id}`);
         
         const allProducts: FacebookProduct[] = [];
-        let nextUrl: string | null = `https://graph.facebook.com/v21.0/${typedProductSet.product_set_id}/products?fields=id,retailer_id,name&limit=500&access_token=${typedProfile.access_token}`;
+        let nextUrl: string | null = `https://graph.facebook.com/v21.0/${typedProductSet.product_set_id}/products?fields=id,retailer_id,name&limit=500&access_token=${accessToken}`;
         
         while (nextUrl) {
           const productsResponse = await fetchWithRetry(nextUrl, { method: 'GET' }, 'fetch products');
@@ -384,7 +407,7 @@ Deno.serve(async (req) => {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                access_token: typedProfile.access_token,
+                access_token: accessToken,
                 item_type: 'PRODUCT_ITEM',
                 requests: reqs,
               }),
@@ -445,7 +468,7 @@ Deno.serve(async (req) => {
             const statusResult = await checkBatchStatus(
               typedCatalog.catalog_id,
               handle,
-              typedProfile.access_token,
+              accessToken,
               15, // max attempts (15 * 2s = 30s max wait)
               2000 // 2 second intervals
             );

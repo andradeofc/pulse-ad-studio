@@ -105,10 +105,10 @@ Deno.serve(async (req) => {
 
     console.log(`Syncing pages for user: ${user.id}`);
 
-    // Get all Facebook profiles for this user
+    // Get all Facebook profiles for this user (without access_token - it's now stored securely)
     const { data: profiles, error: profilesError } = await supabase
       .from("facebook_profiles")
-      .select("id, access_token, name")
+      .select("id, name")
       .eq("user_id", user.id)
       .eq("status", "active");
 
@@ -127,12 +127,40 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${profiles.length} active profiles`);
 
+    // Create service role client to fetch credentials securely
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
+
     let totalPages = 0;
 
     for (const profile of profiles) {
       try {
         console.log(`Processing profile: ${profile.id} (${profile.name})`);
-        const accessToken = profile.access_token;
+        
+        // Get access token securely
+        const { data: credentials } = await supabaseService
+          .from("facebook_credentials")
+          .select("access_token")
+          .eq("profile_id", profile.id)
+          .single();
+
+        // Fallback to facebook_profiles.access_token if credentials not found
+        let accessToken: string | null = null;
+        if (credentials?.access_token) {
+          accessToken = credentials.access_token;
+        } else {
+          const { data: fallbackProfile } = await supabaseService
+            .from("facebook_profiles")
+            .select("access_token")
+            .eq("id", profile.id)
+            .single();
+          accessToken = fallbackProfile?.access_token || null;
+        }
+
+        if (!accessToken) {
+          console.warn(`No access token found for profile ${profile.id}`);
+          continue;
+        }
 
         // Use Map to deduplicate pages by page_id
         const pagesMap = new Map<string, PageData>();

@@ -67,10 +67,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get the profile to get access token
+    // Get the profile to verify ownership
     const { data: profile, error: profileError } = await supabase
       .from('facebook_profiles')
-      .select('access_token, user_id')
+      .select('user_id')
       .eq('id', catalog.profile_id)
       .single();
 
@@ -89,7 +89,32 @@ Deno.serve(async (req) => {
       });
     }
 
-    const accessToken = profile.access_token;
+    // Get access token securely (service role already in use)
+    const { data: credentials } = await supabase
+      .from('facebook_credentials')
+      .select('access_token')
+      .eq('profile_id', catalog.profile_id)
+      .single();
+
+    // Fallback to facebook_profiles.access_token if credentials not found
+    let accessToken: string | null = null;
+    if (credentials?.access_token) {
+      accessToken = credentials.access_token;
+    } else {
+      const { data: fallbackProfile } = await supabase
+        .from('facebook_profiles')
+        .select('access_token')
+        .eq('id', catalog.profile_id)
+        .single();
+      accessToken = fallbackProfile?.access_token || null;
+    }
+
+    if (!accessToken) {
+      return new Response(JSON.stringify({ error: 'No access token found' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Fetch product sets from Facebook
     const productSetsUrl = `https://graph.facebook.com/v21.0/${catalog_id}/product_sets?fields=id,name,product_count,filter&limit=500&access_token=${accessToken}`;
