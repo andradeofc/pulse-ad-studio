@@ -30,6 +30,8 @@ export interface FacebookAdAccount {
   status: string;
   business_id: string | null;
   business_name: string | null;
+  amount_spent: number | null;
+  spend_updated_at: string | null;
   created_at: string;
 }
 

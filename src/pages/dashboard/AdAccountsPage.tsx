@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Building2,
   User,
+  DollarSign,
+  TrendingUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -107,6 +109,23 @@ export default function AdAccountsPage() {
 
   const activeCount = accounts.filter((a) => a.status === 'active').length;
 
+  // Calculate total spend (memoized for performance)
+  const totalSpend = useMemo(() => {
+    return accounts.reduce((sum, acc) => sum + (acc.amount_spent || 0), 0);
+  }, [accounts]);
+
+  // Format currency
+  const formatCurrency = (value: number | null, currency: string | null) => {
+    if (value === null || value === 0) return '-';
+    const curr = currency || 'BRL';
+    return new Intl.NumberFormat('pt-BR', { 
+      style: 'currency', 
+      currency: curr,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -130,7 +149,7 @@ export default function AdAccountsPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="glass-card">
           <CardContent className="p-6">
             <p className="text-sm text-muted-foreground">Total de Contas</p>
@@ -147,6 +166,23 @@ export default function AdAccountsPage() {
           <CardContent className="p-6">
             <p className="text-sm text-muted-foreground">Business Managers</p>
             <p className="text-3xl font-bold text-foreground mt-1">{uniqueBMs.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card overflow-hidden">
+          <div className="h-1 bg-gradient-to-r from-ads-success to-ads-success/50" />
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  Gasto Total (Lifetime)
+                </p>
+                <p className="text-3xl font-bold text-ads-success mt-1">
+                  {formatCurrency(totalSpend, 'BRL')}
+                </p>
+              </div>
+              <DollarSign className="w-8 h-8 text-ads-success/20" />
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -246,11 +282,14 @@ export default function AdAccountsPage() {
                     <th className="text-left py-4 px-4 text-sm font-medium text-muted-foreground">
                       Status
                     </th>
-                    <th className="text-left py-4 px-4 text-sm font-medium text-muted-foreground">
-                      Moeda
+                    <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">
+                      <div className="flex items-center justify-end gap-2">
+                        <DollarSign className="w-4 h-4" />
+                        Gasto Total
+                      </div>
                     </th>
                     <th className="text-left py-4 px-4 text-sm font-medium text-muted-foreground">
-                      Fuso
+                      Moeda
                     </th>
                   </tr>
                 </thead>
@@ -294,11 +333,13 @@ export default function AdAccountsPage() {
                             {status.label}
                           </Badge>
                         </td>
-                        <td className="py-4 px-4">
-                          <span className="text-sm text-foreground">{account.currency || '-'}</span>
+                        <td className="py-4 px-4 text-right">
+                          <span className={`text-sm font-medium ${account.amount_spent && account.amount_spent > 0 ? 'text-ads-success' : 'text-muted-foreground'}`}>
+                            {formatCurrency(account.amount_spent, account.currency)}
+                          </span>
                         </td>
                         <td className="py-4 px-4">
-                          <span className="text-xs text-muted-foreground">{account.timezone || '-'}</span>
+                          <span className="text-sm text-foreground">{account.currency || '-'}</span>
                         </td>
                       </motion.tr>
                     );
