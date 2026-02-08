@@ -444,6 +444,30 @@ export type Database = {
           },
         ]
       }
+      facebook_credentials: {
+        Row: {
+          access_token: string
+          created_at: string
+          id: string
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string
+          id?: string
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          id?: string
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       facebook_pages: {
         Row: {
           access_token: string | null
