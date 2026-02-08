@@ -109,6 +109,8 @@ export default function AdminUsersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', plan: 'starter' });
 
   // Fetch users with stats
   const { data: usersData, isLoading } = useQuery({
@@ -220,6 +222,52 @@ export default function AdminUsersPage() {
     setShowEditModal(true);
   };
 
+  // Create user mutation
+  const createUserMutation = useMutation({
+    mutationFn: async (userData: { name: string; email: string; password: string; plan: string }) => {
+      // Create auth user via admin API (this would need an edge function for full implementation)
+      // For now, we'll use signUp which requires email confirmation
+      const { data, error } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          data: { name: userData.name },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Update the auto-created profile with the selected plan
+        await supabase
+          .from('user_profiles')
+          .update({ plan: userData.plan, full_name: userData.name })
+          .eq('user_id', data.user.id);
+
+        // Log admin action
+        await supabase.from('admin_audit_logs').insert({
+          admin_user_id: (await supabase.auth.getUser()).data.user?.id,
+          action: 'create_user',
+          target_type: 'user',
+          target_id: data.user.id,
+          details: { email: userData.email, name: userData.name, plan: userData.plan },
+          ip_address: 'unknown',
+        });
+      }
+
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: 'Usuário criado com sucesso', description: 'Um email de confirmação foi enviado.' });
+      setShowCreateModal(false);
+      setNewUser({ name: '', email: '', password: '', plan: 'starter' });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro ao criar usuário', description: String(error), variant: 'destructive' });
+    },
+  });
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -239,7 +287,7 @@ export default function AdminUsersPage() {
               <Download className="w-4 h-4 mr-2" />
               Exportar CSV
             </Button>
-            <Button size="sm" className="bg-red-600 hover:bg-red-700">
+            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => setShowCreateModal(true)}>
               <Plus className="w-4 h-4 mr-2" />
               Criar Usuário
             </Button>
@@ -467,6 +515,74 @@ export default function AdminUsersPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Create User Modal */}
+        <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Criar Novo Usuário</DialogTitle>
+              <DialogDescription>
+                Preencha os dados para criar uma nova conta
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Nome Completo</Label>
+                <Input
+                  value={newUser.name}
+                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                  placeholder="João Silva"
+                />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  placeholder="email@exemplo.com"
+                />
+              </div>
+              <div>
+                <Label>Senha</Label>
+                <Input
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  placeholder="Mínimo 6 caracteres"
+                />
+              </div>
+              <div>
+                <Label>Plano</Label>
+                <Select
+                  value={newUser.plan}
+                  onValueChange={(v) => setNewUser({ ...newUser, plan: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="starter">Starter</SelectItem>
+                    <SelectItem value="pro">Pro</SelectItem>
+                    <SelectItem value="enterprise">Enterprise</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreateModal(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => createUserMutation.mutate(newUser)}
+                disabled={createUserMutation.isPending || !newUser.email || !newUser.password || newUser.password.length < 6}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {createUserMutation.isPending ? 'Criando...' : 'Criar Usuário'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Edit User Modal */}
         <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
