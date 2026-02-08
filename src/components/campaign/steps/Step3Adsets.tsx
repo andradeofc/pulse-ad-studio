@@ -527,7 +527,7 @@ export function Step3Adsets() {
                   catalogDbId={config.catalogDbId}
                   catalogId={config.catalogId}
                   value={config.productSetId}
-                  onChange={(productSetId) => updateConfig({ productSetId })}
+                  onChange={(productSetId, productSetName) => updateConfig({ productSetId, productSetName })}
                 />
               </>
             ) : (

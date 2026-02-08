@@ -51,7 +51,7 @@ const dataVariables: Variable[] = [
   { key: 'conta_apelido', label: 'Conta (Apelido)', example: 'PP', category: 'data' },
   { key: 'conta_id', label: 'Conta (ID)', example: '544627', category: 'data' },
   { key: 'criativo', label: 'Criativos', example: '990_AD005_V...', category: 'data' },
-  { key: 'catalogo_nome', label: 'Catálogo', example: 'BUSL1', category: 'data' },
+  { key: 'conjunto_catalogo', label: 'Conjunto Catálogo', example: 'BUSL1', category: 'data' },
   { key: 'pagina_nome', label: 'Página', example: 'Claire', category: 'data' },
   { key: 'budget', label: 'Budget', example: 'ABO', category: 'data' },
   { key: 'estrutura', label: 'Estrutura', example: '1-4-1', category: 'data' },
@@ -71,7 +71,7 @@ const defaultPresets: Preset[] = [
   {
     id: '1',
     name: 'NTP',
-    template: '[CP{{sequencial:01}}] [{{conta_apelido}} + {{catalogo_nome}}] [{{nicho}}] [{{pagina_nome}}] [TDC {{budget}}] [{{dia}}/{{mes}}] - {{catalogo_nome}}',
+    template: '[CP{{sequencial:01}}] [{{conta_apelido}} + {{conjunto_catalogo}}] [{{nicho}}] [{{pagina_nome}}] [TDC {{budget}}] [{{dia}}/{{mes}}] - {{conjunto_catalogo}}',
     context: 'campaign',
   },
   {

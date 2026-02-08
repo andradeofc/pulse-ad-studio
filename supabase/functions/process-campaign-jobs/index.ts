@@ -1059,8 +1059,8 @@ Deno.serve(async (req) => {
       const accountNickname = currentAccount.name?.split(' - ')[0] || currentAccount.name || 'Conta';
       const accountId = currentAccount.account_id?.replace('act_', '') || '';
 
-      // Get catalog name for naming variables
-      const catalogName = config.catalogName || config.selectedBusinessManagerName || '';
+      // Get product set name (conjunto de catálogo) for naming variables
+      const productSetName = config.productSetName || '';
       
       // Get first page name for naming variables
       const firstPageName = resolvedPages.length > 0 
@@ -1073,7 +1073,7 @@ Deno.serve(async (req) => {
           .replace(/\{\{conta_apelido\}\}/g, accountNickname)
           .replace(/\{\{conta_nome\}\}/g, currentAccount.name || '')
           .replace(/\{\{conta_id\}\}/g, accountId)
-          .replace(/\{\{catalogo_nome\}\}/g, catalogName)
+          .replace(/\{\{conjunto_catalogo\}\}/g, productSetName)
           .replace(/\{\{pagina_nome\}\}/g, firstPageName);
         
         // Replace custom naming variables from config

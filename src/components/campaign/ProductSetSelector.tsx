@@ -20,7 +20,7 @@ interface ProductSetSelectorProps {
   catalogDbId: string; // Database UUID of the catalog
   catalogId: string; // Facebook catalog_id
   value: string;
-  onChange: (productSetId: string) => void;
+  onChange: (productSetId: string, productSetName: string) => void;
 }
 
 export function ProductSetSelector({ catalogDbId, catalogId, value, onChange }: ProductSetSelectorProps) {
@@ -156,7 +156,7 @@ export function ProductSetSelector({ catalogDbId, catalogId, value, onChange }: 
             {filteredSets.map((set) => (
               <div
                 key={set.id}
-                onClick={() => onChange(set.product_set_id)}
+                onClick={() => onChange(set.product_set_id, set.name)}
                 className={cn(
                   "flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors",
                   value === set.product_set_id

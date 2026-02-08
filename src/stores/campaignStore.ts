@@ -50,6 +50,7 @@ export interface CampaignConfig {
   catalogDbId: string; // Database UUID for fetching product sets
   catalogName: string; // Catalog name for naming variables
   productSetId: string; // Facebook product_set_id (for adset promoted_object.product_set_id)
+  productSetName: string; // Product set name for naming variables ({{conjunto_catalogo}})
   businessManagerId: string;
   catalogImage: string;
   duplicateProducts: number;
@@ -154,6 +155,7 @@ const defaultConfig: CampaignConfig = {
   catalogDbId: '',
   catalogName: '',
   productSetId: '',
+  productSetName: '',
   businessManagerId: '',
   catalogImage: '',
   duplicateProducts: 5,
