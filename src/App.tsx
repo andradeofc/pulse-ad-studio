@@ -23,6 +23,7 @@ import FacebookPagesPage from "@/pages/dashboard/FacebookPagesPage";
 import AdAccountsPage from "@/pages/dashboard/AdAccountsPage";
 import CreateCampaignPage from "@/pages/dashboard/CreateCampaignPage";
 import ProcessingQueuePage from "@/pages/dashboard/ProcessingQueuePage";
+import MediaLibraryPage from "@/pages/dashboard/MediaLibraryPage";
 
 // Placeholder
 import { PlaceholderPage } from "@/components/PlaceholderPage";
@@ -61,7 +62,7 @@ const App = () => {
             <Route path="/campanhas/criar" element={<CreateCampaignPage />} />
             <Route path="/paginas" element={<FacebookPagesPage />} />
             <Route path="/fila-processamento" element={<ProcessingQueuePage />} />
-            <Route path="/biblioteca-midia" element={<PlaceholderPage title="Biblioteca de Mídia" description="Upload e gerenciamento de criativos" />} />
+            <Route path="/biblioteca-midia" element={<MediaLibraryPage />} />
             <Route path="/publicos" element={<PlaceholderPage title="Públicos" description="Gerencie seus públicos salvos" />} />
             <Route path="/analytics" element={<PlaceholderPage title="Analytics" description="Métricas e performance" />} />
             <Route path="/relatorios" element={<PlaceholderPage title="Relatórios" description="Relatórios personalizados" />} />
