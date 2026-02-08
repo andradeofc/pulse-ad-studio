@@ -65,6 +65,12 @@
     --ads-success: 160 84% 39%;         /* #10b981 - Emerald */
     --ads-danger: 0 84% 60%;            /* #ef4444 - Red */
     
+    /* Semantic status colors */
+    --warning: 38 92% 50%;              /* Amber for warnings */
+    --warning-foreground: 210 40% 98%;
+    --success: 160 84% 39%;             /* Emerald for success */
+    --success-foreground: 210 40% 98%;
+    
     /* Gradient tokens */
     --gradient-primary: linear-gradient(135deg, hsl(160 84% 39%), hsl(160 84% 50%));
     --gradient-hero: linear-gradient(135deg, hsl(160 84% 39% / 0.2), hsl(217 91% 60% / 0.1));

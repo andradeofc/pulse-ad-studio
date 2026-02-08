@@ -18,6 +18,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Briefcase,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -113,11 +114,19 @@ interface Profile {
   avatar_url: string | null;
 }
 
+interface BusinessManager {
+  id: string;
+  business_id: string;
+  name: string;
+  profile_id: string;
+}
+
 interface Catalog {
   id: string;
   catalog_id: string;
   name: string;
   profile_id: string;
+  business_id: string | null;
   product_count: number | null;
 }
 
@@ -133,10 +142,13 @@ export default function CatalogSchedulingPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSyncingCatalogs, setIsSyncingCatalogs] = useState(false);
+  const [isSyncingProductSets, setIsSyncingProductSets] = useState(false);
   
   // Form state
   const [selectedCreative, setSelectedCreative] = useState<string>('');
   const [selectedProfile, setSelectedProfile] = useState<string>('');
+  const [selectedBusinessManager, setSelectedBusinessManager] = useState<string>('');
   const [selectedCatalog, setSelectedCatalog] = useState<string>('');
   const [selectedProductSet, setSelectedProductSet] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -191,16 +203,43 @@ export default function CatalogSchedulingPage() {
     },
   });
 
-  // Fetch catalogs based on selected profile
-  const { data: catalogs, isLoading: loadingCatalogs } = useQuery({
-    queryKey: ['facebook-catalogs', selectedProfile],
+  // Fetch business managers based on selected profile
+  const { data: businessManagers, isLoading: loadingBusinessManagers } = useQuery({
+    queryKey: ['facebook-business-managers', selectedProfile],
     queryFn: async () => {
       if (!selectedProfile) return [];
       const { data, error } = await supabase
-        .from('facebook_catalogs')
-        .select('id, catalog_id, name, profile_id, product_count')
+        .from('facebook_business_managers')
+        .select('id, business_id, name, profile_id')
         .eq('profile_id', selectedProfile)
         .order('name');
+
+      if (error) throw error;
+      return data as BusinessManager[];
+    },
+    enabled: !!selectedProfile,
+  });
+
+  // Fetch catalogs based on selected business manager
+  const { data: catalogs, isLoading: loadingCatalogs, refetch: refetchCatalogs } = useQuery({
+    queryKey: ['facebook-catalogs', selectedProfile, selectedBusinessManager],
+    queryFn: async () => {
+      if (!selectedProfile) return [];
+      
+      let query = supabase
+        .from('facebook_catalogs')
+        .select('id, catalog_id, name, profile_id, business_id, product_count')
+        .eq('profile_id', selectedProfile);
+      
+      // Filter by business manager if selected
+      if (selectedBusinessManager) {
+        const bm = businessManagers?.find(b => b.id === selectedBusinessManager);
+        if (bm) {
+          query = query.eq('business_id', bm.business_id);
+        }
+      }
+      
+      const { data, error } = await query.order('name');
 
       if (error) throw error;
       return data as Catalog[];
@@ -209,7 +248,7 @@ export default function CatalogSchedulingPage() {
   });
 
   // Fetch product sets based on selected catalog
-  const { data: productSets, isLoading: loadingProductSets } = useQuery({
+  const { data: productSets, isLoading: loadingProductSets, refetch: refetchProductSets } = useQuery({
     queryKey: ['facebook-product-sets', selectedCatalog],
     queryFn: async () => {
       if (!selectedCatalog) return [];
@@ -227,13 +266,82 @@ export default function CatalogSchedulingPage() {
 
   // Reset dependent selections when parent changes
   useEffect(() => {
+    setSelectedBusinessManager('');
     setSelectedCatalog('');
     setSelectedProductSet('');
   }, [selectedProfile]);
 
   useEffect(() => {
+    setSelectedCatalog('');
+    setSelectedProductSet('');
+  }, [selectedBusinessManager]);
+
+  useEffect(() => {
     setSelectedProductSet('');
   }, [selectedCatalog]);
+
+  // Sync catalogs from Facebook
+  const handleSyncCatalogs = async () => {
+    if (!selectedProfile) return;
+    
+    setIsSyncingCatalogs(true);
+    try {
+      const { error } = await supabase.functions.invoke('facebook-sync-catalogs', {
+        body: { profileId: selectedProfile },
+      });
+
+      if (error) throw error;
+
+      await refetchCatalogs();
+      toast({
+        title: 'Catálogos sincronizados',
+        description: 'Os catálogos foram atualizados com sucesso.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao sincronizar',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncingCatalogs(false);
+    }
+  };
+
+  // Sync product sets from Facebook
+  const handleSyncProductSets = async () => {
+    if (!selectedCatalog) return;
+    
+    const catalog = catalogs?.find(c => c.id === selectedCatalog);
+    if (!catalog) return;
+    
+    setIsSyncingProductSets(true);
+    try {
+      const { error } = await supabase.functions.invoke('facebook-sync-product-sets', {
+        body: { 
+          profileId: selectedProfile,
+          catalogId: catalog.catalog_id,
+          internalCatalogId: selectedCatalog,
+        },
+      });
+
+      if (error) throw error;
+
+      await refetchProductSets();
+      toast({
+        title: 'Conjuntos sincronizados',
+        description: 'Os conjuntos de produtos foram atualizados com sucesso.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao sincronizar',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncingProductSets(false);
+    }
+  };
 
   // Create schedule mutation
   const createScheduleMutation = useMutation({
@@ -313,6 +421,7 @@ export default function CatalogSchedulingPage() {
   const resetForm = () => {
     setSelectedCreative('');
     setSelectedProfile('');
+    setSelectedBusinessManager('');
     setSelectedCatalog('');
     setSelectedProductSet('');
     setSelectedDate(undefined);
@@ -324,11 +433,11 @@ export default function CatalogSchedulingPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" /> Pendente</Badge>;
+        return <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30"><Clock className="w-3 h-3 mr-1" /> Pendente</Badge>;
       case 'processing':
-        return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Processando</Badge>;
+        return <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Processando</Badge>;
       case 'completed':
-        return <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/30"><CheckCircle2 className="w-3 h-3 mr-1" /> Concluído</Badge>;
+        return <Badge variant="outline" className="bg-success/10 text-success border-success/30"><CheckCircle2 className="w-3 h-3 mr-1" /> Concluído</Badge>;
       case 'failed':
         return <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30"><XCircle className="w-3 h-3 mr-1" /> Falhou</Badge>;
       default:
@@ -471,12 +580,61 @@ export default function CatalogSchedulingPage() {
                 </Select>
               </div>
 
-              {/* Catalog Selection */}
+              {/* Business Manager Selection */}
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
-                  <FolderOpen className="w-4 h-4" />
-                  Catálogo
+                  <Briefcase className="w-4 h-4" />
+                  Business Manager
                 </Label>
+                <Select 
+                  value={selectedBusinessManager} 
+                  onValueChange={setSelectedBusinessManager}
+                  disabled={!selectedProfile}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={selectedProfile ? "Selecione o Business Manager" : "Selecione um perfil primeiro"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {loadingBusinessManagers ? (
+                      <div className="p-2 text-center text-muted-foreground">Carregando...</div>
+                    ) : businessManagers?.length === 0 ? (
+                      <div className="p-2 text-center text-muted-foreground">
+                        Nenhum Business Manager encontrado
+                      </div>
+                    ) : (
+                      <>
+                        <SelectItem value="all">Todos os catálogos do perfil</SelectItem>
+                        {businessManagers?.map((bm) => (
+                          <SelectItem key={bm.id} value={bm.id}>
+                            {bm.name}
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Catalog Selection */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4" />
+                    Catálogo
+                  </Label>
+                  {selectedProfile && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleSyncCatalogs}
+                      disabled={isSyncingCatalogs}
+                      className="h-7 text-xs"
+                    >
+                      <RefreshCw className={cn("w-3 h-3 mr-1", isSyncingCatalogs && "animate-spin")} />
+                      Sincronizar
+                    </Button>
+                  )}
+                </div>
                 <Select 
                   value={selectedCatalog} 
                   onValueChange={setSelectedCatalog}
@@ -490,7 +648,7 @@ export default function CatalogSchedulingPage() {
                       <div className="p-2 text-center text-muted-foreground">Carregando...</div>
                     ) : catalogs?.length === 0 ? (
                       <div className="p-2 text-center text-muted-foreground">
-                        Nenhum catálogo encontrado para este perfil
+                        Nenhum catálogo encontrado. Clique em Sincronizar.
                       </div>
                     ) : (
                       catalogs?.map((catalog) => (
@@ -512,10 +670,24 @@ export default function CatalogSchedulingPage() {
 
               {/* Product Set Selection */}
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Layers className="w-4 h-4" />
-                  Conjunto de Produtos
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Layers className="w-4 h-4" />
+                    Conjunto de Produtos
+                  </Label>
+                  {selectedCatalog && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleSyncProductSets}
+                      disabled={isSyncingProductSets}
+                      className="h-7 text-xs"
+                    >
+                      <RefreshCw className={cn("w-3 h-3 mr-1", isSyncingProductSets && "animate-spin")} />
+                      Sincronizar
+                    </Button>
+                  )}
+                </div>
                 <Select 
                   value={selectedProductSet} 
                   onValueChange={setSelectedProductSet}
@@ -529,7 +701,7 @@ export default function CatalogSchedulingPage() {
                       <div className="p-2 text-center text-muted-foreground">Carregando...</div>
                     ) : productSets?.length === 0 ? (
                       <div className="p-2 text-center text-muted-foreground">
-                        Nenhum conjunto encontrado para este catálogo
+                        Nenhum conjunto encontrado. Clique em Sincronizar.
                       </div>
                     ) : (
                       productSets?.map((set) => (
@@ -744,7 +916,7 @@ export default function CatalogSchedulingPage() {
                       </TableCell>
                       <TableCell>
                         {schedule.status === 'completed' ? (
-                          <span className="text-sm font-medium text-green-500">
+                          <span className="text-sm font-medium text-success">
                             {schedule.products_updated} atualizados
                           </span>
                         ) : (
@@ -791,17 +963,18 @@ export default function CatalogSchedulingPage() {
       </Card>
 
       {/* Info Card */}
-      <Card className="border-blue-500/30 bg-blue-500/5">
+      <Card className="border-primary/30 bg-primary/5">
         <CardContent className="pt-6">
           <div className="flex gap-4">
-            <AlertCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
             <div className="space-y-2">
               <h4 className="font-medium text-foreground">Como funciona o agendamento</h4>
               <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                <li>Selecione o perfil do Facebook e depois o Business Manager para filtrar os catálogos</li>
+                <li>Use o botão "Sincronizar" para buscar catálogos e conjuntos do Facebook</li>
                 <li>O sistema verifica agendamentos pendentes a cada minuto</li>
                 <li>No horário agendado, a mídia será adicionada a todos os produtos do conjunto selecionado</li>
                 <li>Você pode acompanhar o status do processamento em tempo real nesta página</li>
-                <li>Agendamentos concluídos mostram quantos produtos foram atualizados</li>
               </ul>
             </div>
           </div>
