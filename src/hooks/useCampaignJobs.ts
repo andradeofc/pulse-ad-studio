@@ -102,7 +102,7 @@ export function useCreateCampaignJob() {
 
       const hash = generateHash();
 
-      // Create the job
+      // Create the job first
       const { data: job, error: jobError } = await supabase
         .from('campaign_jobs')
         .insert({
@@ -122,31 +122,61 @@ export function useCreateCampaignJob() {
 
       if (jobError) throw jobError;
 
-      // Create job items with proper parent references
+      // Create job items using batch insert for performance
+      // First pass: create all items and track their temp IDs
       if (params.items.length > 0) {
-        const createdIds: string[] = [];
+        // Generate UUIDs for all items upfront
+        const itemsWithIds = params.items.map((item, index) => ({
+          ...item,
+          tempId: crypto.randomUUID(),
+          originalIndex: index,
+        }));
 
-        for (const item of params.items) {
-          const parentId = item.parent_index !== undefined && item.parent_index >= 0
-            ? createdIds[item.parent_index]
-            : null;
+        // Build the insert array with proper parent references
+        const itemsToInsert = itemsWithIds.map((item) => {
+          // Find parent temp ID if parent_index is specified
+          let parentId: string | null = null;
+          if (item.parent_index !== undefined && item.parent_index >= 0) {
+            const parentItem = itemsWithIds[item.parent_index];
+            parentId = parentItem?.tempId || null;
+          }
 
-          const { data: createdItem, error: itemError } = await supabase
-            .from('campaign_job_items')
-            .insert({
-              job_id: job.id,
-              item_type: item.item_type,
-              parent_id: parentId,
-              name: item.name,
-              status: 'pending',
-              config: item.config || {},
-            })
-            .select()
-            .single();
+          return {
+            id: item.tempId,
+            job_id: job.id,
+            item_type: item.item_type,
+            parent_id: parentId,
+            name: item.name,
+            status: 'pending' as const,
+            config: item.config || {},
+          };
+        });
 
-          if (itemError) throw itemError;
-          createdIds.push(createdItem.id);
+        // Batch insert in chunks of 500 to avoid payload limits
+        const BATCH_SIZE = 500;
+        const batches = [];
+        for (let i = 0; i < itemsToInsert.length; i += BATCH_SIZE) {
+          batches.push(itemsToInsert.slice(i, i + BATCH_SIZE));
         }
+
+        console.log(`[useCampaignJobs] Inserting ${itemsToInsert.length} items in ${batches.length} batch(es)`);
+
+        // Execute batch inserts in parallel for speed
+        const insertPromises = batches.map(async (batch, batchIndex) => {
+          const { error: batchError } = await supabase
+            .from('campaign_job_items')
+            .insert(batch);
+
+          if (batchError) {
+            console.error(`[useCampaignJobs] Batch ${batchIndex + 1} failed:`, batchError);
+            throw batchError;
+          }
+          
+          console.log(`[useCampaignJobs] Batch ${batchIndex + 1}/${batches.length} inserted (${batch.length} items)`);
+        });
+
+        await Promise.all(insertPromises);
+        console.log(`[useCampaignJobs] All ${itemsToInsert.length} items inserted successfully`);
       }
 
       return job as CampaignJob;
