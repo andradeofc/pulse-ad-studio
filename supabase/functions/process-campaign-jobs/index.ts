@@ -889,6 +889,7 @@ async function createAdsetsBatch(
 }
 
 // Create catalog creatives using batch API with smart page distribution
+// CRITICAL: This function now checks for existing creative_id in config to prevent duplicates on re-execution
 async function createCatalogCreativesBatch(
   accessToken: string,
   adAccountId: string,
@@ -902,18 +903,40 @@ async function createCatalogCreativesBatch(
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const creativeIdMap = new Map<string, string>();
   
+  // CRITICAL: Check for ads that already have a creative_id saved (from previous execution)
+  // This prevents creating duplicate creatives when job resumes after timeout
+  const adsNeedingCreatives: typeof ads = [];
+  
+  for (const ad of ads) {
+    const existingCreativeId = ad.config?.savedCreativeId;
+    if (existingCreativeId) {
+      // Creative already created in previous execution, reuse it
+      creativeIdMap.set(ad.id, existingCreativeId);
+      console.log(`[batch] Reusing existing creative ${existingCreativeId} for ad ${ad.id}`);
+    } else {
+      adsNeedingCreatives.push(ad);
+    }
+  }
+  
+  if (adsNeedingCreatives.length === 0) {
+    console.log(`[batch] All ${ads.length} ads already have creatives, skipping creation`);
+    return creativeIdMap;
+  }
+  
+  console.log(`[batch] Creating creatives for ${adsNeedingCreatives.length} ads (${ads.length - adsNeedingCreatives.length} already have creatives)`);
+  
   // Calculate smart page distribution if anti-spy is enabled
   let pageAssignments: Array<{ pageId: string; instagramActorId: string | null }> = [];
   
   if (config.antiSpyEnabled && resolvedPages.length > 1) {
-    pageAssignments = calculateSmartPageDistribution(ads.length, resolvedPages);
+    pageAssignments = calculateSmartPageDistribution(adsNeedingCreatives.length, resolvedPages);
   }
   
   // Build batch requests for creatives with smart page distribution
-  const batchItems: Array<{ item: typeof ads[0]; batchItem: BatchRequestItem }> = [];
+  const batchItems: Array<{ item: typeof adsNeedingCreatives[0]; batchItem: BatchRequestItem }> = [];
   
-  for (let i = 0; i < ads.length; i++) {
-    const ad = ads[i];
+  for (let i = 0; i < adsNeedingCreatives.length; i++) {
+    const ad = adsNeedingCreatives[i];
     
     // Use smart distribution if available, otherwise use default
     let currentPageId = defaultPageId;
@@ -943,7 +966,7 @@ async function createCatalogCreativesBatch(
   const batchSize = getAdaptiveBatchSize(BATCH_CONFIG.CREATIVE_BATCH_SIZE || BATCH_CONFIG.AD_BATCH_SIZE, adAccountId);
   const chunks = chunkArray(batchItems, batchSize);
   
-  console.log(`[batch] Creating ${ads.length} creatives in ${chunks.length} batches (size: ${batchSize})`);
+  console.log(`[batch] Creating ${adsNeedingCreatives.length} creatives in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
     const batch = chunk.map(c => c.batchItem);
@@ -964,6 +987,14 @@ async function createCatalogCreativesBatch(
         
         if (result.code === 200 && parsedBody.id) {
           creativeIdMap.set(item.id, parsedBody.id);
+          
+          // CRITICAL: Save the creative_id to config so we can reuse it if job restarts
+          // This prevents duplicate creatives on re-execution after timeout
+          const updatedConfig = { ...item.config, savedCreativeId: parsedBody.id };
+          await supabase
+            .from('campaign_job_items')
+            .update({ config: updatedConfig })
+            .eq('id', item.id);
         } else {
           const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
           console.error(`[batch] Creative failed for ad ${item.id}:`, errorMsg);
