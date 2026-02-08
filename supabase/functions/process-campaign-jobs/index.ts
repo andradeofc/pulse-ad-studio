@@ -1751,27 +1751,46 @@ Deno.serve(async (req) => {
     // Separate items by type - ONLY process pending items to prevent duplicates on re-execution
     // This is critical: if a job times out and is re-triggered, we must not re-create items that already have facebook_id
     // ALSO check for savedAdId/savedFacebookId in config for items created but not properly updated
+    // Check if an item has been saved (created in Facebook) - for campaigns and adsets
     const hasSavedId = (item: any): boolean => {
       const config = item.config || {};
-      return !!(config.savedAdId || config.savedFacebookId || config.savedCreativeId);
+      // IMPORTANT: savedCreativeId is NOT included here because it means the creative was created,
+      // but the AD itself may not have been created yet. We need savedAdId or savedFacebookId for ads.
+      return !!(config.savedAdId || config.savedFacebookId);
+    };
+    
+    // Check if an ad specifically has been created (must have savedAdId, not just savedCreativeId)
+    const adHasBeenCreated = (item: any): boolean => {
+      const config = item.config || {};
+      // An ad is considered created ONLY if it has savedAdId or savedFacebookId
+      // savedCreativeId alone means the creative was uploaded but the ad entity was NOT created
+      return !!(config.savedAdId || config.savedFacebookId);
     };
     
     const campaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'pending' && !i.facebook_id && !hasSavedId(i));
     const adsets = items.filter((i) => i.item_type === 'adset' && i.status === 'pending' && !i.facebook_id && !hasSavedId(i));
-    const ads = items.filter((i) => i.item_type === 'ad' && i.status === 'pending' && !i.facebook_id && !hasSavedId(i));
+    // CRITICAL: For ads, use adHasBeenCreated() which does NOT consider savedCreativeId as "created"
+    const ads = items.filter((i) => i.item_type === 'ad' && i.status === 'pending' && !i.facebook_id && !adHasBeenCreated(i));
     
     // CRITICAL: Collect items with facebook_id regardless of status (completed OR failed with facebook_id)
     // This handles the case where an item was created successfully but marked as failed due to timeout
     // We need their facebook_ids to properly reference them as parents for child items
     const completedCampaigns = items.filter((i) => i.item_type === 'campaign' && (i.facebook_id || hasSavedId(i)));
     const completedAdsets = items.filter((i) => i.item_type === 'adset' && (i.facebook_id || hasSavedId(i)));
-    const completedAds = items.filter((i) => i.item_type === 'ad' && (i.facebook_id || hasSavedId(i)));
+    // CRITICAL: For ads, use adHasBeenCreated() - savedCreativeId alone does NOT mean the ad was created
+    const completedAds = items.filter((i) => i.item_type === 'ad' && (i.facebook_id || adHasBeenCreated(i)));
     
     // Fix incorrectly failed/pending items that have facebook_id or savedId - they were actually created successfully
-    const itemsNeedingFix = items.filter((i) => 
-      (i.status === 'failed' || i.status === 'pending') && 
-      (i.facebook_id || hasSavedId(i))
-    );
+    // IMPORTANT: For ads, only fix if they have savedAdId/savedFacebookId, NOT just savedCreativeId
+    const itemsNeedingFix = items.filter((i) => {
+      const needsFix = (i.status === 'failed' || i.status === 'pending') && i.facebook_id;
+      const hasSaved = hasSavedId(i);
+      // For ads, we also need to check adHasBeenCreated specifically
+      if (i.item_type === 'ad') {
+        return needsFix || ((i.status === 'failed' || i.status === 'pending') && adHasBeenCreated(i));
+      }
+      return needsFix || ((i.status === 'failed' || i.status === 'pending') && hasSaved);
+    });
     
     if (itemsNeedingFix.length > 0) {
       console.log(`[process-jobs] Fixing ${itemsNeedingFix.length} items that have facebook_id/savedId but wrong status`);
