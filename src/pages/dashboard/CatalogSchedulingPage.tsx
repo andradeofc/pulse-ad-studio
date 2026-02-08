@@ -282,12 +282,31 @@ export default function CatalogSchedulingPage() {
 
   // Sync catalogs from Facebook
   const handleSyncCatalogs = async () => {
-    if (!selectedProfile) return;
+    if (!selectedProfile || !selectedBusinessManager) {
+      toast({
+        title: 'Selecione uma BM',
+        description: 'Você precisa selecionar um Business Manager antes de sincronizar catálogos.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const bm = businessManagers?.find(b => b.id === selectedBusinessManager);
+    if (!bm) {
+      toast({
+        title: 'Business Manager não encontrado',
+        description: 'Selecione um Business Manager válido.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     setIsSyncingCatalogs(true);
     try {
       const { error } = await supabase.functions.invoke('facebook-sync-catalogs', {
-        body: { profileId: selectedProfile },
+        body: { 
+          business_id: bm.business_id,
+        },
       });
 
       if (error) throw error;
