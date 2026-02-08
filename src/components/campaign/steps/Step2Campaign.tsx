@@ -144,8 +144,11 @@ export function Step2Campaign() {
   // Check if there are mixed currencies
   const hasMixedCurrencies = selectedCurrencies.length > 1;
 
-  const handleApplyNaming = (template: string) => {
-    updateConfig({ campaignName: template });
+  const handleApplyNaming = (template: string, customVariables?: Record<string, string>) => {
+    updateConfig({ 
+      campaignName: template,
+      ...(customVariables ? { customNamingVariables: customVariables } : {})
+    });
   };
 
   return (
@@ -653,6 +656,7 @@ export function Step2Campaign() {
         context="campaign"
         value={config.campaignName}
         onApply={handleApplyNaming}
+        initialCustomVariables={config.customNamingVariables}
       />
     </div>
   );
