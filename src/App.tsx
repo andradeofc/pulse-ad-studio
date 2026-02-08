@@ -30,6 +30,14 @@ import SettingsPage from "@/pages/dashboard/SettingsPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
 import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
 
+// Admin Pages
+import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
+import AdminUsersPage from "@/pages/admin/AdminUsersPage";
+import AdminCampaignsPage from "@/pages/admin/AdminCampaignsPage";
+import AdminSearchPage from "@/pages/admin/AdminSearchPage";
+import AdminAuditLogsPage from "@/pages/admin/AdminAuditLogsPage";
+import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
+
 // Placeholder
 import { PlaceholderPage } from "@/components/PlaceholderPage";
 import NotFound from "@/pages/NotFound";
@@ -80,6 +88,14 @@ const App = () => {
             <Route path="/configuracoes" element={<SettingsPage />} />
             <Route path="/ajuda" element={<PlaceholderPage title="Obter Ajuda" description="Central de ajuda e suporte" />} />
           </Route>
+
+          {/* Admin Routes - Obscure path for security */}
+          <Route path="/ops-center" element={<AdminDashboardPage />} />
+          <Route path="/ops-center/usuarios" element={<AdminUsersPage />} />
+          <Route path="/ops-center/campanhas" element={<AdminCampaignsPage />} />
+          <Route path="/ops-center/busca" element={<AdminSearchPage />} />
+          <Route path="/ops-center/auditoria" element={<AdminAuditLogsPage />} />
+          <Route path="/ops-center/configuracoes" element={<AdminSettingsPage />} />
 
           {/* 404 */}
           <Route path="*" element={<NotFound />} />
