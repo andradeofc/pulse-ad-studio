@@ -61,7 +61,86 @@ interface BatchResponse {
   };
 }
 
+interface BatchStatusResponse {
+  data?: Array<{
+    handle: string;
+    status: 'finished' | 'in_progress' | 'error';
+    errors?: Array<{ id: string; message: string }>;
+    warnings?: Array<{ id: string; message: string }>;
+    ids_of_invalid_requests?: string[];
+  }>;
+  error?: {
+    message: string;
+    code: number;
+  };
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Check the status of a batch request using the handle
+async function checkBatchStatus(
+  catalogId: string,
+  handle: string,
+  accessToken: string,
+  maxAttempts = 10,
+  intervalMs = 2000
+): Promise<{ finished: boolean; errors: string[]; invalidRetailerIds: string[] }> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const url = `https://graph.facebook.com/v21.0/${catalogId}/check_batch_request_status?handle=${encodeURIComponent(handle)}&load_ids_of_invalid_requests=true&access_token=${accessToken}`;
+    
+    const response = await fetch(url, { method: 'GET' });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[process-catalog-schedules] check_batch_request_status failed: ${errorText}`);
+      return { finished: false, errors: [`Status check failed: ${errorText}`], invalidRetailerIds: [] };
+    }
+    
+    const result: BatchStatusResponse = await response.json();
+    
+    if (result.error) {
+      console.error(`[process-catalog-schedules] check_batch_request_status error:`, result.error);
+      return { finished: false, errors: [result.error.message], invalidRetailerIds: [] };
+    }
+    
+    if (result.data && result.data.length > 0) {
+      const status = result.data[0];
+      console.log(`[process-catalog-schedules] Batch status check ${attempt}/${maxAttempts}: ${status.status}`);
+      
+      if (status.status === 'finished') {
+        const errors: string[] = [];
+        const invalidRetailerIds: string[] = status.ids_of_invalid_requests || [];
+        
+        if (status.errors && status.errors.length > 0) {
+          for (const err of status.errors) {
+            errors.push(`${err.id}: ${err.message}`);
+          }
+        }
+        
+        if (status.warnings && status.warnings.length > 0) {
+          console.warn(`[process-catalog-schedules] Batch warnings:`, status.warnings);
+        }
+        
+        console.log(`[process-catalog-schedules] Batch finished. Errors: ${errors.length}, Invalid IDs: ${invalidRetailerIds.length}`);
+        return { finished: true, errors, invalidRetailerIds };
+      }
+      
+      if (status.status === 'error') {
+        const errors = status.errors?.map(e => `${e.id}: ${e.message}`) || ['Unknown batch error'];
+        return { finished: true, errors, invalidRetailerIds: status.ids_of_invalid_requests || [] };
+      }
+      
+      // status === 'in_progress' - continue polling
+    }
+    
+    if (attempt < maxAttempts) {
+      await sleep(intervalMs);
+    }
+  }
+  
+  console.warn(`[process-catalog-schedules] Batch status check timed out after ${maxAttempts} attempts`);
+  return { finished: false, errors: ['Status check timed out - batch may still be processing'], invalidRetailerIds: [] };
+}
 
 const canonicalizeRetailerId = (value: unknown) => {
   let s = String(value ?? '');
@@ -357,11 +436,62 @@ Deno.serve(async (req) => {
             return { updated, errors: outErrors, duplicateError, successRetailerIds, failedRetailerIds };
           }
 
+          // When we get handles, we need to poll for actual completion status
           if (batchResult.handles && batchResult.handles.length > 0) {
-            console.log(`[process-catalog-schedules] ${label} accepted with handles: ${batchResult.handles.join(', ')}`);
-            // When we get handles, we assume all products in the batch were accepted
+            const handle = batchResult.handles[0];
+            console.log(`[process-catalog-schedules] ${label} accepted with handle: ${handle}. Polling for completion...`);
+            
+            // Poll the check_batch_request_status endpoint to verify actual completion
+            const statusResult = await checkBatchStatus(
+              typedCatalog.catalog_id,
+              handle,
+              typedProfile.access_token,
+              15, // max attempts (15 * 2s = 30s max wait)
+              2000 // 2 second intervals
+            );
+            
             const allRetailerIds = reqs.map((r) => r.retailer_id);
-            return { updated: reqs.length, errors: outErrors, duplicateError: false, successRetailerIds: allRetailerIds, failedRetailerIds: [] };
+            
+            if (!statusResult.finished) {
+              // Timeout - mark as pending, not success
+              console.warn(`[process-catalog-schedules] ${label} batch processing not confirmed within timeout`);
+              outErrors.push('Batch processing timeout - status uncertain');
+              return { 
+                updated: 0, 
+                errors: outErrors, 
+                duplicateError: false, 
+                successRetailerIds: [], 
+                failedRetailerIds: allRetailerIds.map(id => ({ retailer_id: id, error: 'Processing timeout' }))
+              };
+            }
+            
+            // Check which products failed
+            const invalidSet = new Set(statusResult.invalidRetailerIds);
+            const successRetailerIds: string[] = [];
+            const failedRetailerIds: { retailer_id: string; error: string }[] = [];
+            
+            for (const retailerId of allRetailerIds) {
+              if (invalidSet.has(retailerId)) {
+                failedRetailerIds.push({ retailer_id: retailerId, error: 'Rejected by Facebook' });
+              } else {
+                successRetailerIds.push(retailerId);
+              }
+            }
+            
+            // Add any batch-level errors
+            for (const err of statusResult.errors) {
+              outErrors.push(err);
+            }
+            
+            console.log(`[process-catalog-schedules] ${label} confirmed: ${successRetailerIds.length} success, ${failedRetailerIds.length} failed`);
+            
+            return { 
+              updated: successRetailerIds.length, 
+              errors: outErrors, 
+              duplicateError: false, 
+              successRetailerIds, 
+              failedRetailerIds 
+            };
           }
 
           console.warn(
