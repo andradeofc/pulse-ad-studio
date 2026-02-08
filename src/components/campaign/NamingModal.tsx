@@ -1,11 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical, Loader2 } from 'lucide-react';
+import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical, Loader2, FilePlus, RefreshCw } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -86,6 +96,10 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
   const [newVarName, setNewVarName] = useState('');
   const [showNewVarInput, setShowNewVarInput] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Save dialog state
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
 
   // Local state for custom variables (merged from DB and initialCustomVariables)
   const [localCustomVars, setLocalCustomVars] = useState<Variable[]>([]);
@@ -95,6 +109,7 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     customVariables,
     isLoading,
     savePreset,
+    updatePreset,
     renamePreset,
     deletePreset,
     saveVariable,
@@ -206,13 +221,47 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     }
   };
 
-  const handleSavePreset = async () => {
-    const name = prompt('Nome do preset:');
-    if (!name) return;
+  // Check if current template differs from selected preset
+  const currentPreset = presets.find(p => p.id === selectedPreset);
+  const hasTemplateChanged = currentPreset && template !== currentPreset.template;
+  const canUpdateSelectedPreset = selectedPreset && currentPreset && !currentPreset.isDefault && hasTemplateChanged;
+
+  const handleSavePreset = () => {
+    setNewPresetName('');
+    setShowSaveDialog(true);
+  };
+
+  const handleUpdateCurrentPreset = async () => {
+    if (!selectedPreset || !currentPreset) return;
     
     setIsSaving(true);
-    const newPreset = await savePreset(name, template, context);
+    const success = await updatePreset(selectedPreset, template);
     setIsSaving(false);
+    setShowSaveDialog(false);
+    
+    if (!success) {
+      toast({
+        title: 'Erro ao atualizar',
+        description: 'Não foi possível atualizar o preset.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCreateNewPreset = async () => {
+    if (!newPresetName.trim()) {
+      toast({
+        title: 'Nome obrigatório',
+        description: 'Digite um nome para o novo preset.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setIsSaving(true);
+    const newPreset = await savePreset(newPresetName.trim(), template, context);
+    setIsSaving(false);
+    setShowSaveDialog(false);
     
     if (newPreset) {
       setSelectedPreset(newPreset.id);
@@ -664,6 +713,121 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
           </Button>
         </div>
       </DialogContent>
+
+      {/* Save Preset Dialog */}
+      <AlertDialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Save className="w-5 h-5 text-primary" />
+              Salvar Template
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4 pt-2">
+                {canUpdateSelectedPreset ? (
+                  <>
+                    <p className="text-muted-foreground">
+                      O template foi modificado. Escolha uma opção:
+                    </p>
+                    
+                    {/* Update existing option */}
+                    <div 
+                      className="p-4 rounded-lg border border-border bg-secondary/30 hover:border-primary/50 cursor-pointer transition-colors"
+                      onClick={handleUpdateCurrentPreset}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                          <RefreshCw className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-foreground">
+                            Atualizar "{currentPreset?.name}"
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Sobrescrever o template existente
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Create new option */}
+                    <div className="p-4 rounded-lg border border-border bg-secondary/30">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-ads-success/20 flex items-center justify-center">
+                          <FilePlus className="w-5 h-5 text-ads-success" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-foreground">Criar Novo Preset</p>
+                          <p className="text-xs text-muted-foreground">
+                            Salvar como um novo template
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          value={newPresetName}
+                          onChange={(e) => setNewPresetName(e.target.value)}
+                          placeholder="Nome do novo preset..."
+                          className="flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newPresetName.trim()) {
+                              handleCreateNewPreset();
+                            }
+                          }}
+                        />
+                        <Button 
+                          onClick={handleCreateNewPreset}
+                          disabled={!newPresetName.trim() || isSaving}
+                          className="bg-ads-success hover:bg-ads-success/90"
+                        >
+                          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-muted-foreground">
+                      {currentPreset?.isDefault 
+                        ? 'Presets padrão não podem ser alterados. Crie um novo preset:'
+                        : 'Digite um nome para salvar o template atual:'
+                      }
+                    </p>
+                    
+                    <div className="flex gap-2">
+                      <Input
+                        value={newPresetName}
+                        onChange={(e) => setNewPresetName(e.target.value)}
+                        placeholder="Nome do preset..."
+                        className="flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newPresetName.trim()) {
+                            handleCreateNewPreset();
+                          }
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancelar</AlertDialogCancel>
+            {!canUpdateSelectedPreset && (
+              <AlertDialogAction
+                onClick={handleCreateNewPreset}
+                disabled={!newPresetName.trim() || isSaving}
+                className="bg-primary hover:bg-primary/90"
+              >
+                {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Criar Preset
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
