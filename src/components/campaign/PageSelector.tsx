@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Check, ChevronsUpDown, RefreshCw, Facebook, ExternalLink, AlertTriangle, Shuffle, Users } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Check, ChevronsUpDown, RefreshCw, Facebook, ExternalLink, AlertTriangle, Shuffle, Users, Shield, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -44,12 +44,14 @@ interface PageSelectorProps {
   onSelectionChange: (pageIds: string[], pageNames: string[]) => void;
   multiSelect?: boolean;
   totalAdsToCreate: number;
+  onValidationChange?: (isValid: boolean, error?: string) => void;
 }
 
 interface PageDistribution {
   pageId: string;
   pageName: string;
   adsCount: number;
+  maxCapacity: number;
   isOverLimit: boolean;
 }
 
@@ -60,6 +62,7 @@ export function PageSelector({
   onSelectionChange,
   multiSelect = false,
   totalAdsToCreate,
+  onValidationChange,
 }: PageSelectorProps) {
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -130,34 +133,66 @@ export function PageSelector({
     }
   };
 
-  const calculateDistribution = () => {
+  const calculateDistribution = useCallback(() => {
     if (selectedPages.length === 0 || totalAdsToCreate === 0) {
       setDistribution([]);
+      onValidationChange?.(true);
       return;
     }
 
     const selectedPagesData = pages.filter(p => selectedPages.includes(p.page_id));
-    const adsPerPage = Math.ceil(totalAdsToCreate / selectedPages.length);
+    
+    // Calculate smart distribution respecting page limits
     let remainingAds = totalAdsToCreate;
-
-    const dist: PageDistribution[] = selectedPagesData.map((page, index) => {
-      const isLast = index === selectedPagesData.length - 1;
-      const adsForThisPage = isLast ? remainingAds : Math.min(adsPerPage, remainingAds);
+    const dist: PageDistribution[] = [];
+    
+    // Sort pages by available capacity (most capacity first for better distribution)
+    const sortedPages = [...selectedPagesData].sort((a, b) => {
+      const aSlots = (a.ads_limit || 250) - (a.ads_running || 0);
+      const bSlots = (b.ads_limit || 250) - (b.ads_running || 0);
+      return bSlots - aSlots;
+    });
+    
+    // First pass: calculate fair distribution respecting limits
+    for (let i = 0; i < sortedPages.length && remainingAds > 0; i++) {
+      const page = sortedPages[i];
+      const availableSlots = Math.max(0, (page.ads_limit || 250) - (page.ads_running || 0));
+      const remainingPages = sortedPages.length - i;
+      const fairShare = Math.ceil(remainingAds / remainingPages);
+      
+      // Assign minimum of fair share and available slots
+      const adsForThisPage = Math.min(fairShare, availableSlots, remainingAds);
       remainingAds -= adsForThisPage;
-
-      const availableSlots = page.ads_limit - page.ads_running;
-      const isOverLimit = adsForThisPage > availableSlots;
-
-      return {
+      
+      dist.push({
         pageId: page.page_id,
         pageName: page.name,
         adsCount: adsForThisPage,
-        isOverLimit,
-      };
-    });
-
+        maxCapacity: availableSlots,
+        isOverLimit: adsForThisPage > availableSlots,
+      });
+    }
+    
+    // Check if we still have remaining ads (not enough capacity)
+    const totalCapacity = selectedPagesData.reduce((sum, p) => 
+      sum + Math.max(0, (p.ads_limit || 250) - (p.ads_running || 0)), 0
+    );
+    const isOverLimit = totalAdsToCreate > totalCapacity;
+    
+    // Report validation state
+    if (isOverLimit) {
+      const deficit = totalAdsToCreate - totalCapacity;
+      onValidationChange?.(
+        false, 
+        `Capacidade insuficiente! Faltam ${deficit.toLocaleString('pt-BR')} slots. ` +
+        `Selecione mais páginas ou reduza os anúncios.`
+      );
+    } else {
+      onValidationChange?.(true);
+    }
+    
     setDistribution(dist);
-  };
+  }, [selectedPages, totalAdsToCreate, pages, onValidationChange]);
 
   const randomizeDistribution = () => {
     if (selectedPages.length === 0 || totalAdsToCreate === 0) return;
@@ -168,28 +203,27 @@ export function PageSelector({
 
     const dist: PageDistribution[] = shuffled.map((page, index) => {
       const isLast = index === shuffled.length - 1;
+      const availableSlots = Math.max(0, (page.ads_limit || 250) - (page.ads_running || 0));
       
-      // Random distribution with some variance
+      // Random distribution with some variance, respecting page limits
       let adsForThisPage: number;
       if (isLast) {
-        adsForThisPage = remainingAds;
+        adsForThisPage = Math.min(remainingAds, availableSlots);
       } else {
         const avgRemaining = remainingAds / (shuffled.length - index);
         const variance = Math.floor(avgRemaining * 0.3);
         adsForThisPage = Math.max(1, Math.floor(avgRemaining + (Math.random() * variance * 2 - variance)));
-        adsForThisPage = Math.min(adsForThisPage, remainingAds - (shuffled.length - index - 1));
+        adsForThisPage = Math.min(adsForThisPage, remainingAds - (shuffled.length - index - 1), availableSlots);
       }
       
       remainingAds -= adsForThisPage;
-
-      const availableSlots = page.ads_limit - page.ads_running;
-      const isOverLimit = adsForThisPage > availableSlots;
 
       return {
         pageId: page.page_id,
         pageName: page.name,
         adsCount: adsForThisPage,
-        isOverLimit,
+        maxCapacity: availableSlots,
+        isOverLimit: adsForThisPage > availableSlots,
       };
     });
 
@@ -245,17 +279,41 @@ export function PageSelector({
   }, [filteredPages]);
 
   const selectedPage = pages.find(p => selectedPages.includes(p.page_id));
-  const totalAdsOverLimit = distribution.filter(d => d.isOverLimit).reduce((sum, d) => sum + d.adsCount, 0);
-  const hasOverLimitWarning = distribution.some(d => d.isOverLimit);
+  
+  // Calculate total capacity and validation state
+  const { totalCapacity, totalAdsOverLimit, hasOverLimitWarning, capacityPercent, deficit } = useMemo(() => {
+    const selectedPagesData = pages.filter(p => selectedPages.includes(p.page_id));
+    const capacity = selectedPagesData.reduce((sum, p) => 
+      sum + Math.max(0, (p.ads_limit || 250) - (p.ads_running || 0)), 0
+    );
+    const isOver = totalAdsToCreate > capacity;
+    const def = Math.max(0, totalAdsToCreate - capacity);
+    const percent = capacity > 0 ? Math.min(100, (totalAdsToCreate / capacity) * 100) : 0;
+    
+    return {
+      totalCapacity: capacity,
+      totalAdsOverLimit: def,
+      hasOverLimitWarning: isOver,
+      capacityPercent: percent,
+      deficit: def,
+    };
+  }, [pages, selectedPages, totalAdsToCreate]);
 
   if (multiSelect) {
     return (
       <div className="space-y-4">
         {/* Header with sync button */}
         <div className="flex items-center justify-between">
-          <Label className="text-sm text-muted-foreground">
-            {selectedPages.length} página(s) selecionada(s)
-          </Label>
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground">
+              {selectedPages.length} página(s) selecionada(s)
+            </Label>
+            {selectedPages.length > 0 && (
+              <Badge variant={hasOverLimitWarning ? "destructive" : "secondary"} className="text-xs">
+                {totalAdsToCreate.toLocaleString('pt-BR')} / {totalCapacity.toLocaleString('pt-BR')} slots
+              </Badge>
+            )}
+          </div>
           <div className="flex gap-2">
             {selectedPages.length > 1 && (
               <Button
@@ -281,15 +339,52 @@ export function PageSelector({
           </div>
         </div>
 
+        {/* Capacity info bar */}
+        {selectedPages.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Capacidade utilizada</span>
+              <span className={cn(
+                "font-medium",
+                hasOverLimitWarning ? "text-destructive" : capacityPercent > 80 ? "text-yellow-500" : "text-green-500"
+              )}>
+                {capacityPercent.toFixed(0)}%
+              </span>
+            </div>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div 
+                className={cn(
+                  "h-full transition-all duration-300",
+                  hasOverLimitWarning ? "bg-destructive" : capacityPercent > 80 ? "bg-yellow-500" : "bg-green-500"
+                )}
+                style={{ width: `${Math.min(100, capacityPercent)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Warning if over limit */}
         {hasOverLimitWarning && (
           <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-lg flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-destructive">Limite excedido</p>
+              <p className="text-sm font-medium text-destructive">Capacidade insuficiente!</p>
               <p className="text-xs text-destructive/80">
-                Algumas páginas excedem o limite de 250 anúncios. 
-                Aproximadamente {totalAdsOverLimit} anúncio(s) não serão publicados.
+                Você precisa de mais <strong>{deficit.toLocaleString('pt-BR')}</strong> slots. 
+                Selecione mais páginas ou reduza a quantidade de anúncios.
+              </p>
+            </div>
+          </div>
+        )}
+        
+        {/* Info when capacity is sufficient */}
+        {!hasOverLimitWarning && selectedPages.length > 0 && totalAdsToCreate > 0 && (
+          <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg flex items-start gap-3">
+            <Shield className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-green-600 dark:text-green-400">Capacidade OK</p>
+              <p className="text-xs text-green-600/80 dark:text-green-400/80">
+                Os anúncios serão distribuídos automaticamente entre as páginas respeitando os limites individuais.
               </p>
             </div>
           </div>

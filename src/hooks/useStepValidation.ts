@@ -22,7 +22,7 @@ export interface AllStepsValidation {
  * Provides validation errors and warnings for each step.
  */
 export function useStepValidation(): AllStepsValidation {
-  const { config } = useCampaignStore();
+  const { config, pageLimitError } = useCampaignStore();
 
   const step1 = useMemo((): StepValidation => {
     const errors: string[] = [];
@@ -137,8 +137,14 @@ export function useStepValidation(): AllStepsValidation {
       }
     }
 
+    // Check page limit validation from store
+    // This is populated by PageSelector's onValidationChange callback
+    if (pageLimitError) {
+      errors.push(pageLimitError);
+    }
+
     return { isValid: errors.length === 0, errors, warnings };
-  }, [config.selectedPages, config.adName, config.useCatalog, config.destinationUrl]);
+  }, [config.selectedPages, config.adName, config.useCatalog, config.destinationUrl, pageLimitError]);
 
   const step5 = useMemo((): StepValidation => {
     // Step 5 is review - just aggregate all previous validations
