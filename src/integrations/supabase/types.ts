@@ -948,6 +948,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_ad_usage: {
+        Row: {
+          ads_created: number
+          created_at: string
+          id: string
+          period_end: string
+          period_start: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ads_created?: number
+          created_at?: string
+          id?: string
+          period_end: string
+          period_start: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ads_created?: number
+          created_at?: string
+          id?: string
+          period_end?: string
+          period_start?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_notification_reads: {
         Row: {
           id: string
@@ -989,6 +1019,7 @@ export type Database = {
           phone: string | null
           plan: string | null
           status: Database["public"]["Enums"]["user_status"]
+          subscription_starts_at: string | null
           updated_at: string
           user_id: string
         }
@@ -1003,6 +1034,7 @@ export type Database = {
           phone?: string | null
           plan?: string | null
           status?: Database["public"]["Enums"]["user_status"]
+          subscription_starts_at?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1017,6 +1049,7 @@ export type Database = {
           phone?: string | null
           plan?: string | null
           status?: Database["public"]["Enums"]["user_status"]
+          subscription_starts_at?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -1051,6 +1084,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_create_ads: {
+        Args: { ads_to_create: number; check_user_id: string }
+        Returns: {
+          allowed: boolean
+          current_usage: number
+          is_unlimited: boolean
+          limit_value: number
+          message: string
+          remaining: number
+        }[]
+      }
+      get_current_ad_usage: {
+        Args: { check_user_id: string }
+        Returns: {
+          ads_limit: number
+          ads_used: number
+          is_unlimited: boolean
+          period_end: string
+          period_start: string
+        }[]
+      }
+      get_plan_ad_limit: { Args: { plan_name: string }; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1058,7 +1113,12 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_ad_usage: {
+        Args: { p_ads_count: number; p_user_id: string }
+        Returns: undefined
+      }
       is_admin: { Args: never; Returns: boolean }
+      user_is_admin: { Args: { check_user_id: string }; Returns: boolean }
       user_owns_facebook_profile: {
         Args: { profile_id: string }
         Returns: boolean

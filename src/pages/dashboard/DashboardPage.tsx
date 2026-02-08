@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import { AdUsageCard } from '@/components/dashboard/AdUsageCard';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -93,7 +94,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {metricCards.map((metric, index) => (
           <motion.div
             key={metric.title}
@@ -117,6 +118,9 @@ export default function DashboardPage() {
             </Card>
           </motion.div>
         ))}
+        
+        {/* Ad Usage Card */}
+        <AdUsageCard />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
