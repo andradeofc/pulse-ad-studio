@@ -63,6 +63,26 @@ interface BatchResponse {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const canonicalizeRetailerId = (value: unknown) => {
+  let s = String(value ?? '');
+
+  // Normalize unicode (defensive) so visually-identical strings become identical.
+  try {
+    s = s.normalize('NFKC');
+  } catch {
+    // ignore if normalize isn't available
+  }
+
+  // Remove invisible/zero-width + control chars that Meta may ignore.
+  // These can cause "Duplicate retailer_id" even when IDs look unique in logs/UI.
+  s = s.replace(/[\u200B-\u200D\uFEFF]/g, '');
+  s = s.replace(/[\u0000-\u001F\u007F]/g, '');
+
+  return s.trim();
+};
+
+const containsDuplicateRetailerIdError = (message: string) => /duplicate retailer_id/i.test(message);
+
 // Fetch with retry for rate limits
 async function fetchWithRetry(url: string, options: RequestInit, label: string, maxAttempts = 3) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -224,7 +244,7 @@ Deno.serve(async (req) => {
         const duplicateRetailerIds: string[] = [];
 
         for (const product of allProducts) {
-          const canonicalRetailerId = (product.retailer_id ?? '').trim();
+          const canonicalRetailerId = canonicalizeRetailerId(product.retailer_id);
           if (!canonicalRetailerId) continue;
 
           if (uniqueProductsMap.has(canonicalRetailerId)) {
@@ -258,6 +278,96 @@ Deno.serve(async (req) => {
         let productsUpdated = 0;
         const errors: string[] = [];
 
+        const sendItemsBatchOnce = async (reqs: BatchRequest[], label: string) => {
+          const batchResponse = await fetchWithRetry(
+            `https://graph.facebook.com/v21.0/${typedCatalog.catalog_id}/items_batch`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                access_token: typedProfile.access_token,
+                item_type: 'PRODUCT_ITEM',
+                requests: reqs,
+              }),
+            },
+            label
+          );
+
+          const batchResult: BatchResponse = await batchResponse.json();
+
+          const duplicateError =
+            (batchResult.error?.message && containsDuplicateRetailerIdError(batchResult.error.message)) ||
+            (batchResult.validation_status?.some((vs) =>
+              (vs.errors || []).some((e) => containsDuplicateRetailerIdError(e.message))
+            ) ?? false);
+
+          const outErrors: string[] = [];
+
+          if (batchResult.error) {
+            outErrors.push(`batch: ${batchResult.error.message}`);
+            console.error(`[process-catalog-schedules] ${label} batch error:`, batchResult.error);
+            return { updated: 0, errors: outErrors, duplicateError };
+          }
+
+          if (batchResult.validation_status) {
+            let updated = 0;
+
+            for (const status of batchResult.validation_status) {
+              if (status.status === 'success') {
+                updated++;
+                continue;
+              }
+
+              const errorMsg = status.errors?.map((e) => e.message).join(', ') || 'Unknown error';
+              const retailerIdLabel = status.retailer_id ? status.retailer_id : 'batch';
+              outErrors.push(`${retailerIdLabel}: ${errorMsg}`);
+            }
+
+            return { updated, errors: outErrors, duplicateError };
+          }
+
+          if (batchResult.handles && batchResult.handles.length > 0) {
+            console.log(`[process-catalog-schedules] ${label} accepted with handles: ${batchResult.handles.join(', ')}`);
+            return { updated: reqs.length, errors: outErrors, duplicateError: false };
+          }
+
+          console.warn(
+            `[process-catalog-schedules] ${label} unexpected response shape: ${JSON.stringify(batchResult).slice(0, 1500)}`
+          );
+          return { updated: 0, errors: outErrors.length ? outErrors : ['batch: Unknown response'], duplicateError: false };
+        };
+
+        const sendItemsBatchWithSplit = async (
+          reqs: BatchRequest[],
+          label: string,
+          depth: number
+        ): Promise<{ updated: number; errors: string[] }> => {
+          const result = await sendItemsBatchOnce(reqs, label);
+
+          // Professional fallback: if Meta complains about duplicate retailer_id at the batch level,
+          // recursively split the payload until the problematic pair is separated.
+          if (result.duplicateError && reqs.length > 1 && depth < 12) {
+            console.warn(
+              `[process-catalog-schedules] ${label} reported duplicate retailer_id; splitting payload (size=${reqs.length}, depth=${depth})`
+            );
+
+            const a: BatchRequest[] = [];
+            const b: BatchRequest[] = [];
+            reqs.forEach((r, idx) => (idx % 2 === 0 ? a : b).push(r));
+
+            const ra = await sendItemsBatchWithSplit(a, `${label}.a`, depth + 1);
+            // small delay to reduce rate-limit pressure if we need many calls
+            await sleep(200);
+            const rb = await sendItemsBatchWithSplit(b, `${label}.b`, depth + 1);
+
+            return { updated: ra.updated + rb.updated, errors: [...ra.errors, ...rb.errors] };
+          }
+
+          return { updated: result.updated, errors: result.errors };
+        };
+
         // Process products in batches of 5000 (Facebook's limit per request)
         const BATCH_SIZE = 4999;
         
@@ -267,7 +377,7 @@ Deno.serve(async (req) => {
           // Safety: ensure uniqueness inside the batch (defensive, should already be unique)
           const seenRetailerIds = new Set<string>();
           const dedupedBatch = productBatch.filter((p) => {
-            const id = (p.retailer_id ?? '').trim();
+            const id = canonicalizeRetailerId(p.retailer_id);
             if (!id) return false;
             if (seenRetailerIds.has(id)) return false;
             seenRetailerIds.add(id);
@@ -294,59 +404,27 @@ Deno.serve(async (req) => {
 
             return {
               method: 'UPDATE' as const,
-              retailer_id: product.retailer_id,
+              retailer_id: canonicalizeRetailerId(product.retailer_id),
               data,
             };
           });
 
           console.log(`[process-catalog-schedules] Sending batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batchRequests.length} products`);
 
-          // Send batch update using items_batch endpoint
-          const batchResponse = await fetchWithRetry(
-            `https://graph.facebook.com/v21.0/${typedCatalog.catalog_id}/items_batch`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                access_token: typedProfile.access_token,
-                item_type: 'PRODUCT_ITEM',
-                requests: batchRequests,
-              }),
-            },
-            `batch update ${Math.floor(i / BATCH_SIZE) + 1}`
-          );
+           // Send batch update using items_batch endpoint (with adaptive splitting on duplicate retailer_id)
+           const outcome = await sendItemsBatchWithSplit(
+             batchRequests,
+             `batch update ${Math.floor(i / BATCH_SIZE) + 1}`,
+             0
+           );
 
-          const batchResult: BatchResponse = await batchResponse.json();
+           productsUpdated += outcome.updated;
+           errors.push(...outcome.errors);
 
-          if (batchResult.error) {
-            errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchResult.error.message}`);
-            console.error(`[process-catalog-schedules] Batch error:`, batchResult.error);
-            continue;
-          }
-
-          // Check validation status if available
-          if (batchResult.validation_status) {
-            for (const status of batchResult.validation_status) {
-              if (status.status === 'success') {
-                productsUpdated++;
-              } else {
-                const errorMsg = status.errors?.map((e) => e.message).join(', ') || 'Unknown error';
-                const retailerIdLabel = status.retailer_id ? status.retailer_id : 'batch';
-                errors.push(`${retailerIdLabel}: ${errorMsg}`);
-              }
-            }
-          } else if (batchResult.handles && batchResult.handles.length > 0) {
-            // If we got handles, the batch was accepted for processing
-            productsUpdated += batchRequests.length;
-            console.log(`[process-catalog-schedules] Batch accepted with handles: ${batchResult.handles.join(', ')}`);
-          }
-
-          // Small delay between batches to avoid rate limiting
-          if (i + BATCH_SIZE < uniqueProducts.length) {
-            await sleep(500);
-          }
+           // Small delay between batches to avoid rate limiting
+           if (i + BATCH_SIZE < uniqueProducts.length) {
+             await sleep(500);
+           }
         }
 
         // Update schedule status
