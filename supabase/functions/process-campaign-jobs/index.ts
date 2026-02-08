@@ -1087,10 +1087,11 @@ async function createCatalogCreativesBatch(
 }
 
 // Create ads using batch API (for catalog ads)
+// CRITICAL: This function now checks for existing facebook_id to prevent duplicates on re-execution
 async function createAdsBatch(
   accessToken: string,
   adAccountId: string,
-  ads: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any> }>,
+  ads: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any>; facebook_id?: string | null; status?: string }>,
   adsetIdMap: Map<string, string>,
   creativeIdMap: Map<string, string>,
   supabase: any,
@@ -1098,8 +1099,42 @@ async function createAdsBatch(
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   let successCount = 0;
   
+  // CRITICAL IDEMPOTENCY CHECK: Check for ads that already have facebook_id (from previous execution)
+  // This prevents creating duplicate ads when job resumes after timeout
+  const adsNeedingCreation: typeof ads = [];
+  
+  for (const ad of ads) {
+    // Check both facebook_id from DB and savedAdId in config (redundancy)
+    const existingFbId = ad.facebook_id || (ad.config as any)?.savedAdId;
+    
+    // Also check if already marked as completed
+    if (existingFbId || ad.status === 'completed') {
+      // Ad already created in previous execution, count as success but don't create again
+      successCount++;
+      console.log(`[batch] SKIPPING existing ad ${existingFbId || 'completed'} for item ${ad.id}`);
+      
+      // Ensure it's marked as completed with the facebook_id
+      if (existingFbId) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'completed', facebook_id: existingFbId })
+          .eq('id', ad.id);
+      }
+      continue;
+    }
+    
+    adsNeedingCreation.push(ad);
+  }
+  
+  if (adsNeedingCreation.length === 0) {
+    console.log(`[batch] All ${ads.length} ads already exist, skipping creation`);
+    return successCount;
+  }
+  
+  console.log(`[batch] Creating ${adsNeedingCreation.length} NEW ads (${ads.length - adsNeedingCreation.length} already exist)`);
+  
   // Filter ads with valid parent adsets and creatives
-  const validAds = ads.filter(ad => {
+  const validAds = adsNeedingCreation.filter(ad => {
     const parentFbId = ad.parent_id ? adsetIdMap.get(ad.parent_id) : null;
     const creativeId = creativeIdMap.get(ad.id);
     
@@ -1166,9 +1201,13 @@ async function createAdsBatch(
         
         if (result.code === 200 && parsedBody.id) {
           successCount++;
+          
+          // CRITICAL: Save facebook_id to both column AND config for redundancy (idempotency)
+          // This ensures we can detect existing ads on re-execution after timeout
+          const updatedConfig = { ...item.config, savedAdId: parsedBody.id };
           await supabase
             .from('campaign_job_items')
-            .update({ status: 'completed', facebook_id: parsedBody.id })
+            .update({ status: 'completed', facebook_id: parsedBody.id, config: updatedConfig })
             .eq('id', item.id);
         } else {
           const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
@@ -1711,39 +1750,48 @@ Deno.serve(async (req) => {
 
     // Separate items by type - ONLY process pending items to prevent duplicates on re-execution
     // This is critical: if a job times out and is re-triggered, we must not re-create items that already have facebook_id
-    const campaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'pending' && !i.facebook_id);
-    const adsets = items.filter((i) => i.item_type === 'adset' && i.status === 'pending' && !i.facebook_id);
-    const ads = items.filter((i) => i.item_type === 'ad' && i.status === 'pending' && !i.facebook_id);
+    // ALSO check for savedAdId/savedFacebookId in config for items created but not properly updated
+    const hasSavedId = (item: any): boolean => {
+      const config = item.config || {};
+      return !!(config.savedAdId || config.savedFacebookId || config.savedCreativeId);
+    };
+    
+    const campaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'pending' && !i.facebook_id && !hasSavedId(i));
+    const adsets = items.filter((i) => i.item_type === 'adset' && i.status === 'pending' && !i.facebook_id && !hasSavedId(i));
+    const ads = items.filter((i) => i.item_type === 'ad' && i.status === 'pending' && !i.facebook_id && !hasSavedId(i));
     
     // CRITICAL: Collect items with facebook_id regardless of status (completed OR failed with facebook_id)
     // This handles the case where an item was created successfully but marked as failed due to timeout
     // We need their facebook_ids to properly reference them as parents for child items
-    const completedCampaigns = items.filter((i) => i.item_type === 'campaign' && i.facebook_id);
-    const completedAdsets = items.filter((i) => i.item_type === 'adset' && i.facebook_id);
+    const completedCampaigns = items.filter((i) => i.item_type === 'campaign' && (i.facebook_id || hasSavedId(i)));
+    const completedAdsets = items.filter((i) => i.item_type === 'adset' && (i.facebook_id || hasSavedId(i)));
+    const completedAds = items.filter((i) => i.item_type === 'ad' && (i.facebook_id || hasSavedId(i)));
     
-    // Fix incorrectly failed items that have facebook_id - they were actually created successfully
-    const incorrectlyFailedCampaigns = items.filter((i) => i.item_type === 'campaign' && i.status === 'failed' && i.facebook_id);
-    const incorrectlyFailedAdsets = items.filter((i) => i.item_type === 'adset' && i.status === 'failed' && i.facebook_id);
+    // Fix incorrectly failed/pending items that have facebook_id or savedId - they were actually created successfully
+    const itemsNeedingFix = items.filter((i) => 
+      (i.status === 'failed' || i.status === 'pending') && 
+      (i.facebook_id || hasSavedId(i))
+    );
     
-    if (incorrectlyFailedCampaigns.length > 0 || incorrectlyFailedAdsets.length > 0) {
-      console.log(`[process-jobs] Fixing ${incorrectlyFailedCampaigns.length} campaigns and ${incorrectlyFailedAdsets.length} adsets incorrectly marked as failed`);
+    if (itemsNeedingFix.length > 0) {
+      console.log(`[process-jobs] Fixing ${itemsNeedingFix.length} items that have facebook_id/savedId but wrong status`);
       
-      // Fix campaigns
-      for (const c of incorrectlyFailedCampaigns) {
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'completed', error_message: null })
-          .eq('id', c.id);
-      }
-      
-      // Fix adsets
-      for (const a of incorrectlyFailedAdsets) {
-        await supabase
-          .from('campaign_job_items')
-          .update({ status: 'completed', error_message: null })
-          .eq('id', a.id);
+      for (const item of itemsNeedingFix) {
+        const savedId = item.facebook_id || 
+          (item.config as any)?.savedAdId || 
+          (item.config as any)?.savedFacebookId;
+        
+        if (savedId) {
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'completed', error_message: null, facebook_id: savedId })
+            .eq('id', item.id);
+          console.log(`[process-jobs] Fixed item ${item.id} with facebook_id ${savedId}`);
+        }
       }
     }
+    
+    console.log(`[process-jobs] Already completed: ${completedCampaigns.length} campaigns, ${completedAdsets.length} adsets, ${completedAds.length} ads`);
 
     const normalizeAccountId = (value: unknown): string | null => {
       if (typeof value !== 'string') return null;
@@ -1903,11 +1951,14 @@ Deno.serve(async (req) => {
       }
 
       // Prepare ads with resolved names
+      // CRITICAL: Include facebook_id and status so batch functions can detect already-created items
       const adsWithNames = adsForAccount.map((a, i) => ({
         id: a.id,
         name: replaceNamingVariables(a.name, { adIndex: i }),
         parent_id: a.parent_id,
         config: a.config as Record<string, any>,
+        facebook_id: a.facebook_id, // Include for idempotency check
+        status: a.status, // Include to detect completed ads
       }));
 
       // Create ads based on type (catalog vs non-catalog)
