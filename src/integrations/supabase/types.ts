@@ -14,6 +14,147 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_audit_logs: {
+        Row: {
+          action: string
+          admin_user_id: string
+          created_at: string
+          details: Json | null
+          id: string
+          ip_address: string
+          target_id: string | null
+          target_type: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          admin_user_id: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip_address: string
+          target_id?: string | null
+          target_type?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          admin_user_id?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip_address?: string
+          target_id?: string | null
+          target_type?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      admin_notifications: {
+        Row: {
+          admin_user_id: string
+          created_at: string
+          delivery_method: string
+          expires_at: string | null
+          id: string
+          message: string
+          notification_type: string
+          scheduled_at: string | null
+          sent_at: string | null
+          target_audience: string
+          target_plans: Json | null
+          target_user_ids: Json | null
+          title: string
+        }
+        Insert: {
+          admin_user_id: string
+          created_at?: string
+          delivery_method?: string
+          expires_at?: string | null
+          id?: string
+          message: string
+          notification_type?: string
+          scheduled_at?: string | null
+          sent_at?: string | null
+          target_audience?: string
+          target_plans?: Json | null
+          target_user_ids?: Json | null
+          title: string
+        }
+        Update: {
+          admin_user_id?: string
+          created_at?: string
+          delivery_method?: string
+          expires_at?: string | null
+          id?: string
+          message?: string
+          notification_type?: string
+          scheduled_at?: string | null
+          sent_at?: string | null
+          target_audience?: string
+          target_plans?: Json | null
+          target_user_ids?: Json | null
+          title?: string
+        }
+        Relationships: []
+      }
+      api_call_logs: {
+        Row: {
+          ad_account_id: string | null
+          created_at: string
+          endpoint: string
+          error_message: string | null
+          facebook_object_id: string | null
+          facebook_object_type: string | null
+          http_method: string
+          id: string
+          job_id: string | null
+          job_item_id: string | null
+          request_body: Json | null
+          response_body: Json | null
+          response_status: number
+          response_time_ms: number | null
+          retry_count: number | null
+          user_id: string
+        }
+        Insert: {
+          ad_account_id?: string | null
+          created_at?: string
+          endpoint: string
+          error_message?: string | null
+          facebook_object_id?: string | null
+          facebook_object_type?: string | null
+          http_method: string
+          id?: string
+          job_id?: string | null
+          job_item_id?: string | null
+          request_body?: Json | null
+          response_body?: Json | null
+          response_status: number
+          response_time_ms?: number | null
+          retry_count?: number | null
+          user_id: string
+        }
+        Update: {
+          ad_account_id?: string | null
+          created_at?: string
+          endpoint?: string
+          error_message?: string | null
+          facebook_object_id?: string | null
+          facebook_object_type?: string | null
+          http_method?: string
+          id?: string
+          job_id?: string | null
+          job_item_id?: string | null
+          request_body?: Json | null
+          response_body?: Json | null
+          response_status?: number
+          response_time_ms?: number | null
+          retry_count?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       campaign_job_items: {
         Row: {
           config: Json | null
@@ -747,6 +888,33 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_settings: {
+        Row: {
+          id: string
+          key_name: string
+          updated_at: string
+          updated_by: string | null
+          value_json: Json | null
+          value_text: string | null
+        }
+        Insert: {
+          id?: string
+          key_name: string
+          updated_at?: string
+          updated_by?: string | null
+          value_json?: Json | null
+          value_text?: string | null
+        }
+        Update: {
+          id?: string
+          key_name?: string
+          updated_at?: string
+          updated_by?: string | null
+          value_json?: Json | null
+          value_text?: string | null
+        }
+        Relationships: []
+      }
       rate_limit_tracking: {
         Row: {
           account_id: string
@@ -780,18 +948,125 @@ export type Database = {
         }
         Relationships: []
       }
+      user_notification_reads: {
+        Row: {
+          id: string
+          notification_id: string
+          read_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          notification_id: string
+          read_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          notification_id?: string
+          read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_notification_reads_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "admin_notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_profiles: {
+        Row: {
+          admin_notes: string | null
+          created_at: string
+          custom_limits: Json | null
+          full_name: string | null
+          id: string
+          last_login_at: string | null
+          last_login_ip: string | null
+          phone: string | null
+          plan: string | null
+          status: Database["public"]["Enums"]["user_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          created_at?: string
+          custom_limits?: Json | null
+          full_name?: string | null
+          id?: string
+          last_login_at?: string | null
+          last_login_ip?: string | null
+          phone?: string | null
+          plan?: string | null
+          status?: Database["public"]["Enums"]["user_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_notes?: string | null
+          created_at?: string
+          custom_limits?: Json | null
+          full_name?: string | null
+          id?: string
+          last_login_at?: string | null
+          last_login_ip?: string | null
+          phone?: string | null
+          plan?: string | null
+          status?: Database["public"]["Enums"]["user_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_admin: { Args: never; Returns: boolean }
       user_owns_facebook_profile: {
         Args: { profile_id: string }
         Returns: boolean
       }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "user" | "admin"
+      user_status: "active" | "inactive" | "suspended" | "banned"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -918,6 +1193,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["user", "admin"],
+      user_status: ["active", "inactive", "suspended", "banned"],
+    },
   },
 } as const
