@@ -1343,14 +1343,29 @@ Deno.serve(async (req) => {
       console.log(`[process-jobs] Anti-Spy enabled with ${resolvedPages.length} pages for round-robin distribution`);
     }
 
-    // Get job items (these are templates - will be replicated for each account in multi-account mode)
+    // Get job items - now items come pre-separated per account (each item has accountId in config)
     const campaigns = items.filter((i) => i.item_type === 'campaign');
     const adsets = items.filter((i) => i.item_type === 'adset');
     const ads = items.filter((i) => i.item_type === 'ad');
 
-    // Calculate total items to process (items × accounts in multi-account mode)
-    const accountsToProcess = isMultiAccountMode ? allAdAccounts.length : 1;
-    const totalItems = items.length * accountsToProcess;
+    // Group items by accountId from their config (new approach - items already separated)
+    const itemsByAccount = new Map<string, JobItem[]>();
+    for (const item of items) {
+      const itemConfig = item.config as Record<string, any> || {};
+      const accountId = itemConfig.accountId || '';
+      if (!itemsByAccount.has(accountId)) {
+        itemsByAccount.set(accountId, []);
+      }
+      itemsByAccount.get(accountId)!.push(item);
+    }
+
+    // Determine processing mode: if items have accountId in config, use new per-item mode
+    // Otherwise, fall back to old mode where items are templates replicated per account
+    const hasPerItemAccounts = items.some(i => (i.config as Record<string, any>)?.accountId);
+    
+    // Calculate total items to process
+    const accountsToProcess = isMultiAccountMode && !hasPerItemAccounts ? allAdAccounts.length : 1;
+    const totalItems = hasPerItemAccounts ? items.length : items.length * accountsToProcess;
     let processedItems = 0;
     let hasError = false;
     let lastError = '';

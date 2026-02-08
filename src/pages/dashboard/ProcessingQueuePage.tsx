@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useCampaignJobs, useCampaignJobItems, useProcessCampaignJob } from '@/hooks/useCampaignJobs';
-import { JobItemsTree } from '@/components/campaign/JobItemsTree';
+import { AccountGroupedJobTree } from '@/components/campaign/AccountGroupedJobTree';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useQueryClient } from '@tanstack/react-query';
@@ -270,7 +270,7 @@ export default function ProcessingQueuePage() {
                           </div>
                         )}
 
-                        <JobItemsTree items={expandedJobItems} isLoading={isLoadingItems} />
+                        <AccountGroupedJobTree items={expandedJobItems} isLoading={isLoadingItems} />
                       </div>
                     )}
                   </CardContent>
