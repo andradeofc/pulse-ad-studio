@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
-import { CheckCircle, XCircle, Clock, Loader2, FolderOpen, Layers, FileText } from 'lucide-react';
+import { useMemo, useState, useCallback } from 'react';
+import { CheckCircle, XCircle, Clock, Loader2, FolderOpen, Layers, FileText, ChevronRight, ChevronDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import type { CampaignJobItem } from '@/hooks/useCampaignJobs';
 
 interface JobItemsTreeProps {
@@ -54,19 +55,65 @@ function buildTree(items: CampaignJobItem[]): TreeNode[] {
   return roots;
 }
 
-function TreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
+// Count children status for summary badge
+function countChildrenStatus(node: TreeNode): { total: number; completed: number; failed: number; processing: number } {
+  let total = 0;
+  let completed = 0;
+  let failed = 0;
+  let processing = 0;
+
+  function traverse(n: TreeNode) {
+    for (const child of n.children) {
+      total++;
+      if (child.status === 'completed') completed++;
+      if (child.status === 'failed') failed++;
+      if (child.status === 'processing') processing++;
+      traverse(child);
+    }
+  }
+
+  traverse(node);
+  return { total, completed, failed, processing };
+}
+
+interface TreeItemProps {
+  node: TreeNode;
+  depth?: number;
+  expandedIds: Set<string>;
+  onToggle: (id: string) => void;
+}
+
+function TreeItem({ node, depth = 0, expandedIds, onToggle }: TreeItemProps) {
   const StatusIcon = statusIcons[node.status];
   const TypeIcon = typeIcons[node.item_type];
+  const hasChildren = node.children.length > 0;
+  const isExpanded = expandedIds.has(node.id);
+  const childrenStatus = hasChildren ? countChildrenStatus(node) : null;
 
   return (
     <div className="select-none">
       <div
         className={cn(
-          "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-secondary/50 transition-colors",
+          "flex items-center gap-2 py-1.5 px-2 rounded-md transition-colors",
+          hasChildren ? "cursor-pointer hover:bg-secondary/50" : "hover:bg-secondary/30",
           depth > 0 && "ml-4"
         )}
         style={{ marginLeft: depth * 16 }}
+        onClick={hasChildren ? () => onToggle(node.id) : undefined}
       >
+        {/* Expand/Collapse chevron */}
+        {hasChildren ? (
+          <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+            {isExpanded ? (
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+            )}
+          </div>
+        ) : (
+          <div className="w-4 h-4 flex-shrink-0" />
+        )}
+
         <TypeIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         
         <StatusIcon
@@ -82,6 +129,16 @@ function TreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
         <span className="text-sm truncate flex-1" title={node.name}>
           {node.name}
         </span>
+
+        {/* Children summary when collapsed */}
+        {hasChildren && !isExpanded && childrenStatus && (
+          <span className="text-[10px] text-muted-foreground">
+            {childrenStatus.completed}/{childrenStatus.total}
+            {childrenStatus.failed > 0 && (
+              <span className="text-ads-danger ml-1">({childrenStatus.failed} ✗)</span>
+            )}
+          </span>
+        )}
 
         <Badge
           variant="outline"
@@ -103,15 +160,25 @@ function TreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
       </div>
 
       {node.error_message && (
-        <div className="ml-8 text-xs text-ads-danger bg-ads-danger/10 rounded px-2 py-1 mt-1">
+        <div 
+          className="text-xs text-ads-danger bg-ads-danger/10 rounded px-2 py-1 mt-1"
+          style={{ marginLeft: (depth * 16) + 24 }}
+        >
           {node.error_message}
         </div>
       )}
 
-      {node.children.length > 0 && (
-        <div className="border-l border-border/50 ml-3">
+      {/* Children - only show when expanded */}
+      {hasChildren && isExpanded && (
+        <div className="border-l border-border/50 ml-3" style={{ marginLeft: (depth * 16) + 12 }}>
           {node.children.map((child) => (
-            <TreeItem key={child.id} node={child} depth={depth + 1} />
+            <TreeItem 
+              key={child.id} 
+              node={child} 
+              depth={depth + 1} 
+              expandedIds={expandedIds}
+              onToggle={onToggle}
+            />
           ))}
         </div>
       )}
@@ -121,6 +188,37 @@ function TreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
 
 export function JobItemsTree({ items, isLoading }: JobItemsTreeProps) {
   const tree = useMemo(() => buildTree(items), [items]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const handleToggle = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const expandAll = useCallback(() => {
+    const allIds = new Set<string>();
+    function collectIds(nodes: TreeNode[]) {
+      for (const node of nodes) {
+        if (node.children.length > 0) {
+          allIds.add(node.id);
+          collectIds(node.children);
+        }
+      }
+    }
+    collectIds(tree);
+    setExpandedIds(allIds);
+  }, [tree]);
+
+  const collapseAll = useCallback(() => {
+    setExpandedIds(new Set());
+  }, []);
 
   if (isLoading) {
     return (
@@ -147,6 +245,8 @@ export function JobItemsTree({ items, isLoading }: JobItemsTreeProps) {
     completed: items.filter(i => i.status === 'completed').length,
     failed: items.filter(i => i.status === 'failed').length,
   };
+
+  const hasExpandableItems = tree.some(node => node.children.length > 0);
 
   return (
     <div className="space-y-3">
@@ -176,10 +276,39 @@ export function JobItemsTree({ items, isLoading }: JobItemsTreeProps) {
         )}
       </div>
 
+      {/* Expand/Collapse controls */}
+      {hasExpandableItems && (
+        <div className="flex gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={expandAll}
+            className="text-xs h-7 px-2"
+          >
+            <ChevronDown className="w-3 h-3 mr-1" />
+            Expandir tudo
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={collapseAll}
+            className="text-xs h-7 px-2"
+          >
+            <ChevronRight className="w-3 h-3 mr-1" />
+            Recolher tudo
+          </Button>
+        </div>
+      )}
+
       {/* Tree */}
       <div className="space-y-1 max-h-80 overflow-y-auto">
         {tree.map((node) => (
-          <TreeItem key={node.id} node={node} />
+          <TreeItem 
+            key={node.id} 
+            node={node} 
+            expandedIds={expandedIds}
+            onToggle={handleToggle}
+          />
         ))}
       </div>
     </div>
