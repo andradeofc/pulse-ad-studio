@@ -790,19 +790,31 @@ async function createCatalogCreativesBatch(
   adAccountId: string,
   ads: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any> }>,
   config: Record<string, any>,
-  pageId: string,
-  instagramUserId: string | null,
+  resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null }>,
+  defaultPageId: string,
+  defaultInstagramUserId: string | null,
   supabase: any,
 ): Promise<Map<string, string>> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const creativeIdMap = new Map<string, string>();
   
-  // Build batch requests for creatives
+  // Build batch requests for creatives with anti-spy page rotation
   const batchItems: Array<{ item: typeof ads[0]; batchItem: BatchRequestItem }> = [];
   
   for (let i = 0; i < ads.length; i++) {
     const ad = ads[i];
-    const params = buildCatalogCreativeParams(config, ad.name, pageId, instagramUserId);
+    
+    // Anti-spy page rotation for catalog ads
+    let currentPageId = defaultPageId;
+    let currentInstagramUserId = defaultInstagramUserId;
+    
+    if (config.antiSpyEnabled && resolvedPages.length > 1) {
+      const pageIndex = i % resolvedPages.length;
+      currentPageId = resolvedPages[pageIndex].pageId;
+      currentInstagramUserId = resolvedPages[pageIndex].instagramActorId;
+    }
+    
+    const params = buildCatalogCreativeParams(config, ad.name, currentPageId, currentInstagramUserId);
     
     const body = new URLSearchParams(params).toString();
     
@@ -1542,6 +1554,7 @@ Deno.serve(async (req) => {
           currentAccount.account_id,
           adsWithNames,
           config,
+          resolvedPages,
           defaultPageId,
           defaultInstagramUserId,
           supabase,
