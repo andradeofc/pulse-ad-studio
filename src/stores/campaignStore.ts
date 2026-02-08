@@ -48,11 +48,14 @@ export interface CampaignConfig {
   selectedBusinessManagerName: string;
   catalogId: string; // Facebook catalog_id (for promoted_object.product_catalog_id)
   catalogDbId: string; // Database UUID for fetching product sets
+  catalogName: string; // Catalog name for naming variables
   productSetId: string; // Facebook product_set_id (for adset promoted_object.product_set_id)
   businessManagerId: string;
   catalogImage: string;
   duplicateProducts: number;
   advantagePlus: boolean;
+  // Page names for naming variables
+  pageNames: string[];
   // Targeting - API compatible fields
   geoLocations: {
     countries: string[]; // ISO country codes: ['BR', 'US', 'PT']
@@ -149,10 +152,12 @@ const defaultConfig: CampaignConfig = {
   selectedBusinessManagerName: '',
   catalogId: '',
   catalogDbId: '',
+  catalogName: '',
   productSetId: '',
   businessManagerId: '',
   catalogImage: '',
   duplicateProducts: 5,
+  pageNames: [],
   advantagePlus: true,
   geoLocations: {
     countries: ['BR'], // ISO codes
