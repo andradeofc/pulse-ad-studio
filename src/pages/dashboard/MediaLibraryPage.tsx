@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -17,7 +17,10 @@ import {
   MoreVertical,
   Download,
   Eye,
-  CheckCircle2
+  CheckCircle2,
+  Pencil,
+  Check,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,7 +52,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { CreativeUploadModal } from '@/components/campaign/CreativeUploadModal';
-import { fetchCreatives, deleteCreative, CreativeMetadata } from '@/services/creativesService';
+import { fetchCreatives, deleteCreative, renameCreative, CreativeMetadata } from '@/services/creativesService';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -66,6 +69,9 @@ export default function MediaLibraryPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [creativeToDelete, setCreativeToDelete] = useState<CreativeMetadata | null>(null);
   const [previewCreative, setPreviewCreative] = useState<CreativeMetadata | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const { data: creatives = [], isLoading } = useQuery({
     queryKey: ['creatives'],
@@ -86,6 +92,56 @@ export default function MediaLibraryPage() {
       console.error('Delete error:', error);
     },
   });
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => 
+      renameCreative(id, name),
+    onSuccess: (updatedCreative) => {
+      queryClient.invalidateQueries({ queryKey: ['creatives'] });
+      setPreviewCreative(updatedCreative);
+      toast.success('Nome atualizado com sucesso');
+      setIsEditingName(false);
+    },
+    onError: (error) => {
+      toast.error('Erro ao renomear criativo');
+      console.error('Rename error:', error);
+    },
+  });
+
+  useEffect(() => {
+    if (isEditingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [isEditingName]);
+
+  const startEditing = () => {
+    if (previewCreative) {
+      setEditedName(previewCreative.name);
+      setIsEditingName(true);
+    }
+  };
+
+  const cancelEditing = () => {
+    setIsEditingName(false);
+    setEditedName('');
+  };
+
+  const saveNewName = () => {
+    if (previewCreative && editedName.trim() && editedName !== previewCreative.name) {
+      renameMutation.mutate({ id: previewCreative.id, name: editedName.trim() });
+    } else {
+      cancelEditing();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      saveNewName();
+    } else if (e.key === 'Escape') {
+      cancelEditing();
+    }
+  };
 
   const filteredCreatives = creatives.filter((creative) => {
     const matchesType = filterType === 'all' || creative.type === filterType;
@@ -533,12 +589,64 @@ export default function MediaLibraryPage() {
       </AlertDialog>
 
       {/* Preview Dialog */}
-      <AlertDialog open={!!previewCreative} onOpenChange={() => setPreviewCreative(null)}>
+      <AlertDialog 
+        open={!!previewCreative} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewCreative(null);
+            setIsEditingName(false);
+            setEditedName('');
+          }
+        }}
+      >
         <AlertDialogContent className="max-w-4xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="truncate">{previewCreative?.name}</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2">
+              {isEditingName ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <Input
+                    ref={nameInputRef}
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    className="flex-1 h-8"
+                    disabled={renameMutation.isPending}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
+                    onClick={saveNewName}
+                    disabled={renameMutation.isPending}
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={cancelEditing}
+                    disabled={renameMutation.isPending}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 group/title flex-1 min-w-0">
+                  <span className="truncate">{previewCreative?.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 opacity-0 group-hover/title:opacity-100 transition-opacity"
+                    onClick={startEditing}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              )}
+            </AlertDialogTitle>
           </AlertDialogHeader>
-          <div className="relative rounded-lg overflow-hidden bg-black/50">
+          <div className="relative rounded-lg overflow-hidden bg-secondary/50">
             {previewCreative?.type === 'video' ? (
               <video
                 src={previewCreative.url}
