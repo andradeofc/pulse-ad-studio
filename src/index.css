@@ -10,7 +10,82 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @layer base {
+  /* Light Mode */
   :root {
+    /* Core Background Colors */
+    --background: 0 0% 100%;            /* White - Main background */
+    --foreground: 222 47% 11%;          /* Dark text */
+
+    /* Card/Surface Colors */
+    --card: 0 0% 100%;                  /* White card background */
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - Emerald Green for CTAs and success */
+    --primary: 160 84% 39%;             /* #10b981 */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Light gray surface */
+    --secondary: 220 14% 96%;           /* #f4f5f7 */
+    --secondary-foreground: 222 47% 11%;
+
+    /* Muted - For secondary text and subtle elements */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;     /* #6b7280 */
+
+    /* Accent - For highlights and interactive states */
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    /* Destructive - Red for alerts and danger actions */
+    --destructive: 0 84% 60%;           /* #ef4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Border and Input */
+    --border: 220 13% 91%;              /* #e5e7eb */
+    --input: 220 13% 91%;
+    --ring: 160 84% 39%;                /* Emerald ring */
+
+    --radius: 0.75rem;
+
+    /* Sidebar */
+    --sidebar-background: 220 14% 96%;
+    --sidebar-foreground: 220 9% 46%;
+    --sidebar-primary: 160 84% 39%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 92%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 160 84% 39%;
+
+    /* Custom AdsPulse Colors */
+    --ads-warning: 38 92% 50%;          /* #f59e0b - Amber */
+    --ads-info: 217 91% 60%;            /* #3b82f6 - Blue */
+    --ads-success: 160 84% 39%;         /* #10b981 - Emerald */
+    --ads-danger: 0 84% 60%;            /* #ef4444 - Red */
+    
+    /* Semantic status colors */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
+    
+    /* Gradient tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(160 84% 39%), hsl(160 84% 50%));
+    --gradient-hero: linear-gradient(135deg, hsl(160 84% 39% / 0.1), hsl(217 91% 60% / 0.05));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(220 14% 98%));
+    --gradient-glow: radial-gradient(ellipse at center, hsl(160 84% 39% / 0.08), transparent 70%);
+    
+    /* Shadow tokens */
+    --shadow-glow: 0 0 40px hsl(160 84% 39% / 0.2);
+    --shadow-card: 0 1px 3px hsl(220 13% 50% / 0.1), 0 1px 2px hsl(220 13% 50% / 0.06);
+    --shadow-button: 0 4px 14px hsl(160 84% 39% / 0.25);
+  }
+
+  /* Dark Mode */
+  .dark {
     /* Core Background Colors */
     --background: 222 47% 5%;           /* #0a0e1a - Main background */
     --foreground: 210 40% 98%;          /* #f9fafb - Primary text */
@@ -47,8 +122,6 @@
     --input: 217 33% 17%;
     --ring: 160 84% 39%;                /* Emerald ring */
 
-    --radius: 0.75rem;
-
     /* Sidebar */
     --sidebar-background: 222 47% 5%;
     --sidebar-foreground: 215 16% 65%;
@@ -58,34 +131,17 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 17%;
     --sidebar-ring: 160 84% 39%;
-
-    /* Custom AdsPulse Colors */
-    --ads-warning: 38 92% 50%;          /* #f59e0b - Amber */
-    --ads-info: 217 91% 60%;            /* #3b82f6 - Blue */
-    --ads-success: 160 84% 39%;         /* #10b981 - Emerald */
-    --ads-danger: 0 84% 60%;            /* #ef4444 - Red */
     
-    /* Semantic status colors */
-    --warning: 38 92% 50%;              /* Amber for warnings */
-    --warning-foreground: 210 40% 98%;
-    --success: 160 84% 39%;             /* Emerald for success */
-    --success-foreground: 210 40% 98%;
-    
-    /* Gradient tokens */
+    /* Gradient tokens (dark) */
     --gradient-primary: linear-gradient(135deg, hsl(160 84% 39%), hsl(160 84% 50%));
     --gradient-hero: linear-gradient(135deg, hsl(160 84% 39% / 0.2), hsl(217 91% 60% / 0.1));
     --gradient-card: linear-gradient(180deg, hsl(220 26% 12%), hsl(220 26% 8%));
     --gradient-glow: radial-gradient(ellipse at center, hsl(160 84% 39% / 0.15), transparent 70%);
     
-    /* Shadow tokens */
+    /* Shadow tokens (dark) */
     --shadow-glow: 0 0 40px hsl(160 84% 39% / 0.3);
     --shadow-card: 0 4px 24px hsl(222 47% 2% / 0.5);
     --shadow-button: 0 4px 14px hsl(160 84% 39% / 0.4);
-  }
-
-  /* Dark mode is default, no light mode variant needed */
-  .dark {
-    /* Same as root - dark by default */
   }
 }
 

@@ -27,33 +27,54 @@ const accentColors = [
 ];
 
 export function AppearanceSettings() {
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [accentColor, setAccentColor] = useState('purple');
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem('theme') as Theme | null;
+    if (stored) return stored;
+    return 'dark'; // Default to dark
+  });
+  const [accentColor, setAccentColor] = useState('green');
   const [compactMode, setCompactMode] = useState(false);
   const [animations, setAnimations] = useState(true);
 
+  // Apply theme on mount and when it changes
   useEffect(() => {
-    // Get current theme from document
-    const isDark = document.documentElement.classList.contains('dark');
-    setTheme(isDark ? 'dark' : 'light');
-  }, []);
+    applyTheme(theme);
+  }, [theme]);
 
-  const handleThemeChange = (newTheme: Theme) => {
-    setTheme(newTheme);
+  // Listen for system preference changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (theme === 'system') {
+        applyTheme('system');
+      }
+    };
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [theme]);
+
+  const applyTheme = (newTheme: Theme) => {
+    const root = document.documentElement;
     
     if (newTheme === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.classList.toggle('dark', prefersDark);
+      root.classList.toggle('dark', prefersDark);
+    } else if (newTheme === 'dark') {
+      root.classList.add('dark');
     } else {
-      document.documentElement.classList.toggle('dark', newTheme === 'dark');
+      root.classList.remove('dark');
     }
-    
+  };
+
+  const handleThemeChange = (newTheme: Theme) => {
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
     toast.success(`Tema alterado para ${themes.find(t => t.id === newTheme)?.label}`);
   };
 
   const handleAccentColorChange = (colorId: string) => {
     setAccentColor(colorId);
-    // In a real implementation, this would update CSS variables
     toast.success('Cor de destaque atualizada');
   };
 
