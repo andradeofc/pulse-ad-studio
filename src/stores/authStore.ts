@@ -15,6 +15,7 @@ interface AuthState {
   supabaseUser: SupabaseUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  blockedReason: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -30,22 +31,83 @@ const mapSupabaseUser = (supabaseUser: SupabaseUser): User => ({
   plan: 'pro', // Default plan, can be fetched from profile later
 });
 
+// Helper function to check user status in user_profiles
+const checkUserStatus = async (userId: string): Promise<{ 
+  allowed: boolean; 
+  status?: string; 
+  message?: string 
+}> => {
+  try {
+    const { data: profile, error } = await supabase
+      .from('user_profiles')
+      .select('status')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    // If no profile exists yet (new user) or error, allow access
+    if (error || !profile) {
+      return { allowed: true };
+    }
+
+    if (profile.status === 'suspended') {
+      return { 
+        allowed: false, 
+        status: 'suspended',
+        message: 'Sua conta está suspensa temporariamente. Entre em contato com o suporte para mais informações.'
+      };
+    }
+
+    if (profile.status === 'banned') {
+      return { 
+        allowed: false, 
+        status: 'banned',
+        message: 'Sua conta foi banida permanentemente devido a violações dos termos de uso.'
+      };
+    }
+
+    // Status is 'active' or 'inactive' - allow access
+    return { allowed: true };
+  } catch (error) {
+    // On error, allow access to not block legitimate users
+    console.error('Error checking user status:', error);
+    return { allowed: true };
+  }
+};
+
 export const useAuthStore = create<AuthState>()((set, get) => ({
   user: null,
   supabaseUser: null,
   isAuthenticated: false,
   isLoading: true,
+  blockedReason: null,
 
   initialize: async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
+        // Check user status before allowing access
+        const statusCheck = await checkUserStatus(session.user.id);
+        
+        if (!statusCheck.allowed) {
+          // User is suspended or banned - sign them out silently
+          await supabase.auth.signOut();
+          set({
+            supabaseUser: null,
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            blockedReason: statusCheck.message || null,
+          });
+          return;
+        }
+
         set({
           supabaseUser: session.user,
           user: mapSupabaseUser(session.user),
           isAuthenticated: true,
           isLoading: false,
+          blockedReason: null,
         });
       } else {
         set({ isLoading: false });
@@ -54,11 +116,28 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       // Listen for auth changes
       supabase.auth.onAuthStateChange((_event, session) => {
         if (session?.user) {
-          set({
-            supabaseUser: session.user,
-            user: mapSupabaseUser(session.user),
-            isAuthenticated: true,
-          });
+          // Defer status check to avoid Supabase client deadlock
+          setTimeout(async () => {
+            const statusCheck = await checkUserStatus(session.user.id);
+            
+            if (!statusCheck.allowed) {
+              await supabase.auth.signOut();
+              set({
+                supabaseUser: null,
+                user: null,
+                isAuthenticated: false,
+                blockedReason: statusCheck.message || null,
+              });
+              return;
+            }
+
+            set({
+              supabaseUser: session.user,
+              user: mapSupabaseUser(session.user),
+              isAuthenticated: true,
+              blockedReason: null,
+            });
+          }, 0);
         } else {
           set({
             supabaseUser: null,
@@ -74,7 +153,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   login: async (email: string, password: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, blockedReason: null });
     
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -87,17 +166,31 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
 
     if (data.user) {
+      // Check user status after successful authentication
+      const statusCheck = await checkUserStatus(data.user.id);
+      
+      if (!statusCheck.allowed) {
+        // Sign out the user immediately
+        await supabase.auth.signOut();
+        set({ 
+          isLoading: false,
+          blockedReason: statusCheck.message || null,
+        });
+        throw new Error(statusCheck.message || 'Acesso negado');
+      }
+
       set({
         supabaseUser: data.user,
         user: mapSupabaseUser(data.user),
         isAuthenticated: true,
         isLoading: false,
+        blockedReason: null,
       });
     }
   },
 
   register: async (name: string, email: string, password: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, blockedReason: null });
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -133,6 +226,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       supabaseUser: null,
       user: null,
       isAuthenticated: false,
+      blockedReason: null,
     });
   },
 
