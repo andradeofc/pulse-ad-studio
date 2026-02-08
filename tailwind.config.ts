@@ -65,6 +65,15 @@ export default {
         "ads-warning": "hsl(var(--ads-warning))",
         "ads-danger": "hsl(var(--ads-danger))",
         "ads-info": "hsl(var(--ads-info))",
+        // Semantic status colors
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
