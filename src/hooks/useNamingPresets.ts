@@ -10,6 +10,7 @@ export interface Preset {
   template: string;
   context: NamingContext;
   isDefault?: boolean;
+  isFavorite?: boolean;
 }
 
 export interface CustomVariable {
@@ -26,6 +27,7 @@ const defaultPresets: Preset[] = [
     template: '[CP{{sequencial:01}}] [{{conta_apelido}} + {{conjunto_catalogo}}] [{{nicho}}] [{{pagina_nome}}] [TDC {{budget}}] [{{dia}}/{{mes}}] - {{conjunto_catalogo}}',
     context: 'campaign',
     isDefault: true,
+    isFavorite: false,
   },
   {
     id: 'default-elton',
@@ -33,6 +35,7 @@ const defaultPresets: Preset[] = [
     template: '[CP{{sequencial:08}}][{{budget}}][{{estrutura}}][{{conta_apelido}}][{{ano2}}_{{mes}}_{{dia}}][{{hora}}_{{minuto}}]',
     context: 'campaign',
     isDefault: true,
+    isFavorite: false,
   },
   {
     id: 'default-simples',
@@ -40,6 +43,7 @@ const defaultPresets: Preset[] = [
     template: '{{conta_apelido}}_{{criativo}}_{{sequencial:01}}',
     context: 'campaign',
     isDefault: true,
+    isFavorite: false,
   },
 ];
 
@@ -61,10 +65,11 @@ export function useNamingPresets() {
         return;
       }
 
-      // Fetch user presets
+      // Fetch user presets - order by favorite first, then by created_at
       const { data: userPresets, error: presetsError } = await supabase
         .from('naming_presets')
         .select('*')
+        .order('is_favorite', { ascending: false })
         .order('created_at', { ascending: true });
 
       if (presetsError) {
@@ -76,8 +81,12 @@ export function useNamingPresets() {
           template: p.template,
           context: p.context as NamingContext,
           isDefault: false,
+          isFavorite: p.is_favorite || false,
         }));
-        setPresets([...defaultPresets, ...mappedPresets]);
+        // Sort: user favorites first, then user presets, then defaults
+        const userFavorites = mappedPresets.filter(p => p.isFavorite);
+        const userNonFavorites = mappedPresets.filter(p => !p.isFavorite);
+        setPresets([...userFavorites, ...userNonFavorites, ...defaultPresets]);
       }
 
       // Fetch user custom variables
@@ -235,6 +244,53 @@ export function useNamingPresets() {
     }
   }, [presets, toast]);
 
+  // Toggle favorite status
+  const toggleFavorite = useCallback(async (presetId: string): Promise<boolean> => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset || preset.isDefault) {
+      toast({ title: 'Não permitido', description: 'Presets padrão do sistema não podem ser favoritados.', variant: 'destructive' });
+      return false;
+    }
+
+    const newFavoriteStatus = !preset.isFavorite;
+
+    try {
+      const { error } = await supabase
+        .from('naming_presets')
+        .update({ is_favorite: newFavoriteStatus })
+        .eq('id', presetId);
+
+      if (error) {
+        console.error('Error toggling favorite:', error);
+        toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+        return false;
+      }
+
+      // Update local state and reorder
+      setPresets(prev => {
+        const updated = prev.map(p => 
+          p.id === presetId ? { ...p, isFavorite: newFavoriteStatus } : p
+        );
+        // Reorder: favorites first, then non-favorites, defaults last
+        const userFavorites = updated.filter(p => !p.isDefault && p.isFavorite);
+        const userNonFavorites = updated.filter(p => !p.isDefault && !p.isFavorite);
+        const defaults = updated.filter(p => p.isDefault);
+        return [...userFavorites, ...userNonFavorites, ...defaults];
+      });
+
+      toast({ 
+        title: newFavoriteStatus ? 'Favoritado!' : 'Removido dos favoritos',
+        description: newFavoriteStatus 
+          ? `"${preset.name}" agora aparecerá primeiro na lista.`
+          : `"${preset.name}" foi removido dos favoritos.`
+      });
+      return true;
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      return false;
+    }
+  }, [presets, toast]);
+
   // Save or update custom variable
   const saveVariable = useCallback(async (key: string, label: string, value: string): Promise<CustomVariable | null> => {
     try {
@@ -347,6 +403,7 @@ export function useNamingPresets() {
     updatePreset,
     renamePreset,
     deletePreset,
+    toggleFavorite,
     saveVariable,
     deleteVariable,
     updateVariableValue,

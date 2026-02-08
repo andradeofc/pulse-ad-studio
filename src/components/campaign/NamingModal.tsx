@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical, Loader2, FilePlus, RefreshCw } from 'lucide-react';
+import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical, Loader2, FilePlus, RefreshCw, Star } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -112,18 +112,31 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     updatePreset,
     renamePreset,
     deletePreset,
+    toggleFavorite,
     saveVariable,
     deleteVariable,
     updateVariableValue,
     reload,
   } = useNamingPresets();
 
-  // Reload data when modal opens
+  // Reload data when modal opens and auto-select first favorite
   useEffect(() => {
     if (open) {
       reload();
     }
   }, [open, reload]);
+
+  // Auto-select first favorite preset when modal opens (only if no preset is selected and no value provided)
+  useEffect(() => {
+    if (open && !selectedPreset && !value) {
+      const contextPresets = presets.filter(p => p.context === context);
+      const firstFavorite = contextPresets.find(p => p.isFavorite);
+      if (firstFavorite) {
+        setSelectedPreset(firstFavorite.id);
+        setTemplate(firstFavorite.template);
+      }
+    }
+  }, [open, presets, context, selectedPreset, value]);
 
   // Initialize local custom vars from DB + initialCustomVariables
   useEffect(() => {
@@ -414,7 +427,7 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
         {/* Toolbar */}
         <div className="flex items-center gap-3 p-4 border-b border-border bg-secondary/30">
           <Select value={selectedPreset} onValueChange={handlePresetChange}>
-            <SelectTrigger className="w-48 bg-background">
+            <SelectTrigger className="w-56 bg-background">
               <SelectValue placeholder="Selecionar preset..." />
             </SelectTrigger>
             <SelectContent>
@@ -422,7 +435,11 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                 .filter(p => p.context === context)
                 .map(preset => (
                   <SelectItem key={preset.id} value={preset.id}>
-                    {preset.name} {preset.isDefault && <span className="text-muted-foreground text-xs">(padrão)</span>}
+                    <span className="flex items-center gap-2">
+                      {preset.isFavorite && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
+                      {preset.name} 
+                      {preset.isDefault && <span className="text-muted-foreground text-xs">(sistema)</span>}
+                    </span>
                   </SelectItem>
                 ))}
             </SelectContent>
@@ -461,6 +478,13 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
                   </div>
                 ) : (
                   <>
+                    <DropdownMenuItem
+                      onClick={() => toggleFavorite(selectedPreset)}
+                      disabled={presets.find(p => p.id === selectedPreset)?.isDefault}
+                    >
+                      <Star className={`w-4 h-4 mr-2 ${presets.find(p => p.id === selectedPreset)?.isFavorite ? 'text-yellow-500 fill-yellow-500' : ''}`} />
+                      {presets.find(p => p.id === selectedPreset)?.isFavorite ? 'Remover dos favoritos' : 'Definir como padrão'}
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => handleRenamePreset(selectedPreset)}
                       disabled={presets.find(p => p.id === selectedPreset)?.isDefault}
