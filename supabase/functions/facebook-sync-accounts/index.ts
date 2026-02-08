@@ -9,6 +9,70 @@ const corsHeaders = {
 
 const FACEBOOK_GRAPH_API = "https://graph.facebook.com/v19.0";
 
+// Rate limit configuration
+const RATE_LIMIT_CONFIG = {
+  BASE_DELAY_MS: 100,           // Base delay between requests
+  HIGH_USAGE_THRESHOLD: 50,     // Start slowing down at 50%
+  CRITICAL_THRESHOLD: 80,       // Heavy throttling at 80%
+  MAX_DELAY_MS: 2000,           // Maximum delay between requests
+};
+
+// Helper to parse rate limit header
+function parseRateLimitHeader(header: string | null): number {
+  if (!header) return 0;
+  try {
+    const match = header.match(/acc_id_util_pct=(\d+(?:\.\d+)?)/);
+    if (match) return parseFloat(match[1]);
+    const parsed = JSON.parse(header);
+    if (parsed.acc_id_util_pct !== undefined) return parseFloat(parsed.acc_id_util_pct);
+  } catch {
+    // Ignore parse errors
+  }
+  return 0;
+}
+
+// Adaptive delay based on rate limit usage
+function getAdaptiveDelay(usagePercent: number): number {
+  const { BASE_DELAY_MS, HIGH_USAGE_THRESHOLD, CRITICAL_THRESHOLD, MAX_DELAY_MS } = RATE_LIMIT_CONFIG;
+  
+  if (usagePercent >= CRITICAL_THRESHOLD) {
+    return MAX_DELAY_MS;
+  } else if (usagePercent >= HIGH_USAGE_THRESHOLD) {
+    // Linear scale from BASE to MAX between thresholds
+    const factor = (usagePercent - HIGH_USAGE_THRESHOLD) / (CRITICAL_THRESHOLD - HIGH_USAGE_THRESHOLD);
+    return Math.min(BASE_DELAY_MS + factor * (MAX_DELAY_MS - BASE_DELAY_MS), MAX_DELAY_MS);
+  }
+  return BASE_DELAY_MS;
+}
+
+// Sleep helper
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Fetch with rate limit tracking
+async function fetchWithRateLimit(
+  url: string, 
+  currentUsage: { percent: number }
+): Promise<{ response: Response; newUsage: number }> {
+  // Apply adaptive delay before request
+  const delay = getAdaptiveDelay(currentUsage.percent);
+  if (delay > 0) {
+    await sleep(delay);
+  }
+  
+  const response = await fetch(url);
+  
+  // Update usage from response header
+  const usageHeader = response.headers.get("x-ad-account-usage");
+  const newUsage = parseRateLimitHeader(usageHeader);
+  
+  if (newUsage > 0) {
+    currentUsage.percent = newUsage;
+    console.log(`Rate limit usage: ${newUsage.toFixed(1)}% (delay: ${delay}ms)`);
+  }
+  
+  return { response, newUsage };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -105,6 +169,9 @@ serve(async (req) => {
     }
 
     const syncedAccounts: any[] = [];
+    
+    // Track rate limit usage across all requests
+    const rateLimitUsage = { percent: 0 };
 
     // Helper function to upsert ad account with spend
     const upsertAdAccount = async (account: any, businessId: string | null, businessName: string | null) => {
@@ -146,7 +213,7 @@ serve(async (req) => {
     console.log("Fetching personal ad accounts...");
     const personalAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status,amount_spent&access_token=${accessToken}`;
     
-    const personalResponse = await fetch(personalAccountsUrl);
+    const { response: personalResponse } = await fetchWithRateLimit(personalAccountsUrl, rateLimitUsage);
     
     if (!personalResponse.ok) {
       const errorData = await personalResponse.json();
@@ -177,7 +244,7 @@ serve(async (req) => {
     console.log("Fetching Business Managers...");
     const businessesUrl = `${FACEBOOK_GRAPH_API}/me/businesses?fields=id,name&access_token=${accessToken}`;
     
-    const businessesResponse = await fetch(businessesUrl);
+    const { response: businessesResponse } = await fetchWithRateLimit(businessesUrl, rateLimitUsage);
     
     if (businessesResponse.ok) {
       const businessesData = await businessesResponse.json();
@@ -185,11 +252,16 @@ serve(async (req) => {
       console.log(`Found ${businesses.length} Business Managers`);
 
       for (const business of businesses) {
+        // Check if rate limit is critical - if so, log warning but continue with delays
+        if (rateLimitUsage.percent >= RATE_LIMIT_CONFIG.CRITICAL_THRESHOLD) {
+          console.warn(`High rate limit usage (${rateLimitUsage.percent.toFixed(1)}%), applying maximum delay`);
+        }
+        
         // Fetch owned ad accounts for this BM
         console.log(`Fetching ad accounts for BM: ${business.name} (${business.id})`);
         
         const ownedAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status,amount_spent&access_token=${accessToken}`;
-        const ownedResponse = await fetch(ownedAccountsUrl);
+        const { response: ownedResponse } = await fetchWithRateLimit(ownedAccountsUrl, rateLimitUsage);
         
         if (ownedResponse.ok) {
           const ownedData = await ownedResponse.json();
@@ -205,7 +277,7 @@ serve(async (req) => {
 
         // Fetch client ad accounts for this BM
         const clientAccountsUrl = `${FACEBOOK_GRAPH_API}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status,amount_spent&access_token=${accessToken}`;
-        const clientResponse = await fetch(clientAccountsUrl);
+        const { response: clientResponse } = await fetchWithRateLimit(clientAccountsUrl, rateLimitUsage);
         
         if (clientResponse.ok) {
           const clientData = await clientResponse.json();
@@ -229,13 +301,14 @@ serve(async (req) => {
       .update({ last_synced_at: new Date().toISOString() })
       .eq("id", profileId);
 
-    console.log(`Synced ${syncedAccounts.length} total ad accounts`);
+    console.log(`Synced ${syncedAccounts.length} total ad accounts (final rate limit: ${rateLimitUsage.percent.toFixed(1)}%)`);
 
     return new Response(
       JSON.stringify({
         success: true,
         accountsCount: syncedAccounts.length,
         accounts: syncedAccounts,
+        rateLimitPercent: rateLimitUsage.percent,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
