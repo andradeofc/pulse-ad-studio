@@ -83,18 +83,8 @@ export default function CreateCampaignPage() {
       return;
     }
 
-    // Check rate limit before proceeding
-    if (rateLimitEstimate.isOverLimit) {
-      toast({
-        title: 'Limite de API excedido',
-        description: `Esta operação requer ${rateLimitEstimate.totalPoints.toLocaleString()} pontos, mas o limite é 9.000. Reduza para no máximo ${rateLimitEstimate.recommendedMaxStructures} campanha(s).`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Show warning if usage is high
-    if (rateLimitEstimate.warningLevel === 'warning' && !showRateLimitWarning) {
+    // Show info dialog for large jobs (not blocking, just informational)
+    if ((rateLimitEstimate.isOverLimit || rateLimitEstimate.warningLevel !== 'safe') && !showRateLimitWarning) {
       setShowRateLimitWarning(true);
       return;
     }
@@ -294,33 +284,48 @@ export default function CreateCampaignPage() {
         </div>
       </div>
 
-      {/* Rate Limit Warning Dialog */}
+      {/* Rate Limit Info Dialog */}
       <AlertDialog open={showRateLimitWarning} onOpenChange={setShowRateLimitWarning}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Uso Alto de API
+              <AlertTriangle className="h-5 w-5 text-ads-info" />
+              {rateLimitEstimate.isOverLimit ? 'Job Grande Detectado' : 'Informação de Rate Limit'}
             </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <p>
-                Esta operação utilizará <strong>{rateLimitEstimate.usagePercent}%</strong> do limite 
-                de rate limit da API do Facebook.
-              </p>
-              <div className="bg-muted p-3 rounded-lg text-sm space-y-1">
-                <p>• <strong>{rateLimitEstimate.totalApiCalls}</strong> chamadas de API</p>
-                <p>• <strong>{rateLimitEstimate.totalPoints.toLocaleString()}</strong> pontos (limite: 9.000)</p>
-                <p>• Tempo estimado: <strong>~{Math.ceil(rateLimitEstimate.estimatedTimeSeconds / 60)} minuto(s)</strong></p>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Esta operação requer <strong>{rateLimitEstimate.totalPoints.toLocaleString()}</strong> pontos 
+                  (limite por janela: 9.000).
+                </p>
+                <div className="bg-muted p-3 rounded-lg text-sm space-y-1">
+                  <p>• <strong>{rateLimitEstimate.totalApiCalls}</strong> chamadas de API</p>
+                  <p>• <strong>{totalCampaigns}</strong> campanhas × <strong>{config.adsetsPerCampaign}</strong> conjuntos × <strong>{config.adsPerAdset}</strong> anúncios</p>
+                  <p>• Tempo estimado: <strong>~{Math.ceil(rateLimitEstimate.estimatedTimeSeconds / 60)} minuto(s)</strong></p>
+                </div>
+                
+                {rateLimitEstimate.isOverLimit ? (
+                  <div className="bg-ads-info/10 border border-ads-info/30 p-3 rounded-lg text-sm">
+                    <p className="font-medium text-ads-info mb-1">🔄 Sistema de Fila Inteligente</p>
+                    <p className="text-muted-foreground">
+                      O job será processado em lotes automáticos. Quando atingir o limite, 
+                      o sistema <strong>pausará automaticamente</strong> e retomará após 5 minutos. 
+                      Você pode acompanhar o progresso na fila de processamento.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-sm">
+                    Se o limite for atingido durante o processamento, o sistema pausará 
+                    automaticamente e retomará quando disponível.
+                  </p>
+                )}
               </div>
-              <p className="text-amber-600 dark:text-amber-400">
-                Continuar pode causar lentidão ou bloqueio temporário se você já usou a API recentemente.
-              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={proceedWithCreation} className="bg-amber-600 hover:bg-amber-700">
-              Continuar Mesmo Assim
+            <AlertDialogAction onClick={proceedWithCreation} className="bg-ads-success hover:bg-ads-success/90">
+              Enviar para Fila
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
