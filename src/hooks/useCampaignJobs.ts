@@ -101,6 +101,9 @@ export function useCreateCampaignJob() {
       if (!user) throw new Error('Usuário não autenticado');
 
       const hash = generateHash();
+      const expectedItemCount = params.items.length;
+
+      console.log(`[useCampaignJobs] Creating job with ${expectedItemCount} items for ${params.accountsCount} accounts`);
 
       // Create the job first
       const { data: job, error: jobError } = await supabase
@@ -161,6 +164,8 @@ export function useCreateCampaignJob() {
 
         console.log(`[useCampaignJobs] Inserting ${itemsToInsert.length} items in ${batches.length} batch(es)`);
 
+        let insertedCount = 0;
+        
         // Execute batch inserts SEQUENTIALLY to respect parent_id foreign keys
         // Parents must exist before children can reference them
         for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -171,13 +176,47 @@ export function useCreateCampaignJob() {
 
           if (batchError) {
             console.error(`[useCampaignJobs] Batch ${batchIndex + 1} failed:`, batchError);
+            
+            // CRITICAL: Mark job as failed if we can't insert all items
+            await supabase
+              .from('campaign_jobs')
+              .update({ 
+                status: 'failed', 
+                error_message: `Falha ao inserir itens (batch ${batchIndex + 1}): ${batchError.message}` 
+              })
+              .eq('id', job.id);
+            
             throw batchError;
           }
           
-          console.log(`[useCampaignJobs] Batch ${batchIndex + 1}/${batches.length} inserted (${batch.length} items)`);
+          insertedCount += batch.length;
+          console.log(`[useCampaignJobs] Batch ${batchIndex + 1}/${batches.length} inserted (${batch.length} items, total: ${insertedCount})`);
         }
 
-        console.log(`[useCampaignJobs] All ${itemsToInsert.length} items inserted successfully`);
+        // CRITICAL: Verify all items were inserted to ensure data integrity
+        const { count: actualCount, error: countError } = await supabase
+          .from('campaign_job_items')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', job.id);
+
+        if (countError) {
+          console.error(`[useCampaignJobs] Failed to verify item count:`, countError);
+        } else if (actualCount !== expectedItemCount) {
+          console.error(`[useCampaignJobs] INTEGRITY ERROR: Expected ${expectedItemCount} items, got ${actualCount}`);
+          
+          // Mark job as failed due to integrity issue
+          await supabase
+            .from('campaign_jobs')
+            .update({ 
+              status: 'failed', 
+              error_message: `Erro de integridade: esperado ${expectedItemCount} itens, inseridos ${actualCount}` 
+            })
+            .eq('id', job.id);
+          
+          throw new Error(`Integrity error: expected ${expectedItemCount} items, got ${actualCount}`);
+        }
+
+        console.log(`[useCampaignJobs] All ${insertedCount} items inserted and verified successfully`);
       }
 
       return job as CampaignJob;

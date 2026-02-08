@@ -1553,12 +1553,22 @@ Deno.serve(async (req) => {
 
     if (config.selectedPages && config.selectedPages.length > 0 && firstAccessToken) {
       for (const selectedPageValue of config.selectedPages) {
-        let { data: page } = await supabase
-          .from('facebook_pages')
-          .select('page_id, access_token, ads_running, ads_limit')
-          .eq('id', selectedPageValue)
-          .single();
-
+        // Check if the value is a valid UUID format before querying
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(selectedPageValue);
+        
+        let page = null;
+        
+        if (isUuid) {
+          // It's a UUID - query by id (database primary key)
+          const { data } = await supabase
+            .from('facebook_pages')
+            .select('page_id, access_token, ads_running, ads_limit')
+            .eq('id', selectedPageValue)
+            .single();
+          page = data;
+        }
+        
+        // If not found by UUID or value is not a UUID, try by Facebook page_id
         if (!page) {
           const { data: pageByFbId } = await supabase
             .from('facebook_pages')
