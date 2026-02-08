@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Check, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Loader2, AlertTriangle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useCampaignStore } from '@/stores/campaignStore';
@@ -9,6 +9,7 @@ import { useCreateCampaignJob } from '@/hooks/useCampaignJobs';
 import { useToast } from '@/hooks/use-toast';
 import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
 import { resolveTemplate, getFirstName, getAccountCode } from '@/lib/namingResolver';
+import { useStepValidation } from '@/hooks/useStepValidation';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +20,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import { WizardStepper } from '@/components/campaign/WizardStepper';
 import { CampaignSummary } from '@/components/campaign/CampaignSummary';
@@ -51,6 +58,11 @@ export default function CreateCampaignPage() {
     config,
     resetConfig 
   } = useCampaignStore();
+  
+  // Step validation
+  const validation = useStepValidation();
+  const currentStepValidation = validation.getStepValidation(currentStep);
+  
   const [isCreating, setIsCreating] = useState(false);
   const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
   const createJobMutation = useCreateCampaignJob();
@@ -264,6 +276,23 @@ export default function CreateCampaignPage() {
             </CardContent>
           </Card>
 
+          {/* Validation Errors */}
+          {currentStepValidation.errors.length > 0 && (
+            <div className="mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-destructive">Campos obrigatórios</p>
+                  <ul className="text-sm text-destructive/80 space-y-0.5">
+                    {currentStepValidation.errors.map((error, i) => (
+                      <li key={i}>• {error}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Navigation Buttons */}
           <div className="flex items-center justify-between mt-6">
             <Button
@@ -276,14 +305,46 @@ export default function CreateCampaignPage() {
             </Button>
 
             {currentStep < 5 ? (
-              <Button onClick={nextStep} className="glow-primary">
-                Continuar
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button 
+                        onClick={() => {
+                          if (currentStepValidation.isValid) {
+                            nextStep();
+                          } else {
+                            toast({
+                              title: 'Campos obrigatórios',
+                              description: currentStepValidation.errors[0],
+                              variant: 'destructive',
+                            });
+                          }
+                        }}
+                        className="glow-primary"
+                        disabled={!currentStepValidation.isValid}
+                      >
+                        Continuar
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {!currentStepValidation.isValid && (
+                    <TooltipContent side="top" className="max-w-xs">
+                      <p className="font-medium mb-1">Pendências:</p>
+                      <ul className="text-xs space-y-0.5">
+                        {currentStepValidation.errors.slice(0, 3).map((error, i) => (
+                          <li key={i}>• {error}</li>
+                        ))}
+                      </ul>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             ) : (
               <Button 
                 onClick={handleCreate}
-                disabled={isCreating}
+                disabled={isCreating || !validation.step5.isValid}
                 className="glow-primary bg-ads-success hover:bg-ads-success/90"
               >
                 {isCreating ? (
