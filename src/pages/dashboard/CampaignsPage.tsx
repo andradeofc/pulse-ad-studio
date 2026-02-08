@@ -327,7 +327,7 @@ export default function CampaignsPage() {
                       {/* Actions */}
                       <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" asChild>
-                          <Link to="/fila-processamento">
+                          <Link to={`/campanhas/${campaign.id}`}>
                             <Eye className="w-4 h-4 mr-1" />
                             Detalhes
                           </Link>

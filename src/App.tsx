@@ -28,6 +28,7 @@ import MediaLibraryPage from "@/pages/dashboard/MediaLibraryPage";
 import CatalogSchedulingPage from "@/pages/dashboard/CatalogSchedulingPage";
 import SettingsPage from "@/pages/dashboard/SettingsPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
+import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
 
 // Placeholder
 import { PlaceholderPage } from "@/components/PlaceholderPage";
@@ -66,6 +67,7 @@ const App = () => {
             <Route path="/perfis-facebook" element={<FacebookProfilesPage />} />
             <Route path="/contas-anuncio" element={<AdAccountsPage />} />
             <Route path="/campanhas" element={<CampaignsPage />} />
+            <Route path="/campanhas/:id" element={<CampaignDetailsPage />} />
             <Route path="/campanhas/criar" element={<CreateCampaignPage />} />
             <Route path="/paginas" element={<FacebookPagesPage />} />
             <Route path="/fila-processamento" element={<ProcessingQueuePage />} />
