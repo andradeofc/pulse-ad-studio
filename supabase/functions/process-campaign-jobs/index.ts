@@ -1879,9 +1879,28 @@ Deno.serve(async (req) => {
           ? ads.filter((a) => getItemAccountId(a) === currentAccountId)
           : ads;
 
-      console.log(
-        `[process-jobs] Account ${currentAccount.name}: ${campaignsForAccount.length} campaigns, ${adsetsForAccount.length} adsets, ${adsForAccount.length} ads`,
-      );
+      // ============= DETAILED LOGGING FOR DEBUGGING =============
+      console.log(`\n========================================`);
+      console.log(`[ACCOUNT ${accountIndex + 1}/${allAdAccounts.length}] ${currentAccount.name}`);
+      console.log(`  Account ID: ${currentAccount.account_id}`);
+      console.log(`  Normalized ID: ${currentAccountId}`);
+      console.log(`  Items have accountId: ${itemsHaveAccountId}`);
+      console.log(`----------------------------------------`);
+      console.log(`  Pending campaigns to create: ${campaignsForAccount.length}`);
+      console.log(`  Pending adsets to create: ${adsetsForAccount.length}`);
+      console.log(`  Pending ads to create: ${adsForAccount.length}`);
+      
+      // Log the first few items for each type to verify accountId matching
+      if (campaignsForAccount.length > 0) {
+        console.log(`  Sample campaign accountIds: ${campaignsForAccount.slice(0, 3).map(c => (c.config as any)?.accountId).join(', ')}`);
+      }
+      if (adsetsForAccount.length > 0) {
+        console.log(`  Sample adset accountIds: ${adsetsForAccount.slice(0, 3).map(a => (a.config as any)?.accountId).join(', ')}`);
+      }
+      if (adsForAccount.length > 0) {
+        console.log(`  Sample ad accountIds: ${adsForAccount.slice(0, 3).map(a => (a.config as any)?.accountId).join(', ')}`);
+      }
+      console.log(`========================================\n`);
 
       // Prepare campaigns with resolved names
       // CRITICAL: Include facebook_id so batch functions can detect already-created items
@@ -1910,6 +1929,8 @@ Deno.serve(async (req) => {
       // Create NEW campaigns in batch (only pending ones)
       if (campaignsWithNames.length > 0) {
         console.log(`[process-jobs] Creating ${campaignsWithNames.length} NEW campaigns via batch API...`);
+        console.log(`  Campaign names: ${campaignsWithNames.map(c => c.name).join(', ')}`);
+        
         const newCampaignIdMap = await createCampaignsBatch(
           accessToken,
           currentAccount.account_id,
@@ -1922,6 +1943,11 @@ Deno.serve(async (req) => {
           campaignIdMap.set(k, v);
         }
         console.log(`[process-jobs] Created ${newCampaignIdMap.size}/${campaignsWithNames.length} new campaigns`);
+        
+        // Log created campaign IDs for verification
+        for (const [itemId, fbId] of newCampaignIdMap) {
+          console.log(`  ✓ Campaign ${fbId} created`);
+        }
       } else {
         console.log(`[process-jobs] No new campaigns to create (all already processed)`);
       }
@@ -1952,6 +1978,19 @@ Deno.serve(async (req) => {
       // Create NEW adsets in batch (only pending ones)
       if (adsetsWithNames.length > 0) {
         console.log(`[process-jobs] Creating ${adsetsWithNames.length} NEW adsets via batch API...`);
+        
+        // Log parent campaign distribution for debugging
+        const parentDistribution = new Map<string, number>();
+        for (const adset of adsetsWithNames) {
+          const parentId = adset.parent_id || 'no-parent';
+          parentDistribution.set(parentId, (parentDistribution.get(parentId) || 0) + 1);
+        }
+        console.log(`[process-jobs] Adset parent distribution:`);
+        for (const [parentId, count] of parentDistribution) {
+          const fbCampaignId = campaignIdMap.get(parentId) || 'unknown';
+          console.log(`    Parent ${parentId} (FB: ${fbCampaignId}): ${count} adsets`);
+        }
+        
         const newAdsetIdMap = await createAdsetsBatch(
           accessToken,
           currentAccount.account_id,
@@ -1965,6 +2004,29 @@ Deno.serve(async (req) => {
           adsetIdMap.set(k, v);
         }
         console.log(`[process-jobs] Created ${newAdsetIdMap.size}/${adsetsWithNames.length} new adsets`);
+        
+        // ============= VERIFICATION: Query Facebook to confirm adset counts =============
+        console.log(`\n[VERIFICATION] Checking adset counts in Facebook...`);
+        for (const [parentId, expectedCount] of parentDistribution) {
+          const fbCampaignId = campaignIdMap.get(parentId);
+          if (fbCampaignId) {
+            try {
+              const verifyUrl = `${GRAPH_BASE_URL}/${fbCampaignId}/adsets?fields=id,name&limit=500&access_token=${accessToken}`;
+              const verifyResp = await fetch(verifyUrl);
+              const verifyData = await verifyResp.json();
+              const actualCount = verifyData.data?.length || 0;
+              
+              if (actualCount !== expectedCount) {
+                console.error(`[VERIFICATION ERROR] Campaign ${fbCampaignId}: Expected ${expectedCount} adsets, found ${actualCount}`);
+              } else {
+                console.log(`[VERIFICATION OK] Campaign ${fbCampaignId}: ${actualCount} adsets ✓`);
+              }
+            } catch (verifyErr: any) {
+              console.error(`[VERIFICATION] Failed to verify campaign ${fbCampaignId}:`, verifyErr.message);
+            }
+          }
+        }
+        console.log(`[VERIFICATION] Adset verification complete\n`);
       } else {
         console.log(`[process-jobs] No new adsets to create (all already processed)`);
       }
@@ -1985,6 +2047,21 @@ Deno.serve(async (req) => {
       if (adsWithNames.length === 0) {
         console.log(`[process-jobs] No new ads to create for this account (all already processed)`);
       } else if (config.useCatalog) {
+        // Log ad parent distribution for debugging
+        const adParentDistribution = new Map<string, number>();
+        for (const ad of adsWithNames) {
+          const parentId = ad.parent_id || 'no-parent';
+          adParentDistribution.set(parentId, (adParentDistribution.get(parentId) || 0) + 1);
+        }
+        console.log(`[process-jobs] Ad parent distribution (expected per adset):`);
+        for (const [parentId, count] of Array.from(adParentDistribution.entries()).slice(0, 5)) {
+          const fbAdsetId = adsetIdMap.get(parentId) || 'unknown';
+          console.log(`    Parent ${parentId} (FB: ${fbAdsetId}): ${count} ads`);
+        }
+        if (adParentDistribution.size > 5) {
+          console.log(`    ... and ${adParentDistribution.size - 5} more adsets`);
+        }
+        
         // Catalog ads: use batch API for creatives and ads
         console.log(`[process-jobs] Creating ${adsWithNames.length} NEW catalog creatives via batch API...`);
         const creativeIdMap = await createCatalogCreativesBatch(
@@ -2010,6 +2087,32 @@ Deno.serve(async (req) => {
         );
         totalAdsCreated += adsCreated;
         console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} new ads`);
+        
+        // ============= VERIFICATION: Query Facebook to confirm ad counts =============
+        console.log(`\n[VERIFICATION] Checking ad counts in Facebook (sampling first 3 adsets)...`);
+        let sampleCount = 0;
+        for (const [parentId, expectedCount] of adParentDistribution) {
+          if (sampleCount >= 3) break;
+          const fbAdsetId = adsetIdMap.get(parentId);
+          if (fbAdsetId) {
+            try {
+              const verifyUrl = `${GRAPH_BASE_URL}/${fbAdsetId}/ads?fields=id,name&limit=100&access_token=${accessToken}`;
+              const verifyResp = await fetch(verifyUrl);
+              const verifyData = await verifyResp.json();
+              const actualCount = verifyData.data?.length || 0;
+              
+              if (actualCount !== expectedCount) {
+                console.error(`[VERIFICATION ERROR] Adset ${fbAdsetId}: Expected ${expectedCount} ads, found ${actualCount}`);
+              } else {
+                console.log(`[VERIFICATION OK] Adset ${fbAdsetId}: ${actualCount} ads ✓`);
+              }
+              sampleCount++;
+            } catch (verifyErr: any) {
+              console.error(`[VERIFICATION] Failed to verify adset ${fbAdsetId}:`, verifyErr.message);
+            }
+          }
+        }
+        console.log(`[VERIFICATION] Ad verification complete\n`);
       } else if (adsWithNames.length > 0) {
         // Non-catalog ads: sequential processing (video upload required)
         const selectedCreatives = config.selectedCreatives || [];
@@ -2089,7 +2192,21 @@ Deno.serve(async (req) => {
     }
 
     const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[process-jobs] Job completed in ${elapsedSeconds} seconds. Created ${totalAdsCreated} ads total.`);
+    
+    // ============= FINAL SUMMARY =============
+    console.log(`\n========================================`);
+    console.log(`[JOB SUMMARY] Job ${jobId} completed`);
+    console.log(`----------------------------------------`);
+    console.log(`  Duration: ${elapsedSeconds} seconds`);
+    console.log(`  Accounts processed: ${allAdAccounts.length}`);
+    console.log(`  Total campaigns created: ${campaigns.length}`);
+    console.log(`  Total adsets created: ${adsets.length}`);
+    console.log(`  Total ads created: ${totalAdsCreated}`);
+    console.log(`  Errors encountered: ${hasError ? 'YES' : 'NO'}`);
+    if (hasError) {
+      console.log(`  Last error: ${lastError}`);
+    }
+    console.log(`========================================\n`);
 
     // Increment ad usage
     if (totalAdsCreated > 0) {
