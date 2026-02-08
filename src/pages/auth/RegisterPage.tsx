@@ -80,7 +80,7 @@ export default function RegisterPage() {
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-glow-sm">
               <Megaphone className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-xl text-foreground">AdsPulse</span>
+            <span className="font-bold text-xl text-foreground">AdStorm</span>
           </Link>
 
           <h1 className="text-2xl font-bold text-foreground mb-2">Crie sua conta</h1>
@@ -197,7 +197,7 @@ export default function RegisterPage() {
             transition={{ delay: 0.2 }}
           >
             <h2 className="text-2xl font-bold text-foreground mb-6">
-              Por que escolher o AdsPulse?
+              Por que escolher o AdStorm?
             </h2>
             
             <ul className="space-y-4">
@@ -219,7 +219,7 @@ export default function RegisterPage() {
 
             <div className="mt-10 p-6 bg-background/50 rounded-xl border border-border">
               <p className="text-muted-foreground text-sm italic">
-                "O AdsPulse revolucionou a forma como gerenciamos nossas campanhas. 
+                "O AdStorm revolucionou a forma como gerenciamos nossas campanhas. 
                 Criamos mais de 500 campanhas em apenas 2 horas."
               </p>
               <div className="mt-4 flex items-center gap-3">
