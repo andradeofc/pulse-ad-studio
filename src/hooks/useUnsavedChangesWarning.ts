@@ -1,20 +1,33 @@
-import { useEffect, useCallback, useRef } from 'react';
-import { useBlocker } from 'react-router-dom';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 interface UseUnsavedChangesWarningOptions {
   hasUnsavedChanges: boolean;
   message?: string;
 }
 
+interface UseUnsavedChangesWarningReturn {
+  isBlocked: boolean;
+  pendingLocation: string | null;
+  proceed: () => void;
+  reset: () => void;
+  message: string;
+}
+
 /**
  * Hook to warn users about unsaved changes when navigating away
- * Handles both browser navigation (beforeunload) and React Router navigation
+ * Handles browser navigation (beforeunload) and provides state for custom dialog
+ * Compatible with BrowserRouter (doesn't require data router)
  */
 export function useUnsavedChangesWarning({
   hasUnsavedChanges,
   message = 'Você tem alterações não salvas. Deseja realmente sair?',
-}: UseUnsavedChangesWarningOptions) {
+}: UseUnsavedChangesWarningOptions): UseUnsavedChangesWarningReturn {
   const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [pendingLocation, setPendingLocation] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
   
   // Keep ref in sync
   useEffect(() => {
@@ -36,19 +49,28 @@ export function useUnsavedChangesWarning({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [message]);
 
-  // Handle React Router navigation
-  const blocker = useBlocker(
-    useCallback(
-      () => hasUnsavedChangesRef.current,
-      [] // Empty deps - we use ref to get current value
-    )
-  );
+  // Proceed with navigation
+  const proceed = useCallback(() => {
+    if (pendingLocation) {
+      setIsBlocked(false);
+      const targetLocation = pendingLocation;
+      setPendingLocation(null);
+      navigate(targetLocation);
+    }
+  }, [pendingLocation, navigate]);
+
+  // Cancel navigation
+  const reset = useCallback(() => {
+    setIsBlocked(false);
+    setPendingLocation(null);
+  }, []);
 
   // Return blocker state for custom UI handling
   return {
-    isBlocked: blocker.state === 'blocked',
-    proceed: blocker.proceed,
-    reset: blocker.reset,
+    isBlocked,
+    pendingLocation,
+    proceed,
+    reset,
     message,
   };
 }
