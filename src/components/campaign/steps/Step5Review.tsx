@@ -1,4 +1,4 @@
-import { Check, Video, Image, ExternalLink, Facebook, Shield, Users, Globe, Target } from 'lucide-react';
+import { Check, Video, Image, ExternalLink, Facebook, Shield, Users, Globe, Target, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { useCampaignStore } from '@/stores/campaignStore';
 import { getCountryByCode } from '../GeoLocationSelector';
 import { getLocaleById } from '../LocaleSelector';
 import { AdLimitWarning } from '../AdLimitWarning';
+import { SaveTemplateModal } from '../SaveTemplateModal';
 import { 
   formatCurrency as formatCurrencyUtil, 
   formatMultiCurrencyBudget,
@@ -201,11 +202,21 @@ export function Step5Review() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground mb-2">Confirme e Publique</h2>
-        <p className="text-muted-foreground">
-          Revise todas as configurações antes de criar suas campanhas
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground mb-2">Confirme e Publique</h2>
+          <p className="text-muted-foreground">
+            Revise todas as configurações antes de criar suas campanhas
+          </p>
+        </div>
+        <SaveTemplateModal
+          trigger={
+            <Button variant="outline" size="sm" className="gap-2">
+              <Save className="h-4 w-4" />
+              Salvar como Template
+            </Button>
+          }
+        />
       </div>
 
       {/* Ad Limit Warning */}
