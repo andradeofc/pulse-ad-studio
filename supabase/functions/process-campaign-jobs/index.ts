@@ -361,6 +361,110 @@ function chunkArray<T>(array: T[], size: number): T[][] {
   return chunks;
 }
 
+// Page capacity tracking for smart distribution
+interface PageWithCapacity {
+  pageId: string;
+  accessToken: string | null;
+  instagramActorId: string | null;
+  adsRunning: number;
+  adsLimit: number;
+  availableSlots: number;
+  assignedAds: number; // Track how many ads we've assigned to this page
+}
+
+/**
+ * Smart page distribution that respects individual page limits.
+ * Pre-calculates which page each ad should go to, ensuring no page exceeds its limit.
+ * Returns an array of page assignments matching the ads array indices.
+ */
+function calculateSmartPageDistribution(
+  adsCount: number,
+  pages: PageWithCapacity[],
+): Array<{ pageId: string; instagramActorId: string | null }> {
+  if (pages.length === 0 || adsCount === 0) {
+    return [];
+  }
+
+  // Single page - simple assignment
+  if (pages.length === 1) {
+    const page = pages[0];
+    return Array(adsCount).fill({ 
+      pageId: page.pageId, 
+      instagramActorId: page.instagramActorId 
+    });
+  }
+
+  // Reset assigned ads counter for this distribution
+  const pagesWithTracking = pages.map(p => ({ ...p, assignedAds: 0 }));
+  
+  const assignments: Array<{ pageId: string; instagramActorId: string | null }> = [];
+  
+  // Sort pages by available capacity (descending) for better initial distribution
+  const sortedPages = [...pagesWithTracking].sort((a, b) => b.availableSlots - a.availableSlots);
+  
+  // Calculate total available capacity
+  const totalCapacity = sortedPages.reduce((sum, p) => sum + p.availableSlots, 0);
+  
+  console.log(`[smart-distribution] Distributing ${adsCount} ads across ${pages.length} pages (total capacity: ${totalCapacity})`);
+  
+  // Warn if we don't have enough capacity (shouldn't happen if frontend validates)
+  if (adsCount > totalCapacity) {
+    console.warn(`[smart-distribution] WARNING: Requested ${adsCount} ads but only ${totalCapacity} slots available!`);
+  }
+  
+  // Use round-robin with capacity checking
+  let pageIndex = 0;
+  let consecutiveSkips = 0;
+  
+  for (let i = 0; i < adsCount; i++) {
+    // Find a page with available capacity
+    let attempts = 0;
+    let assigned = false;
+    
+    while (attempts < sortedPages.length && !assigned) {
+      const page = sortedPages[pageIndex];
+      const remainingCapacity = page.availableSlots - page.assignedAds;
+      
+      if (remainingCapacity > 0) {
+        // Assign to this page
+        assignments.push({
+          pageId: page.pageId,
+          instagramActorId: page.instagramActorId,
+        });
+        page.assignedAds++;
+        assigned = true;
+        consecutiveSkips = 0;
+      } else {
+        consecutiveSkips++;
+      }
+      
+      // Move to next page (round-robin)
+      pageIndex = (pageIndex + 1) % sortedPages.length;
+      attempts++;
+    }
+    
+    // If no page had capacity (shouldn't happen if validated), use first page anyway
+    if (!assigned) {
+      const fallbackPage = sortedPages[0];
+      console.warn(`[smart-distribution] No capacity available for ad ${i}, using fallback page ${fallbackPage.pageId}`);
+      assignments.push({
+        pageId: fallbackPage.pageId,
+        instagramActorId: fallbackPage.instagramActorId,
+      });
+      fallbackPage.assignedAds++;
+    }
+  }
+  
+  // Log distribution summary
+  const distributionSummary = sortedPages
+    .filter(p => p.assignedAds > 0)
+    .map(p => `${p.pageId}: ${p.assignedAds}/${p.availableSlots}`)
+    .join(', ');
+  console.log(`[smart-distribution] Distribution: ${distributionSummary}`);
+  
+  return assignments;
+}
+
 // Build campaign creation params
 function buildCampaignParams(config: Record<string, any>, name: string): Record<string, string> {
   const specialAdCategory = (config.specialAdCategory || 'NONE') as string;
@@ -784,13 +888,13 @@ async function createAdsetsBatch(
   return idMap;
 }
 
-// Create catalog creatives using batch API
+// Create catalog creatives using batch API with smart page distribution
 async function createCatalogCreativesBatch(
   accessToken: string,
   adAccountId: string,
   ads: Array<{ id: string; name: string; parent_id: string | null; config: Record<string, any> }>,
   config: Record<string, any>,
-  resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null }>,
+  resolvedPages: PageWithCapacity[],
   defaultPageId: string,
   defaultInstagramUserId: string | null,
   supabase: any,
@@ -798,20 +902,26 @@ async function createCatalogCreativesBatch(
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const creativeIdMap = new Map<string, string>();
   
-  // Build batch requests for creatives with anti-spy page rotation
+  // Calculate smart page distribution if anti-spy is enabled
+  let pageAssignments: Array<{ pageId: string; instagramActorId: string | null }> = [];
+  
+  if (config.antiSpyEnabled && resolvedPages.length > 1) {
+    pageAssignments = calculateSmartPageDistribution(ads.length, resolvedPages);
+  }
+  
+  // Build batch requests for creatives with smart page distribution
   const batchItems: Array<{ item: typeof ads[0]; batchItem: BatchRequestItem }> = [];
   
   for (let i = 0; i < ads.length; i++) {
     const ad = ads[i];
     
-    // Anti-spy page rotation for catalog ads
+    // Use smart distribution if available, otherwise use default
     let currentPageId = defaultPageId;
     let currentInstagramUserId = defaultInstagramUserId;
     
-    if (config.antiSpyEnabled && resolvedPages.length > 1) {
-      const pageIndex = i % resolvedPages.length;
-      currentPageId = resolvedPages[pageIndex].pageId;
-      currentInstagramUserId = resolvedPages[pageIndex].instagramActorId;
+    if (pageAssignments.length > 0 && pageAssignments[i]) {
+      currentPageId = pageAssignments[i].pageId;
+      currentInstagramUserId = pageAssignments[i].instagramActorId;
     }
     
     const params = buildCatalogCreativeParams(config, ad.name, currentPageId, currentInstagramUserId);
@@ -1384,21 +1494,28 @@ Deno.serve(async (req) => {
       firstAccessToken = fallbackProfile?.access_token || null;
     }
 
-    // Resolve pages
-    const resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null }> = [];
+// Resolve pages with capacity info
+    const resolvedPages: Array<{ 
+      pageId: string; 
+      accessToken: string | null; 
+      instagramActorId: string | null;
+      adsRunning: number;
+      adsLimit: number;
+      availableSlots: number;
+    }> = [];
 
     if (config.selectedPages && config.selectedPages.length > 0 && firstAccessToken) {
       for (const selectedPageValue of config.selectedPages) {
         let { data: page } = await supabase
           .from('facebook_pages')
-          .select('page_id, access_token')
+          .select('page_id, access_token, ads_running, ads_limit')
           .eq('id', selectedPageValue)
           .single();
 
         if (!page) {
           const { data: pageByFbId } = await supabase
             .from('facebook_pages')
-            .select('page_id, access_token')
+            .select('page_id, access_token, ads_running, ads_limit')
             .eq('page_id', selectedPageValue)
             .single();
           page = pageByFbId;
@@ -1411,13 +1528,28 @@ Deno.serve(async (req) => {
             pageAccessTokenFromDb: page.access_token || null,
           });
           
+          const adsRunning = page.ads_running || 0;
+          const adsLimit = page.ads_limit || 250;
+          const availableSlots = Math.max(0, adsLimit - adsRunning);
+          
           resolvedPages.push({
             pageId: page.page_id,
             accessToken: page.access_token || null,
             instagramActorId,
+            adsRunning,
+            adsLimit,
+            availableSlots,
           });
         }
       }
+    }
+
+    // Log page capacity info for debugging
+    if (config.antiSpyEnabled && resolvedPages.length > 1) {
+      console.log(`[process-jobs] Anti-spy enabled with ${resolvedPages.length} pages:`);
+      resolvedPages.forEach(p => {
+        console.log(`  - Page ${p.pageId}: ${p.availableSlots} slots available (${p.adsRunning}/${p.adsLimit})`);
+      });
     }
 
     const defaultPageId = resolvedPages.length > 0 ? resolvedPages[0].pageId : '';
@@ -1577,6 +1709,13 @@ Deno.serve(async (req) => {
         const selectedCreatives = config.selectedCreatives || [];
         console.log(`[process-jobs] Creating ${adsWithNames.length} non-catalog ads (sequential for video upload)...`);
         
+        // Calculate smart page distribution for non-catalog ads
+        let pageAssignments: Array<{ pageId: string; instagramActorId: string | null }> = [];
+        
+        if (config.antiSpyEnabled && resolvedPages.length > 1) {
+          pageAssignments = calculateSmartPageDistribution(adsWithNames.length, resolvedPages);
+        }
+        
         for (let adIndex = 0; adIndex < adsWithNames.length; adIndex++) {
           const ad = adsWithNames[adIndex];
           const parentFbId = ad.parent_id ? adsetIdMap.get(ad.parent_id) : null;
@@ -1601,14 +1740,13 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Anti-spy page rotation
+          // Use smart page distribution if available
           let currentPageId = defaultPageId;
           let currentInstagramUserId = defaultInstagramUserId;
           
-          if (config.antiSpyEnabled && resolvedPages.length > 1) {
-            const pageIndex = adIndex % resolvedPages.length;
-            currentPageId = resolvedPages[pageIndex].pageId;
-            currentInstagramUserId = resolvedPages[pageIndex].instagramActorId;
+          if (pageAssignments.length > 0 && pageAssignments[adIndex]) {
+            currentPageId = pageAssignments[adIndex].pageId;
+            currentInstagramUserId = pageAssignments[adIndex].instagramActorId;
           }
 
           const result = await createNonCatalogAd(
