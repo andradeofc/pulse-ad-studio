@@ -35,6 +35,58 @@ interface FacebookProductSet {
   product_set_id: string;
 }
 
+interface FacebookProduct {
+  id: string;
+  retailer_id: string;
+  name?: string;
+}
+
+interface BatchRequest {
+  method: 'UPDATE';
+  retailer_id: string;
+  data: Record<string, string>;
+}
+
+interface BatchResponse {
+  handles?: string[];
+  validation_status?: Array<{
+    retailer_id: string;
+    status: string;
+    errors?: Array<{ message: string }>;
+    warnings?: Array<{ message: string }>;
+  }>;
+  error?: {
+    message: string;
+    code: number;
+  };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Fetch with retry for rate limits
+async function fetchWithRetry(url: string, options: RequestInit, label: string, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(url, options);
+    
+    if (res.status === 429 || res.status >= 500) {
+      const waitMs = Math.min(5000, 1000 * Math.pow(2, attempt - 1));
+      console.warn(`[process-catalog-schedules] ${label} got HTTP ${res.status}, attempt ${attempt}/${maxAttempts}. Waiting ${waitMs}ms`);
+      
+      if (attempt === maxAttempts) {
+        const errorText = await res.text();
+        throw new Error(`${label} failed after ${maxAttempts} retries: ${errorText}`);
+      }
+      
+      await sleep(waitMs);
+      continue;
+    }
+    
+    return res;
+  }
+  
+  throw new Error(`${label} failed unexpectedly`);
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -137,69 +189,119 @@ Deno.serve(async (req) => {
         const typedProductSet = productSet as FacebookProductSet;
         const typedCreative = creative as Creative;
 
-        // Get all products from the product set
+        // Fetch all products from the product set with pagination
         console.log(`[process-catalog-schedules] Fetching products from set ${typedProductSet.product_set_id}`);
         
-        const productsResponse = await fetch(
-          `https://graph.facebook.com/v21.0/${typedProductSet.product_set_id}/products?fields=id,retailer_id,name&limit=500&access_token=${typedProfile.access_token}`
-        );
-
-        if (!productsResponse.ok) {
-          const errorData = await productsResponse.json();
-          throw new Error(`Failed to fetch products: ${JSON.stringify(errorData)}`);
+        const allProducts: FacebookProduct[] = [];
+        let nextUrl: string | null = `https://graph.facebook.com/v21.0/${typedProductSet.product_set_id}/products?fields=id,retailer_id,name&limit=500&access_token=${typedProfile.access_token}`;
+        
+        while (nextUrl) {
+          const productsResponse = await fetchWithRetry(nextUrl, { method: 'GET' }, 'fetch products');
+          
+          if (!productsResponse.ok) {
+            const errorData = await productsResponse.json();
+            throw new Error(`Failed to fetch products: ${JSON.stringify(errorData)}`);
+          }
+          
+          const productsData = await productsResponse.json();
+          allProducts.push(...(productsData.data || []));
+          
+          // Check for next page
+          nextUrl = productsData.paging?.next || null;
+          
+          // Safety limit
+          if (allProducts.length >= 5000) {
+            console.warn('[process-catalog-schedules] Reached 5000 products limit');
+            break;
+          }
         }
 
-        const productsData = await productsResponse.json();
-        const products = productsData.data || [];
+        console.log(`[process-catalog-schedules] Found ${allProducts.length} products in set`);
 
-        console.log(`[process-catalog-schedules] Found ${products.length} products in set`);
+        if (allProducts.length === 0) {
+          throw new Error('No products found in the product set');
+        }
 
         let productsUpdated = 0;
         const errors: string[] = [];
 
-        // Update each product with the creative
-        for (const product of products) {
-          try {
-            // Prepare the update payload based on creative type
-            const updatePayload: Record<string, string> = {};
+        // Process products in batches of 5000 (Facebook's limit per request)
+        const BATCH_SIZE = 4999;
+        
+        for (let i = 0; i < allProducts.length; i += BATCH_SIZE) {
+          const productBatch = allProducts.slice(i, i + BATCH_SIZE);
+          
+          // Prepare batch requests
+          const batchRequests: BatchRequest[] = productBatch.map((product) => {
+            const data: Record<string, string> = {};
             
             if (typedCreative.type === 'video') {
-              updatePayload.video = JSON.stringify([{ url: typedCreative.url }]);
+              // For video, use the video field with array of objects
+              data.video = JSON.stringify([{ url: typedCreative.url }]);
             } else {
-              updatePayload.additional_image_urls = JSON.stringify([typedCreative.url]);
+              // For images, use additional_image_link (comma-separated URLs)
+              data.additional_image_link = typedCreative.url;
             }
+            
+            return {
+              method: 'UPDATE' as const,
+              retailer_id: product.retailer_id,
+              data,
+            };
+          });
 
-            // Update product via Facebook API
-            const updateResponse = await fetch(
-              `https://graph.facebook.com/v21.0/${typedCatalog.catalog_id}:${product.retailer_id}`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                  access_token: typedProfile.access_token,
-                  ...updatePayload,
-                }),
+          console.log(`[process-catalog-schedules] Sending batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batchRequests.length} products`);
+
+          // Send batch update using items_batch endpoint
+          const batchResponse = await fetchWithRetry(
+            `https://graph.facebook.com/v21.0/${typedCatalog.catalog_id}/items_batch`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                access_token: typedProfile.access_token,
+                item_type: 'PRODUCT_ITEM',
+                requests: batchRequests,
+              }),
+            },
+            `batch update ${Math.floor(i / BATCH_SIZE) + 1}`
+          );
+
+          const batchResult: BatchResponse = await batchResponse.json();
+
+          if (batchResult.error) {
+            errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchResult.error.message}`);
+            console.error(`[process-catalog-schedules] Batch error:`, batchResult.error);
+            continue;
+          }
+
+          // Check validation status if available
+          if (batchResult.validation_status) {
+            for (const status of batchResult.validation_status) {
+              if (status.status === 'success') {
+                productsUpdated++;
+              } else {
+                const errorMsg = status.errors?.map(e => e.message).join(', ') || 'Unknown error';
+                errors.push(`${status.retailer_id}: ${errorMsg}`);
               }
-            );
-
-            if (updateResponse.ok) {
-              productsUpdated++;
-              console.log(`[process-catalog-schedules] Updated product ${product.retailer_id}`);
-            } else {
-              const errorData = await updateResponse.json();
-              errors.push(`${product.retailer_id}: ${JSON.stringify(errorData.error?.message || errorData)}`);
-              console.warn(`[process-catalog-schedules] Failed to update product ${product.retailer_id}:`, errorData);
             }
-          } catch (productError) {
-            errors.push(`${product.retailer_id}: ${productError instanceof Error ? productError.message : 'Unknown error'}`);
+          } else if (batchResult.handles && batchResult.handles.length > 0) {
+            // If we got handles, the batch was accepted for processing
+            productsUpdated += productBatch.length;
+            console.log(`[process-catalog-schedules] Batch accepted with handles: ${batchResult.handles.join(', ')}`);
+          }
+
+          // Small delay between batches to avoid rate limiting
+          if (i + BATCH_SIZE < allProducts.length) {
+            await sleep(500);
           }
         }
 
-        // Update schedule status to completed
+        // Update schedule status
         const finalStatus = productsUpdated > 0 ? 'completed' : 'failed';
-        const errorMessage = errors.length > 0 ? errors.slice(0, 5).join('; ') : null;
+        const errorMessage = errors.length > 0 ? errors.slice(0, 10).join('; ') : null;
 
         await supabase
           .from('catalog_schedules')
@@ -215,10 +317,11 @@ Deno.serve(async (req) => {
           scheduleId: schedule.id,
           status: finalStatus,
           productsUpdated,
+          totalProducts: allProducts.length,
           errorsCount: errors.length,
         });
 
-        console.log(`[process-catalog-schedules] Schedule ${schedule.id} completed: ${productsUpdated} products updated`);
+        console.log(`[process-catalog-schedules] Schedule ${schedule.id} completed: ${productsUpdated}/${allProducts.length} products updated`);
 
       } catch (error) {
         console.error(`[process-catalog-schedules] Error processing schedule ${schedule.id}:`, error);
