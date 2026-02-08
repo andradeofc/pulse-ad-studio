@@ -1,7 +1,8 @@
-import { Bell, Settings, ChevronRight } from 'lucide-react';
+import { Settings, ChevronRight } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/authStore';
+import { NotificationPopover } from './NotificationPopover';
 
 const routeTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -60,14 +61,7 @@ export function DashboardHeader() {
         </span>
         
         <div className="flex items-center gap-2">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="relative text-muted-foreground hover:text-foreground"
-          >
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full" />
-          </Button>
+          <NotificationPopover />
           
           <Button 
             variant="ghost" 
