@@ -610,6 +610,7 @@ async function createFacebookAd(
   name: string,
   pageId: string,
   instagramUserId: string | null,
+  creative?: { id: string; name: string; type: 'video' | 'image'; url: string } | null,
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
@@ -793,9 +794,283 @@ async function createFacebookAd(
     console.log(`[process-jobs] Ad created: ${json.id}`);
     return { success: true, id: json.id };
   } else {
-    // For non-catalog ads, we need a creative with image/video
-    // This would require uploading the creative first - simplified for now
-    return { success: false, error: 'Non-catalog ads require creative upload - not implemented yet' };
+    // ============================================================
+    // NON-CATALOG ADS: Use creative from Step 1 (image/video upload)
+    // ============================================================
+    
+    if (!creative || !creative.url) {
+      return { success: false, error: 'Nenhum criativo selecionado. Selecione criativos no Step 1 do wizard.' };
+    }
+
+    const finalDestinationUrl = config.destinationUrl || 'https://example.com';
+    const urlParams = config.urlParams || '';
+
+    console.log(`[process-jobs] Creating non-catalog ad with creative: ${creative.name} (${creative.type})`);
+
+    let adCreativeId: string;
+
+    if (creative.type === 'video') {
+      // Step 1: Upload video to ad account via URL
+      // Facebook requires the video to be uploaded to the ad account first
+      console.log(`[process-jobs] Uploading video from URL: ${creative.url}`);
+      
+      const videoUploadParams: Record<string, any> = {
+        access_token: accessToken,
+        file_url: creative.url,
+        title: creative.name,
+      };
+
+      const videoUploadFormData = new URLSearchParams();
+      for (const [key, value] of Object.entries(videoUploadParams)) {
+        videoUploadFormData.append(key, String(value));
+      }
+
+      const videoUploadResult = await fetchWithRetry(
+        `${GRAPH_BASE_URL}/${actId}/advideos`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: videoUploadFormData.toString(),
+        },
+        3,
+        adAccountId,
+      );
+
+      if (!videoUploadResult.ok || videoUploadResult.json.error) {
+        const fbError = videoUploadResult.json?.error;
+        console.error('[process-jobs] Facebook video upload error:', JSON.stringify(fbError ?? videoUploadResult.json, null, 2));
+        
+        const msg = fbError?.message || 'Falha ao fazer upload do vídeo';
+        const code = fbError?.code;
+        const subcode = fbError?.error_subcode;
+        const userMsg = fbError?.error_user_msg;
+        
+        const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
+          .filter(Boolean).join(' | ');
+        
+        return { success: false, error: details };
+      }
+
+      const videoId = videoUploadResult.json.id;
+      console.log(`[process-jobs] Video uploaded: ${videoId}`);
+
+      // Step 2: Wait for video to be ready (polling)
+      // Videos need processing time before they can be used in creatives
+      let videoReady = false;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await sleep(2000); // Wait 2 seconds between checks
+        
+        const statusResult = await fetchWithRetry(
+          `${GRAPH_BASE_URL}/${videoId}?fields=status&access_token=${accessToken}`,
+          { method: 'GET' },
+          3,
+          adAccountId,
+        );
+
+        if (statusResult.ok && statusResult.json.status) {
+          const status = statusResult.json.status.video_status;
+          console.log(`[process-jobs] Video status: ${status} (attempt ${attempt + 1})`);
+          
+          if (status === 'ready') {
+            videoReady = true;
+            break;
+          } else if (status === 'error') {
+            return { success: false, error: 'Erro ao processar vídeo no Facebook' };
+          }
+        }
+      }
+
+      if (!videoReady) {
+        console.warn(`[process-jobs] Video not ready after 60 seconds, proceeding anyway...`);
+      }
+
+      // Step 3: Create ad creative with video
+      const videoData: Record<string, any> = {
+        video_id: videoId,
+        call_to_action: {
+          type: config.ctaType || 'LEARN_MORE',
+          value: { link: finalDestinationUrl },
+        },
+        message: config.primaryText || '',
+        title: config.headline || '',
+        link_description: config.description || '',
+      };
+
+      const objectStorySpec: Record<string, any> = {
+        page_id: pageId,
+        video_data: videoData,
+      };
+
+      if (instagramUserId) {
+        objectStorySpec.instagram_user_id = instagramUserId;
+      }
+
+      const creativeParams: Record<string, any> = {
+        access_token: accessToken,
+        name: `Creative_${name}`,
+        object_story_spec: JSON.stringify(objectStorySpec),
+      };
+
+      if (urlParams && urlParams.trim()) {
+        creativeParams.url_tags = urlParams.trim();
+      }
+
+      const logCreativeParams = { ...creativeParams, access_token: '[REDACTED]' };
+      console.log(`[process-jobs] Video creative params:`, JSON.stringify(logCreativeParams, null, 2));
+
+      const creativeFormData = new URLSearchParams();
+      for (const [key, value] of Object.entries(creativeParams)) {
+        if (value) creativeFormData.append(key, String(value));
+      }
+
+      const creativeResult = await fetchWithRetry(
+        `${GRAPH_BASE_URL}/${actId}/adcreatives`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: creativeFormData.toString(),
+        },
+        3,
+        adAccountId,
+      );
+
+      if (!creativeResult.ok || creativeResult.json.error) {
+        const fbError = creativeResult.json?.error;
+        console.error('[process-jobs] Facebook video creative error:', JSON.stringify(fbError ?? creativeResult.json, null, 2));
+        
+        const msg = fbError?.message || 'Falha ao criar criativo de vídeo';
+        const code = fbError?.code;
+        const subcode = fbError?.error_subcode;
+        const userMsg = fbError?.error_user_msg;
+        
+        const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
+          .filter(Boolean).join(' | ');
+        
+        return { success: false, error: details };
+      }
+
+      adCreativeId = creativeResult.json.id;
+      console.log(`[process-jobs] Video creative created: ${adCreativeId}`);
+
+    } else {
+      // IMAGE creative
+      console.log(`[process-jobs] Creating image creative from URL: ${creative.url}`);
+
+      // For images, we can use image_url directly in the link_data
+      const linkData: Record<string, any> = {
+        link: finalDestinationUrl,
+        message: config.primaryText || '',
+        name: config.headline || '',
+        description: config.description || '',
+        image_url: creative.url,
+        call_to_action: {
+          type: config.ctaType || 'LEARN_MORE',
+          value: { link: finalDestinationUrl },
+        },
+      };
+
+      const objectStorySpec: Record<string, any> = {
+        page_id: pageId,
+        link_data: linkData,
+      };
+
+      if (instagramUserId) {
+        objectStorySpec.instagram_user_id = instagramUserId;
+      }
+
+      const creativeParams: Record<string, any> = {
+        access_token: accessToken,
+        name: `Creative_${name}`,
+        object_story_spec: JSON.stringify(objectStorySpec),
+      };
+
+      if (urlParams && urlParams.trim()) {
+        creativeParams.url_tags = urlParams.trim();
+      }
+
+      const logCreativeParams = { ...creativeParams, access_token: '[REDACTED]' };
+      console.log(`[process-jobs] Image creative params:`, JSON.stringify(logCreativeParams, null, 2));
+
+      const creativeFormData = new URLSearchParams();
+      for (const [key, value] of Object.entries(creativeParams)) {
+        if (value) creativeFormData.append(key, String(value));
+      }
+
+      const creativeResult = await fetchWithRetry(
+        `${GRAPH_BASE_URL}/${actId}/adcreatives`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: creativeFormData.toString(),
+        },
+        3,
+        adAccountId,
+      );
+
+      if (!creativeResult.ok || creativeResult.json.error) {
+        const fbError = creativeResult.json?.error;
+        console.error('[process-jobs] Facebook image creative error:', JSON.stringify(fbError ?? creativeResult.json, null, 2));
+        
+        const msg = fbError?.message || 'Falha ao criar criativo de imagem';
+        const code = fbError?.code;
+        const subcode = fbError?.error_subcode;
+        const userMsg = fbError?.error_user_msg;
+        
+        const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
+          .filter(Boolean).join(' | ');
+        
+        return { success: false, error: details };
+      }
+
+      adCreativeId = creativeResult.json.id;
+      console.log(`[process-jobs] Image creative created: ${adCreativeId}`);
+    }
+
+    // Step 4: Create the ad with the creative
+    const adParams: Record<string, any> = {
+      access_token: accessToken,
+      name,
+      adset_id: adsetId,
+      creative: JSON.stringify({ creative_id: adCreativeId }),
+      status: 'ACTIVE',
+    };
+
+    const logAdParams = { ...adParams, access_token: '[REDACTED]' };
+    console.log(`[process-jobs] Ad params:`, JSON.stringify(logAdParams, null, 2));
+
+    const adFormData = new URLSearchParams();
+    for (const [key, value] of Object.entries(adParams)) {
+      adFormData.append(key, String(value));
+    }
+
+    const { ok, json } = await fetchWithRetry(
+      `${GRAPH_BASE_URL}/${actId}/ads`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: adFormData.toString(),
+      },
+      3,
+      adAccountId,
+    );
+
+    if (!ok || json.error) {
+      const fbError = json?.error;
+      console.error('[process-jobs] Facebook ad error:', JSON.stringify(fbError ?? json, null, 2));
+      
+      const msg = fbError?.message || 'Falha ao criar anúncio';
+      const code = fbError?.code;
+      const subcode = fbError?.error_subcode;
+      const userMsg = fbError?.error_user_msg;
+      
+      const details = [msg, code !== undefined ? `code=${code}` : null, subcode !== undefined ? `subcode=${subcode}` : null, userMsg ? `user_msg=${userMsg}` : null]
+        .filter(Boolean).join(' | ');
+      
+      return { success: false, error: details };
+    }
+
+    console.log(`[process-jobs] Ad created: ${json.id}`);
+    return { success: true, id: json.id };
   }
 }
 
@@ -1209,6 +1484,9 @@ Deno.serve(async (req) => {
       }
 
       // Process ads for this account with Anti-Spy round-robin page distribution
+      // Get selected creatives from config for non-catalog ads
+      const selectedCreatives: Array<{ id: string; name: string; type: 'video' | 'image'; url: string }> = config.selectedCreatives || [];
+      
       let adIndex = 0;
       for (const ad of ads) {
         const parentFbId = ad.parent_id ? idMap.get(ad.parent_id) : null;
@@ -1256,6 +1534,23 @@ Deno.serve(async (req) => {
         // Replace all variables in ad name
         let adName = replaceNamingVariables(ad.name);
 
+        // For non-catalog ads, get the creative to use
+        // Distribution logic: distribute creatives based on distribution mode
+        let creativeForAd: { id: string; name: string; type: 'video' | 'image'; url: string } | null = null;
+        
+        if (!config.useCatalog && selectedCreatives.length > 0) {
+          // Get creative from job item config if stored there, otherwise use round-robin
+          const adConfig = ad.config as Record<string, any> || {};
+          if (adConfig.creativeIndex !== undefined && selectedCreatives[adConfig.creativeIndex]) {
+            creativeForAd = selectedCreatives[adConfig.creativeIndex];
+          } else {
+            // Round-robin distribution of creatives across ads
+            const creativeIndex = adIndex % selectedCreatives.length;
+            creativeForAd = selectedCreatives[creativeIndex];
+          }
+          console.log(`[process-jobs] Using creative for ad: ${creativeForAd?.name} (${creativeForAd?.type})`);
+        }
+
         console.log(`[process-jobs] Creating ad: ${adName} with page: ${currentPageId} for account ${currentAccount.name}`);
 
         if (accountIndex === 0) {
@@ -1265,7 +1560,16 @@ Deno.serve(async (req) => {
             .eq('id', ad.id);
         }
 
-        const result = await createFacebookAd(accessToken, currentAccount.account_id, parentFbId, config, adName, currentPageId, currentInstagramUserId);
+        const result = await createFacebookAd(
+          accessToken, 
+          currentAccount.account_id, 
+          parentFbId, 
+          config, 
+          adName, 
+          currentPageId, 
+          currentInstagramUserId,
+          creativeForAd
+        );
 
         if (result.success && result.id) {
           idMap.set(ad.id, result.id);
