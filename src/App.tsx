@@ -27,6 +27,7 @@ import ProcessingQueuePage from "@/pages/dashboard/ProcessingQueuePage";
 import MediaLibraryPage from "@/pages/dashboard/MediaLibraryPage";
 import CatalogSchedulingPage from "@/pages/dashboard/CatalogSchedulingPage";
 import SettingsPage from "@/pages/dashboard/SettingsPage";
+import CampaignsPage from "@/pages/dashboard/CampaignsPage";
 
 // Placeholder
 import { PlaceholderPage } from "@/components/PlaceholderPage";
@@ -64,7 +65,7 @@ const App = () => {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/perfis-facebook" element={<FacebookProfilesPage />} />
             <Route path="/contas-anuncio" element={<AdAccountsPage />} />
-            <Route path="/campanhas" element={<PlaceholderPage title="Campanhas" description="Gerencie suas campanhas ativas" />} />
+            <Route path="/campanhas" element={<CampaignsPage />} />
             <Route path="/campanhas/criar" element={<CreateCampaignPage />} />
             <Route path="/paginas" element={<FacebookPagesPage />} />
             <Route path="/fila-processamento" element={<ProcessingQueuePage />} />
