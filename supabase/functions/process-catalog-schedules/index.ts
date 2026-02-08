@@ -44,7 +44,7 @@ interface FacebookProduct {
 interface BatchRequest {
   method: 'UPDATE';
   retailer_id: string;
-  data: Record<string, string>;
+  data: Record<string, unknown>;
 }
 
 interface BatchResponse {
@@ -393,18 +393,19 @@ Deno.serve(async (req) => {
           // Prepare batch requests
           const batchRequests: BatchRequest[] = dedupedBatch.map((product) => {
             const canonicalId = canonicalizeRetailerId(product.retailer_id);
-            const data: Record<string, string> = {
+            const data: Record<string, unknown> = {
               // CRITICAL: Facebook requires 'id' field in data object for UPDATE operations
               id: canonicalId,
             };
 
             if (typedCreative.type === 'video') {
-              // For video, use the video field - JSON array of objects with url property
-              data.video = JSON.stringify([{ url: typedCreative.url }]);
+              // For video, use the video field - array of objects with url property
+              // DO NOT JSON.stringify - the whole body is serialized later
+              data.video = [{ url: typedCreative.url }];
             } else {
-              // For images, additional_image_link must be a JSON array of strings (up to 50 URLs)
-              // This ADDS images to the product, not replaces the main image
-              data.additional_image_link = JSON.stringify([typedCreative.url]);
+              // For images, additional_image_link is an array of strings (up to 50 URLs)
+              // DO NOT JSON.stringify - the whole body is serialized later
+              data.additional_image_link = [typedCreative.url];
             }
 
             return {
