@@ -125,10 +125,22 @@ export function resolveTemplate(template: string, context: ResolverContext): str
     });
   }
   
-  // Handle sequencial with incrementing - extracts start and adds index
+  // Handle sequencial with incrementing - uses the appropriate index based on context
+  // Priority: adIndex > adsetIndex > campaignIndex (most specific wins)
   resolved = resolved.replace(/\{\{sequencial(?::(\d+))?\}\}/g, (match, start) => {
     const startNum = start ? parseInt(start, 10) : 1;
-    const currentIndex = context.campaignIndex ?? 0;
+    
+    // Use the most specific index available
+    // For adset names, use adsetIndex; for ad names, use adIndex; for campaigns, use campaignIndex
+    let currentIndex = 0;
+    if (context.adIndex !== undefined) {
+      currentIndex = context.adIndex;
+    } else if (context.adsetIndex !== undefined) {
+      currentIndex = context.adsetIndex;
+    } else if (context.campaignIndex !== undefined) {
+      currentIndex = context.campaignIndex;
+    }
+    
     const value = startNum + currentIndex;
     
     // Preserve padding based on original format
