@@ -10,6 +10,12 @@ import { cn } from '@/lib/utils';
 import { RateLimitIndicator } from './RateLimitIndicator';
 import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
 import { useMemo } from 'react';
+import { 
+  formatCurrency as formatCurrencyUtil, 
+  formatMultiCurrencyBudget,
+  hasMultipleCurrencies,
+  getPrimaryCurrency 
+} from '@/lib/currencyUtils';
 
 export function CampaignSummary() {
   const { config, getTotalCampaigns, getTotalAdsets, getTotalAds, getTotalBudget } = useCampaignStore();
@@ -38,11 +44,22 @@ export function CampaignSummary() {
     ad: 'Por Anúncio',
   };
 
+  // Determine the currency to use for formatting
+  const budgetConfig = config.useCBO ? config.budgetByCurrency : config.adsetBudgetByCurrency;
+  const isMultiCurrency = hasMultipleCurrencies(budgetConfig);
+  const primaryCurrency = getPrimaryCurrency(budgetConfig, 'BRL');
+
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
+    return formatCurrencyUtil(value, primaryCurrency);
+  };
+  
+  // Format budget showing all currencies if multi-currency
+  const formatBudgetDisplay = () => {
+    if (isMultiCurrency) {
+      return formatMultiCurrencyBudget(budgetConfig);
+    }
+    const budgetValue = config.useCBO ? config.budget : config.adsetBudget;
+    return formatCurrencyUtil(budgetValue, primaryCurrency);
   };
 
   return (
@@ -111,20 +128,35 @@ export function CampaignSummary() {
 
         {/* Budget per Campaign */}
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">Orçamento (por campanha)</span>
+          <span className="text-sm text-muted-foreground">
+            Orçamento ({config.useCBO ? 'por campanha' : 'por conjunto'})
+          </span>
           <span className="text-sm font-medium text-foreground">
-            {formatCurrency(config.budget)}
+            {formatBudgetDisplay()}
           </span>
         </div>
 
         {/* Total Budget */}
-        <div className="flex items-center justify-between p-3 bg-destructive/10 rounded-lg border border-destructive/20">
-          <span className="text-sm font-medium text-destructive">
-            Total ({totalCampaigns} campanhas)
-          </span>
-          <span className="text-lg font-bold text-destructive">
-            {formatCurrency(totalBudget)}
-          </span>
+        <div className="flex flex-col gap-1 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-destructive">
+              Total ({totalCampaigns} campanhas)
+            </span>
+            <span className="text-lg font-bold text-destructive">
+              {isMultiCurrency ? 'Múltiplas' : formatCurrency(totalBudget)}
+            </span>
+          </div>
+          {isMultiCurrency && (
+            <div className="text-xs text-muted-foreground text-right space-y-0.5">
+              {Object.entries(budgetConfig)
+                .filter(([_, v]) => v > 0)
+                .map(([currency, value]) => (
+                  <div key={currency}>
+                    {formatCurrencyUtil(value * totalCampaigns, currency)}
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
 
         {/* Rate Limit Indicator */}

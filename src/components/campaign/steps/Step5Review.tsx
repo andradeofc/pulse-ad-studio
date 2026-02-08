@@ -5,6 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { getCountryByCode } from '../GeoLocationSelector';
 import { getLocaleById } from '../LocaleSelector';
+import { 
+  formatCurrency as formatCurrencyUtil, 
+  formatMultiCurrencyBudget,
+  hasMultipleCurrencies,
+  getPrimaryCurrency 
+} from '@/lib/currencyUtils';
 
 // CTA labels map - synced with Step4Ads
 const ctaLabels: Record<string, string> = {
@@ -36,11 +42,27 @@ export function Step5Review() {
   const totalAds = getTotalAds();
   const totalBudget = getTotalBudget();
 
+  // Determine the currency to use for formatting
+  const budgetConfig = config.useCBO ? config.budgetByCurrency : config.adsetBudgetByCurrency;
+  const isMultiCurrency = hasMultipleCurrencies(budgetConfig);
+  const primaryCurrency = getPrimaryCurrency(budgetConfig, 'BRL');
+  
+  // Format currency respecting the configured currency
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
+    if (isMultiCurrency) {
+      // If multiple currencies, we show in primary currency (for single values)
+      return formatCurrencyUtil(value, primaryCurrency);
+    }
+    return formatCurrencyUtil(value, primaryCurrency);
+  };
+  
+  // Format budget showing all currencies if multi-currency
+  const formatBudgetDisplay = () => {
+    if (isMultiCurrency) {
+      return formatMultiCurrencyBudget(budgetConfig);
+    }
+    const budgetValue = config.useCBO ? config.budget : config.adsetBudget;
+    return formatCurrencyUtil(budgetValue, primaryCurrency);
   };
 
   const objectiveLabels: Record<string, string> = {
@@ -277,7 +299,7 @@ export function Step5Review() {
                   Orçamento por {config.useCBO ? 'Campanha' : 'Conjunto'}
                 </span>
                 <span className="text-sm text-foreground font-semibold">
-                  {formatCurrency(config.useCBO ? config.budget : config.adsetBudget)} / {config.budgetPeriod === 'daily' ? 'dia' : 'vitalício'}
+                  {formatBudgetDisplay()} / {config.budgetPeriod === 'daily' ? 'dia' : 'vitalício'}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -303,13 +325,30 @@ export function Step5Review() {
                 </div>
               )}
               <div className="p-3 bg-destructive/10 rounded-lg border border-destructive/20">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-destructive">
-                    Total ({totalCampaigns} campanhas)
-                  </span>
-                  <span className="text-lg font-bold text-destructive">
-                    {formatCurrency(totalBudget)}
-                  </span>
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-destructive">
+                      Total ({totalCampaigns} campanhas)
+                    </span>
+                    <span className="text-lg font-bold text-destructive">
+                      {isMultiCurrency ? (
+                        <span className="text-sm">Múltiplas moedas</span>
+                      ) : (
+                        formatCurrencyUtil(totalBudget, primaryCurrency)
+                      )}
+                    </span>
+                  </div>
+                  {isMultiCurrency && (
+                    <div className="text-xs text-muted-foreground text-right">
+                      {Object.entries(budgetConfig)
+                        .filter(([_, v]) => v > 0)
+                        .map(([currency, value]) => (
+                          <div key={currency}>
+                            {formatCurrencyUtil(value * totalCampaigns, currency)}
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
