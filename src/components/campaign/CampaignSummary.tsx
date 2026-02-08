@@ -10,11 +10,14 @@ import { cn } from '@/lib/utils';
 import { RateLimitIndicator } from './RateLimitIndicator';
 import { estimateRateLimitUsage } from '@/lib/rateLimitCalculator';
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   formatCurrency as formatCurrencyUtil, 
   formatMultiCurrencyBudget,
   hasMultipleCurrencies,
-  getPrimaryCurrency 
+  getPrimaryCurrency,
+  getCurrencySymbol
 } from '@/lib/currencyUtils';
 
 export function CampaignSummary() {
@@ -25,6 +28,35 @@ export function CampaignSummary() {
   const totalAds = getTotalAds();
   const totalBudget = getTotalBudget();
 
+  // Fetch ad account data to get currencies
+  const { data: adAccounts = [] } = useQuery({
+    queryKey: ['ad-accounts-for-summary'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('facebook_ad_accounts')
+        .select('account_id, name, currency');
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Get selected accounts data with currencies
+  const selectedAccountsData = useMemo(() => {
+    return config.selectedAccounts
+      .map(accountId => adAccounts.find(a => a.account_id === accountId))
+      .filter(Boolean) as typeof adAccounts;
+  }, [config.selectedAccounts, adAccounts]);
+
+  // Get unique currencies from selected accounts
+  const selectedCurrencies = useMemo(() => {
+    if (selectedAccountsData.length === 0) return ['BRL'];
+    return [...new Set(selectedAccountsData.map(a => a.currency || 'BRL'))];
+  }, [selectedAccountsData]);
+
+  const isMultiCurrency = selectedCurrencies.length > 1;
+  const primaryCurrency = selectedCurrencies[0] || 'BRL';
+
   // Calculate rate limit estimate
   const rateLimitEstimate = useMemo(() => {
     const accountsCount = config.selectedAccounts.length || 1;
@@ -33,7 +65,7 @@ export function CampaignSummary() {
       config.adsetsPerCampaign,
       config.adsPerAdset,
       config.useCatalog,
-      0, // Current usage (we don't know until we call the API)
+      0,
       accountsCount
     );
   }, [totalCampaigns, config.adsetsPerCampaign, config.adsPerAdset, config.useCatalog, config.selectedAccounts.length]);
@@ -44,23 +76,73 @@ export function CampaignSummary() {
     ad: 'Por Anúncio',
   };
 
-  // Determine the currency to use for formatting
+  // Get budget config based on CBO/ABO mode
   const budgetConfig = config.useCBO ? config.budgetByCurrency : config.adsetBudgetByCurrency;
-  const isMultiCurrency = hasMultipleCurrencies(budgetConfig);
-  const primaryCurrency = getPrimaryCurrency(budgetConfig, 'BRL');
+  const baseBudget = config.useCBO ? config.budget : config.adsetBudget;
 
+  // Format currency with detected currency from accounts
   const formatCurrency = (value: number) => {
     return formatCurrencyUtil(value, primaryCurrency);
   };
   
   // Format budget showing all currencies if multi-currency
   const formatBudgetDisplay = () => {
-    if (isMultiCurrency) {
+    // Check if we have budgets configured per currency
+    const hasBudgetConfig = Object.keys(budgetConfig).some(c => budgetConfig[c] > 0);
+    
+    if (hasBudgetConfig && isMultiCurrency) {
       return formatMultiCurrencyBudget(budgetConfig);
     }
-    const budgetValue = config.useCBO ? config.budget : config.adsetBudget;
-    return formatCurrencyUtil(budgetValue, primaryCurrency);
+    
+    if (hasBudgetConfig) {
+      const currency = Object.keys(budgetConfig).find(c => budgetConfig[c] > 0) || primaryCurrency;
+      return formatCurrencyUtil(budgetConfig[currency] || baseBudget, currency);
+    }
+    
+    // Fallback to base budget with detected currency
+    return formatCurrencyUtil(baseBudget, primaryCurrency);
   };
+
+  // Calculate and format total budget per currency
+  const formatTotalBudgetDisplay = () => {
+    const hasBudgetConfig = Object.keys(budgetConfig).some(c => budgetConfig[c] > 0);
+    const multiplier = config.useCBO ? totalCampaigns : totalAdsets;
+    
+    if (hasBudgetConfig && isMultiCurrency) {
+      // Show each currency total separately
+      return null; // Will render separately
+    }
+    
+    if (hasBudgetConfig) {
+      const currency = Object.keys(budgetConfig).find(c => budgetConfig[c] > 0) || primaryCurrency;
+      return formatCurrencyUtil((budgetConfig[currency] || baseBudget) * multiplier, currency);
+    }
+    
+    return formatCurrencyUtil(baseBudget * multiplier, primaryCurrency);
+  };
+
+  // Get budget totals per currency for multi-currency display
+  const budgetTotalsByCurrency = useMemo(() => {
+    const hasBudgetConfig = Object.keys(budgetConfig).some(c => budgetConfig[c] > 0);
+    const multiplier = config.useCBO ? totalCampaigns : totalAdsets;
+    
+    if (hasBudgetConfig) {
+      return Object.entries(budgetConfig)
+        .filter(([_, v]) => v > 0)
+        .map(([currency, value]) => ({
+          currency,
+          total: value * multiplier,
+          formatted: formatCurrencyUtil(value * multiplier, currency),
+        }));
+    }
+    
+    // Single currency based on selected accounts
+    return selectedCurrencies.map(currency => ({
+      currency,
+      total: baseBudget * multiplier,
+      formatted: formatCurrencyUtil(baseBudget * multiplier, currency),
+    }));
+  }, [budgetConfig, baseBudget, totalCampaigns, totalAdsets, config.useCBO, selectedCurrencies]);
 
   return (
     <Card className="glass-card sticky top-6">
@@ -126,7 +208,7 @@ export function CampaignSummary() {
           <span className="text-lg font-bold text-ads-success">{totalAds} anúncios</span>
         </div>
 
-        {/* Budget per Campaign */}
+        {/* Budget per Campaign/Adset */}
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">
             Orçamento ({config.useCBO ? 'por campanha' : 'por conjunto'})
@@ -136,25 +218,48 @@ export function CampaignSummary() {
           </span>
         </div>
 
+        {/* Currency indicator */}
+        {selectedAccountsData.length > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Moeda(s)</span>
+            <div className="flex gap-1">
+              {selectedCurrencies.map(currency => (
+                <Badge 
+                  key={currency} 
+                  variant="outline" 
+                  className="text-xs font-mono"
+                >
+                  {getCurrencySymbol(currency)} {currency}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Total Budget */}
         <div className="flex flex-col gap-1 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-destructive">
               Total ({totalCampaigns} campanhas)
             </span>
-            <span className="text-lg font-bold text-destructive">
-              {isMultiCurrency ? 'Múltiplas' : formatCurrency(totalBudget)}
-            </span>
+            {budgetTotalsByCurrency.length === 1 ? (
+              <span className="text-lg font-bold text-destructive">
+                {budgetTotalsByCurrency[0].formatted}
+              </span>
+            ) : (
+              <span className="text-lg font-bold text-destructive">
+                Múltiplas
+              </span>
+            )}
           </div>
-          {isMultiCurrency && (
+          {budgetTotalsByCurrency.length > 1 && (
             <div className="text-xs text-muted-foreground text-right space-y-0.5">
-              {Object.entries(budgetConfig)
-                .filter(([_, v]) => v > 0)
-                .map(([currency, value]) => (
-                  <div key={currency}>
-                    {formatCurrencyUtil(value * totalCampaigns, currency)}
-                  </div>
-                ))}
+              {budgetTotalsByCurrency.map(({ currency, formatted }) => (
+                <div key={currency} className="flex items-center justify-end gap-1">
+                  <span className="text-muted-foreground/70">{currency}:</span>
+                  <span className="font-medium">{formatted}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
