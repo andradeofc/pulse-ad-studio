@@ -1300,10 +1300,19 @@ Deno.serve(async (req) => {
       throw new Error('Failed to fetch job items');
     }
 
-    // Count ads to create
-    const adsToCreate = items.filter(i => i.item_type === 'ad').length;
+    // Determine whether job items are already partitioned per ad account
+    // (newer jobs include item.config.accountId for every campaign/adset/ad)
+    const itemsHaveAccountId = items.some((i: any) => {
+      const accountId = (i?.config as any)?.accountId;
+      return typeof accountId === 'string' && accountId.trim().length > 0;
+    });
+
+    // Count ads to create (for usage limit check)
+    const adsToCreate = items.filter((i) => i.item_type === 'ad').length;
     const accountsCount = job.accounts_count || 1;
-    const totalAdsToCreate = adsToCreate * accountsCount;
+
+    // If items already include per-account entries, do NOT multiply again.
+    const totalAdsToCreate = itemsHaveAccountId ? adsToCreate : adsToCreate * accountsCount;
 
     // Check ad limits
     const { data: limitCheck } = await supabase
@@ -1407,6 +1416,16 @@ Deno.serve(async (req) => {
     const adsets = items.filter((i) => i.item_type === 'adset');
     const ads = items.filter((i) => i.item_type === 'ad');
 
+    const normalizeAccountId = (value: unknown): string | null => {
+      if (typeof value !== 'string') return null;
+      return value.replace(/^act_/, '').trim();
+    };
+
+    const getItemAccountId = (item: any): string | null => {
+      const raw = (item?.config as any)?.accountId;
+      return normalizeAccountId(raw);
+    };
+
     console.log(`[process-jobs] Processing ${campaigns.length} campaigns, ${adsets.length} adsets, ${ads.length} ads`);
     console.log(`[process-jobs] Using BATCH API for optimized processing`);
 
@@ -1447,8 +1466,29 @@ Deno.serve(async (req) => {
       // Create naming replacer
       const replaceNamingVariables = createNamingReplacer(currentAccount, config, resolvedPages, job);
 
+      const currentAccountId = normalizeAccountId(currentAccount.account_id);
+
+      const campaignsForAccount =
+        itemsHaveAccountId && currentAccountId
+          ? campaigns.filter((c) => getItemAccountId(c) === currentAccountId)
+          : campaigns;
+
+      const adsetsForAccount =
+        itemsHaveAccountId && currentAccountId
+          ? adsets.filter((a) => getItemAccountId(a) === currentAccountId)
+          : adsets;
+
+      const adsForAccount =
+        itemsHaveAccountId && currentAccountId
+          ? ads.filter((a) => getItemAccountId(a) === currentAccountId)
+          : ads;
+
+      console.log(
+        `[process-jobs] Account ${currentAccount.name}: ${campaignsForAccount.length} campaigns, ${adsetsForAccount.length} adsets, ${adsForAccount.length} ads`,
+      );
+
       // Prepare campaigns with resolved names
-      const campaignsWithNames = campaigns.map((c, i) => ({
+      const campaignsWithNames = campaignsForAccount.map((c, i) => ({
         id: c.id,
         name: replaceNamingVariables(c.name, { campaignIndex: i }),
         config: c.config as Record<string, any>,
@@ -1466,7 +1506,7 @@ Deno.serve(async (req) => {
       console.log(`[process-jobs] Created ${campaignIdMap.size}/${campaignsWithNames.length} campaigns`);
 
       // Prepare adsets with resolved names
-      const adsetsWithNames = adsets.map((a, i) => ({
+      const adsetsWithNames = adsetsForAccount.map((a, i) => ({
         id: a.id,
         name: replaceNamingVariables(a.name, { adsetIndex: i }),
         parent_id: a.parent_id,
@@ -1486,7 +1526,7 @@ Deno.serve(async (req) => {
       console.log(`[process-jobs] Created ${adsetIdMap.size}/${adsetsWithNames.length} adsets`);
 
       // Prepare ads with resolved names
-      const adsWithNames = ads.map((a, i) => ({
+      const adsWithNames = adsForAccount.map((a, i) => ({
         id: a.id,
         name: replaceNamingVariables(a.name, { adIndex: i }),
         parent_id: a.parent_id,
@@ -1599,7 +1639,7 @@ Deno.serve(async (req) => {
       try {
         await supabase.rpc('increment_ad_usage', {
           p_user_id: user.id,
-          p_ads_count: totalAdsCreated * allAdAccounts.length,
+          p_ads_count: totalAdsCreated,
         });
       } catch (usageError) {
         console.error('[process-jobs] Failed to increment ad usage:', usageError);
