@@ -10,13 +10,17 @@ const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 // Batch API Configuration
+// Standard Access: 9,000 points per 5-min window per ad account
+// Each POST operation = 3 points (based on FB documentation)
+// QPS limit: 100 requests/second per account
 const BATCH_CONFIG = {
-  MAX_BATCH_SIZE: 50, // Facebook max is 50 per request
-  CAMPAIGN_BATCH_SIZE: 10, // Conservative for campaigns
-  ADSET_BATCH_SIZE: 25, // Adsets can be batched more aggressively
-  AD_BATCH_SIZE: 10, // Facebook recommends 10 or less for ads
-  PARALLEL_BATCHES: 3, // Number of parallel batch requests
-  BATCH_DELAY_MS: 100, // Delay between batch requests
+  MAX_BATCH_SIZE: 50, // Facebook hard limit
+  CAMPAIGN_BATCH_SIZE: 15, // Campaigns are heavier ops
+  ADSET_BATCH_SIZE: 40, // Adsets can be batched more aggressively  
+  AD_BATCH_SIZE: 40, // Ads with creatives
+  CREATIVE_BATCH_SIZE: 40, // Creatives batch
+  BATCH_DELAY_MS: 50, // Minimal delay (QPS allows 100/s)
+  DYNAMIC_DELAY_ENABLED: true, // Enable adaptive delays based on usage
 };
 
 interface JobItem {
@@ -71,10 +75,16 @@ interface RateLimitInfo {
 const rateLimitTracker = new Map<string, RateLimitInfo>();
 
 // Rate limit constants (Standard Access tier)
+// Points: 9,000 per 5 minutes, each POST = ~3 points
+// At max speed (100 QPS), theoretical max = 27,000 points/min = far exceeds limit
+// Safe target: stay under 80% usage, throttle progressively
 const RATE_LIMIT_CONFIG = {
-  MAX_USAGE_PERCENT: 85,
-  BACKOFF_THRESHOLD: 50,
-  WINDOW_MS: 5 * 60 * 1000,
+  MAX_USAGE_PERCENT: 80, // Pause at 80% to prevent hard blocks
+  HARD_PAUSE_PERCENT: 90, // Full stop at 90%
+  BACKOFF_THRESHOLD: 40, // Start slowing down earlier
+  WINDOW_MS: 5 * 60 * 1000, // 5 minute window
+  BASE_POINTS_PER_REQUEST: 3, // POST operations cost 3 points
+  MAX_POINTS_PER_WINDOW: 9000, // Standard access limit
 };
 
 function parseRateLimitHeader(header: string | null): number {
@@ -120,24 +130,43 @@ function updateRateLimitInfo(accountId: string, usagePercent: number): void {
   }
 }
 
-function shouldPauseForRateLimit(accountId: string): { pause: boolean; usagePercent: number; waitMs: number } {
+function shouldPauseForRateLimit(accountId: string): { 
+  pause: boolean; 
+  hardPause: boolean;
+  usagePercent: number; 
+  waitMs: number;
+  batchSizeReduction: number; // Factor to reduce batch size (1 = no reduction)
+} {
   const info = rateLimitTracker.get(accountId);
   if (!info) {
-    return { pause: false, usagePercent: 0, waitMs: 0 };
+    return { pause: false, hardPause: false, usagePercent: 0, waitMs: 0, batchSizeReduction: 1 };
   }
   
+  // Hard pause at 90%+ - wait for full window reset
+  if (info.usagePercent >= RATE_LIMIT_CONFIG.HARD_PAUSE_PERCENT) {
+    const remainingWindow = RATE_LIMIT_CONFIG.WINDOW_MS - (Date.now() - info.windowStart);
+    const waitMs = Math.max(30000, Math.min(remainingWindow, 120000)); // 30s to 2min
+    console.warn(`[rate-limit] HARD PAUSE at ${info.usagePercent.toFixed(1)}%, waiting ${Math.round(waitMs/1000)}s`);
+    return { pause: true, hardPause: true, usagePercent: info.usagePercent, waitMs, batchSizeReduction: 0.25 };
+  }
+  
+  // Soft pause at 80%+ - short pause then continue with reduced batch
   if (info.usagePercent >= RATE_LIMIT_CONFIG.MAX_USAGE_PERCENT) {
-    const waitMs = Math.min(30000, Math.round((info.usagePercent - 50) * 200));
-    return { pause: true, usagePercent: info.usagePercent, waitMs };
+    const waitMs = Math.round((info.usagePercent - 70) * 500); // 5s-15s pause
+    console.log(`[rate-limit] Soft pause at ${info.usagePercent.toFixed(1)}%, waiting ${Math.round(waitMs/1000)}s`);
+    return { pause: true, hardPause: false, usagePercent: info.usagePercent, waitMs, batchSizeReduction: 0.5 };
   }
   
+  // Progressive slowdown from 40% to 80%
   if (info.usagePercent >= RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) {
-    const slowdownFactor = (info.usagePercent - RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) / 35;
-    const additionalDelay = Math.round(slowdownFactor * 300);
-    return { pause: false, usagePercent: info.usagePercent, waitMs: additionalDelay };
+    const slowdownFactor = (info.usagePercent - RATE_LIMIT_CONFIG.BACKOFF_THRESHOLD) / 40; // 0 to 1
+    const additionalDelay = Math.round(slowdownFactor * 200); // 0 to 200ms extra
+    const batchReduction = 1 - (slowdownFactor * 0.3); // Reduce batch size up to 30%
+    return { pause: false, hardPause: false, usagePercent: info.usagePercent, waitMs: additionalDelay, batchSizeReduction: batchReduction };
   }
   
-  return { pause: false, usagePercent: info.usagePercent, waitMs: 0 };
+  // Normal operation - full speed
+  return { pause: false, hardPause: false, usagePercent: info.usagePercent, waitMs: 0, batchSizeReduction: 1 };
 }
 
 // Get a Page Access Token using the user's access token
@@ -235,19 +264,28 @@ async function resolveInstagramActorIdForPage(params: {
   }
 }
 
-// Execute a batch request to Facebook Graph API
+// Execute a batch request to Facebook Graph API with adaptive rate limiting
 async function executeBatchRequest(
   accessToken: string,
   batch: BatchRequestItem[],
   accountId?: string,
-): Promise<BatchResponseItem[]> {
-  if (batch.length === 0) return [];
+): Promise<{ results: BatchResponseItem[]; usagePercent: number }> {
+  if (batch.length === 0) return { results: [], usagePercent: 0 };
+  
+  let currentUsage = 0;
   
   // Check rate limits before batch
   if (accountId) {
     const rateLimitCheck = shouldPauseForRateLimit(accountId);
-    if (rateLimitCheck.pause) {
-      console.warn(`[batch] Account ${accountId} at ${rateLimitCheck.usagePercent}% usage, waiting ${rateLimitCheck.waitMs}ms`);
+    currentUsage = rateLimitCheck.usagePercent;
+    
+    if (rateLimitCheck.hardPause) {
+      console.warn(`[batch] Account ${accountId} HARD PAUSE at ${rateLimitCheck.usagePercent.toFixed(1)}%, waiting ${Math.round(rateLimitCheck.waitMs/1000)}s`);
+      await sleep(rateLimitCheck.waitMs);
+      // Reset tracking after hard pause
+      rateLimitTracker.delete(accountId);
+    } else if (rateLimitCheck.pause) {
+      console.warn(`[batch] Account ${accountId} soft pause at ${rateLimitCheck.usagePercent.toFixed(1)}%, waiting ${Math.round(rateLimitCheck.waitMs/1000)}s`);
       await sleep(rateLimitCheck.waitMs);
     } else if (rateLimitCheck.waitMs > 0) {
       await sleep(rateLimitCheck.waitMs);
@@ -288,17 +326,30 @@ async function executeBatchRequest(
     const results: BatchResponseItem[] = await res.json();
     
     // Log any errors in batch responses
+    let errorCount = 0;
     for (let i = 0; i < results.length; i++) {
       if (results[i].code >= 400) {
+        errorCount++;
         console.warn(`[batch] Item ${i} failed with code ${results[i].code}`);
       }
     }
+    
+    if (errorCount > 0) {
+      console.log(`[batch] Batch completed: ${results.length - errorCount}/${results.length} succeeded`);
+    }
 
-    return results;
+    return { results, usagePercent: rateLimitPercent };
   } catch (err: any) {
     console.error(`[batch] Batch request error:`, err);
     throw err;
   }
+}
+
+// Helper to get adaptive batch size based on current rate limit usage
+function getAdaptiveBatchSize(baseBatchSize: number, accountId: string): number {
+  const rateLimitCheck = shouldPauseForRateLimit(accountId);
+  const adaptedSize = Math.max(5, Math.floor(baseBatchSize * rateLimitCheck.batchSizeReduction));
+  return adaptedSize;
 }
 
 // Helper to chunk array into smaller arrays
@@ -577,14 +628,17 @@ async function createCampaignsBatch(
     });
   }
 
-  // Execute in chunks
-  const chunks = chunkArray(batchItems, BATCH_CONFIG.CAMPAIGN_BATCH_SIZE);
+  // Execute in chunks with adaptive batch sizing
+  const batchSize = getAdaptiveBatchSize(BATCH_CONFIG.CAMPAIGN_BATCH_SIZE, adAccountId);
+  const chunks = chunkArray(batchItems, batchSize);
+  
+  console.log(`[batch] Creating ${campaigns.length} campaigns in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
     const batch = chunk.map(c => c.batchItem);
     
     try {
-      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      const { results } = await executeBatchRequest(accessToken, batch, adAccountId);
       
       // Process results
       for (let i = 0; i < results.length; i++) {
@@ -676,14 +730,17 @@ async function createAdsetsBatch(
     });
   }
 
-  // Execute in chunks
-  const chunks = chunkArray(batchItems, BATCH_CONFIG.ADSET_BATCH_SIZE);
+  // Execute in chunks with adaptive batch sizing
+  const batchSize = getAdaptiveBatchSize(BATCH_CONFIG.ADSET_BATCH_SIZE, adAccountId);
+  const chunks = chunkArray(batchItems, batchSize);
+  
+  console.log(`[batch] Creating ${validAdsets.length} adsets in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
     const batch = chunk.map(c => c.batchItem);
     
     try {
-      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      const { results } = await executeBatchRequest(accessToken, batch, adAccountId);
       
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
@@ -760,14 +817,17 @@ async function createCatalogCreativesBatch(
     });
   }
 
-  // Execute in chunks
-  const chunks = chunkArray(batchItems, BATCH_CONFIG.AD_BATCH_SIZE);
+  // Execute in chunks with adaptive batch sizing
+  const batchSize = getAdaptiveBatchSize(BATCH_CONFIG.CREATIVE_BATCH_SIZE || BATCH_CONFIG.AD_BATCH_SIZE, adAccountId);
+  const chunks = chunkArray(batchItems, batchSize);
+  
+  console.log(`[batch] Creating ${ads.length} creatives in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
     const batch = chunk.map(c => c.batchItem);
     
     try {
-      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      const { results } = await executeBatchRequest(accessToken, batch, adAccountId);
       
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
@@ -862,14 +922,17 @@ async function createAdsBatch(
     });
   }
 
-  // Execute in chunks
-  const chunks = chunkArray(batchItems, BATCH_CONFIG.AD_BATCH_SIZE);
+  // Execute in chunks with adaptive batch sizing
+  const batchSize = getAdaptiveBatchSize(BATCH_CONFIG.AD_BATCH_SIZE, adAccountId);
+  const chunks = chunkArray(batchItems, batchSize);
+  
+  console.log(`[batch] Creating ${validAds.length} ads in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
     const batch = chunk.map(c => c.batchItem);
     
     try {
-      const results = await executeBatchRequest(accessToken, batch, adAccountId);
+      const { results } = await executeBatchRequest(accessToken, batch, adAccountId);
       
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
