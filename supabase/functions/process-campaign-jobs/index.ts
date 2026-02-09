@@ -1810,7 +1810,7 @@ async function buildDLOCreative(
   if (defaultDesc) defaultRule.description_label = { name: `${defaultPrefix}_desc` };
   if (defaultUrl) defaultRule.link_url_label = { name: `${defaultPrefix}_url` };
   defaultRule[mediaType === 'video' ? 'video_label' : 'image_label'] = { name: `${defaultPrefix}_media` };
-  // No is_default field — Facebook uses position-based priority (last = default)
+  defaultRule.is_default = true;
   customizationRules.push(defaultRule);
 
   const assetFeedSpec: any = {
