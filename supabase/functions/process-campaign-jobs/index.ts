@@ -2818,7 +2818,6 @@ Deno.serve(async (req) => {
                 adset_id: parentFbId,
                 creative: JSON.stringify({ creative_id: dloCreativeId }),
                 status: 'ACTIVE',
-                use_page_actor_override: 'true',
               }).toString();
 
               adBatchItems.push({
