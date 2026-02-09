@@ -260,7 +260,9 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   
   getTotalCampaigns: () => {
     const { config } = get();
-    const creativeCount = config.selectedCreatives.length || 1;
+    // When DLO is enabled, media comes from language config, not Step 1 creatives
+    const isDLO = config.languageConfig?.enabled && !config.useCatalog;
+    const creativeCount = isDLO ? 1 : (config.selectedCreatives.length || 1);
     
     switch (config.distribution) {
       case 'campaign':
@@ -278,7 +280,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   
   getTotalAdsets: () => {
     const { config } = get();
-    const creativeCount = config.selectedCreatives.length || 1;
+    const isDLO = config.languageConfig?.enabled && !config.useCatalog;
+    const creativeCount = isDLO ? 1 : (config.selectedCreatives.length || 1);
     const totalCampaigns = get().getTotalCampaigns();
     
     if (config.distribution === 'adset') {
@@ -293,7 +296,8 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   
   getTotalAds: () => {
     const { config } = get();
-    const creativeCount = config.selectedCreatives.length || 1;
+    const isDLO = config.languageConfig?.enabled && !config.useCatalog;
+    const creativeCount = isDLO ? 1 : (config.selectedCreatives.length || 1);
     const totalAdsets = get().getTotalAdsets();
     
     if (config.distribution === 'ad') {
