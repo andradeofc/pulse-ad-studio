@@ -1791,6 +1791,24 @@ async function buildDLOCreative(
     customizationRules.push(rule);
   }
 
+  // CRITICAL: Facebook requires a default rule (without locales filter) as fallback
+  // Use the default language assets for this rule
+  const defaultPrefix = `locale_${String(defaultLang.locale)}`;
+  const defaultRule: any = {
+    customization_spec: {},
+  };
+  const defaultBody = defaultLang.primaryText || '';
+  const defaultTitle = defaultLang.headline || '';
+  const defaultDesc = defaultLang.description || '';
+  const defaultUrl = defaultLang.websiteUrl || config.destinationUrl || '';
+  if (defaultBody) defaultRule.body_label = { name: `${defaultPrefix}_body` };
+  if (defaultTitle) defaultRule.title_label = { name: `${defaultPrefix}_title` };
+  if (defaultDesc) defaultRule.description_label = { name: `${defaultPrefix}_desc` };
+  if (defaultUrl) defaultRule.link_url_label = { name: `${defaultPrefix}_url` };
+  defaultRule[mediaType === 'video' ? 'video_label' : 'image_label'] = { name: `${defaultPrefix}_media` };
+  defaultRule.is_default = true;
+  customizationRules.push(defaultRule);
+
   const assetFeedSpec: any = {
     bodies,
     titles,
