@@ -765,6 +765,7 @@ async function createCampaignsBatch(
   campaigns: Array<{ id: string; name: string; config: Record<string, any>; facebook_id?: string | null }>,
   config: Record<string, any>,
   supabase: any,
+  shouldYield?: () => boolean,
 ): Promise<Map<string, string>> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const idMap = new Map<string, string>();
@@ -825,6 +826,10 @@ async function createCampaignsBatch(
   console.log(`[batch] Creating ${campaignsNeedingCreation.length} campaigns in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
+    if (shouldYield?.()) {
+      console.log(`[batch] Time limit approaching, yielding after ${idMap.size} campaigns`);
+      break;
+    }
     const batch = chunk.map(c => c.batchItem);
     
     try {
@@ -885,6 +890,7 @@ async function createAdsetsBatch(
   campaignIdMap: Map<string, string>,
   config: Record<string, any>,
   supabase: any,
+  shouldYield?: () => boolean,
 ): Promise<Map<string, string>> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const idMap = new Map<string, string>();
@@ -960,6 +966,10 @@ async function createAdsetsBatch(
   console.log(`[batch] Creating ${validAdsets.length} adsets in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
+    if (shouldYield?.()) {
+      console.log(`[batch] Time limit approaching, yielding after ${idMap.size} adsets`);
+      break;
+    }
     const batch = chunk.map(c => c.batchItem);
     
     try {
@@ -1021,6 +1031,7 @@ async function createCatalogCreativesBatch(
   defaultPageId: string,
   defaultInstagramUserId: string | null,
   supabase: any,
+  shouldYield?: () => boolean,
 ): Promise<Map<string, string>> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const creativeIdMap = new Map<string, string>();
@@ -1091,6 +1102,10 @@ async function createCatalogCreativesBatch(
   console.log(`[batch] Creating ${adsNeedingCreatives.length} creatives in ${chunks.length} batches (size: ${batchSize})`);
   
   for (const chunk of chunks) {
+    if (shouldYield?.()) {
+      console.log(`[batch] Time limit approaching, yielding after ${creativeIdMap.size} creatives`);
+      break;
+    }
     const batch = chunk.map(c => c.batchItem);
     
     try {
@@ -1156,6 +1171,7 @@ async function createAdsBatch(
     defaultPageId: string;
     resolvedPages: PageWithCapacity[];
   },
+  shouldYield?: () => boolean,
 ): Promise<number> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   let successCount = 0;
@@ -1238,6 +1254,10 @@ async function createAdsBatch(
   const instagramRetryAds: typeof validAds = [];
   
   for (const chunk of chunks) {
+    if (shouldYield?.()) {
+      console.log(`[batch] Time limit approaching, yielding after ${successCount} ads`);
+      break;
+    }
     const batch = chunk.map(c => c.batchItem);
     
     try {
@@ -2219,6 +2239,7 @@ Deno.serve(async (req) => {
           campaignsWithNames,
           config,
           supabase,
+          shouldYield,
         );
         // Merge new IDs into the map
         for (const [k, v] of newCampaignIdMap) {
@@ -2285,6 +2306,7 @@ Deno.serve(async (req) => {
           campaignIdMap,
           config,
           supabase,
+          shouldYield,
         );
         // Merge new IDs into the map
         for (const [k, v] of newAdsetIdMap) {
@@ -2365,6 +2387,7 @@ Deno.serve(async (req) => {
           defaultPageId,
           defaultInstagramUserId,
           supabase,
+          shouldYield,
         );
         console.log(`[process-jobs] Created ${creativeIdMap.size}/${adsWithNames.length} creatives`);
 
@@ -2381,6 +2404,7 @@ Deno.serve(async (req) => {
             defaultPageId,
             resolvedPages,
           },
+          shouldYield,
         );
         totalAdsCreated += adsCreated;
         console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} new ads`);
