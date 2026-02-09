@@ -242,9 +242,23 @@ async function resolveInstagramActorIdForPage(params: {
         igActorIdCache.set(pageId, igId);
         return igId;
       }
+      // No linked IG account found, try to CREATE a Page-Backed Instagram Account (PBIA)
+      console.log(`[process-jobs] No Instagram account found for page ${pageId}, creating PBIA...`);
+      const createPbiaUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${pageAccessToken}`;
+      const createPbiaRes = await fetch(createPbiaUrl, { method: 'POST' });
+      const createPbiaJson = await createPbiaRes.json();
+
+      if (createPbiaRes.ok && !createPbiaJson?.error && createPbiaJson?.id) {
+        const igId = createPbiaJson.id as string;
+        console.log(`[process-jobs] Created PBIA ${igId} for page ${pageId}`);
+        igActorIdCache.set(pageId, igId);
+        return igId;
+      }
+
+      console.warn(`[process-jobs] Failed to create PBIA for page ${pageId}:`, JSON.stringify(createPbiaJson));
     }
 
-    // Fallback: instagram_business_account
+    // Fallback: instagram_business_account via user token
     const ibaUrl = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${userAccessToken}`;
     const ibaRes = await fetch(ibaUrl);
     const ibaJson = await ibaRes.json();
@@ -255,16 +269,29 @@ async function resolveInstagramActorIdForPage(params: {
       return igId;
     }
 
-    // Fallback: use pageId as instagram_actor_id (equivalent to "Use Facebook Page" in Ads Manager)
-    console.log(`[process-jobs] No Instagram account found for page ${pageId}, using page ID as fallback (Use Facebook Page)`);
-    igActorIdCache.set(pageId, pageId);
-    return pageId;
+    // Last resort: try creating PBIA with user token if no page token was available
+    if (!pageAccessTokenFromDb) {
+      const pageToken = await getPageAccessTokenFromUserToken(userAccessToken, pageId);
+      if (pageToken) {
+        const createUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${pageToken}`;
+        const createRes = await fetch(createUrl, { method: 'POST' });
+        const createJson = await createRes.json();
+        if (createRes.ok && !createJson?.error && createJson?.id) {
+          const igId = createJson.id as string;
+          console.log(`[process-jobs] Created PBIA ${igId} for page ${pageId} (user token fallback)`);
+          igActorIdCache.set(pageId, igId);
+          return igId;
+        }
+      }
+    }
+
+    console.error(`[process-jobs] Could not resolve any Instagram identity for page ${pageId}`);
+    igActorIdCache.set(pageId, null);
+    return null;
   } catch (err) {
     console.error(`[process-jobs] Error resolving Instagram actor:`, err);
-    // Even on error, fallback to pageId to avoid missing Instagram identity errors
-    console.log(`[process-jobs] Using page ID ${pageId} as Instagram fallback due to error`);
-    igActorIdCache.set(pageId, pageId);
-    return pageId;
+    igActorIdCache.set(pageId, null);
+    return null;
   }
 }
 
