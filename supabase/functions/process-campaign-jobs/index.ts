@@ -1736,6 +1736,7 @@ async function buildDLOCreative(
   mediaType: 'video' | 'image',
   pageId: string,
   name: string,
+  instagramUserId: string | null,
 ): Promise<string> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const languageConfig = config.languageConfig;
@@ -1824,8 +1825,11 @@ async function buildDLOCreative(
   else if (mediaAssets.length > 0) assetFeedSpec.images = mediaAssets;
   if (descriptions.length > 0) assetFeedSpec.descriptions = descriptions;
 
-  // DLO creatives: use page_id only + use_page_actor_override (Facebook derives Instagram identity from page)
+  // DLO creatives: include instagram_user_id (same pattern as catalog creatives)
   const objectStorySpec: any = { page_id: pageId };
+  if (instagramUserId) {
+    objectStorySpec.instagram_user_id = instagramUserId;
+  }
 
   const creativeParams = new URLSearchParams({
     access_token: accessToken,
@@ -2766,11 +2770,11 @@ Deno.serve(async (req) => {
             let dloCreativeId: string | undefined = (job.config as any)?.savedDLOCreativeIds?.[currentAccountId];
 
             if (!dloCreativeId) {
-              // DLO creative uses page_id + use_page_actor_override (Facebook derives Instagram from page)
+              // DLO creative uses page_id + instagram_user_id (same pattern as catalog creatives)
               dloCreativeId = await buildDLOCreative(
                 accessToken, currentAccount.account_id, config,
                 dloMediaMap, dloMediaType, defaultPageId,
-                `${currentAccount.name}_DLO`,
+                `${currentAccount.name}_DLO`, defaultInstagramUserId,
               );
 
               const updatedJobConfig = {
