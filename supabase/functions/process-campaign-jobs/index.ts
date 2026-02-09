@@ -1636,7 +1636,7 @@ async function createDLOCreativeAndAd(
 
     // Step 1: Upload/resolve media per language
     const savedVideoIds: Record<string, string> = adItemConfig.savedVideoIds || {};
-    // savedImageHashes removed - images use URL directly in asset_feed_spec
+    const savedImageHashes: Record<string, string> = adItemConfig.savedImageHashes || {};
 
     for (const lang of allLangs) {
       const localeKey = String(lang.locale);
@@ -1693,12 +1693,59 @@ async function createDLOCreativeAndAd(
             return { success: false, error: `DLO video processing error for locale ${localeKey}` };
           }
         }
+      } else if (!isVideo && !savedImageHashes[localeKey]) {
+        // Upload image: download first, then upload as base64 bytes to /adimages
+        console.log(`[DLO] Downloading image for locale ${localeKey}: ${mediaUrl.substring(0, 80)}...`);
+        try {
+          const imgResponse = await fetch(mediaUrl);
+          if (!imgResponse.ok) {
+            return { success: false, error: `DLO image download failed for locale ${localeKey}: HTTP ${imgResponse.status}` };
+          }
+          const imgBuffer = await imgResponse.arrayBuffer();
+          const imgBytes = btoa(String.fromCharCode(...new Uint8Array(imgBuffer)));
+
+          console.log(`[DLO] Uploading image bytes (${imgBytes.length} chars) for locale ${localeKey}`);
+          const imgUploadParams = new URLSearchParams({
+            access_token: accessToken,
+            bytes: imgBytes,
+          });
+
+          const imgResult = await fetchWithRetry(
+            `${GRAPH_BASE_URL}/${actId}/adimages`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: imgUploadParams.toString(),
+            },
+            3,
+            adAccountId,
+          );
+
+          if (!imgResult.ok || imgResult.json.error) {
+            return { success: false, error: `DLO image upload failed for locale ${localeKey}: ${imgResult.json?.error?.message || 'unknown'}` };
+          }
+
+          // Extract hash from response - format: { images: { <filename>: { hash: "..." } } }
+          const imagesObj = imgResult.json?.images;
+          if (imagesObj) {
+            const firstKey = Object.keys(imagesObj)[0];
+            if (firstKey && imagesObj[firstKey]?.hash) {
+              savedImageHashes[localeKey] = imagesObj[firstKey].hash;
+              console.log(`[DLO] Image hash for locale ${localeKey}: ${savedImageHashes[localeKey]}`);
+            }
+          }
+
+          if (!savedImageHashes[localeKey]) {
+            return { success: false, error: `DLO image upload returned no hash for locale ${localeKey}` };
+          }
+        } catch (imgErr: any) {
+          return { success: false, error: `DLO image processing error for locale ${localeKey}: ${imgErr.message}` };
+        }
       }
-      // For images, we use the URL directly in the asset_feed_spec (url field is accepted)
     }
 
-    // Save video IDs for idempotency
-    const updatedConfig = { ...adItemConfig, savedVideoIds };
+    // Save video IDs and image hashes for idempotency
+    const updatedConfig = { ...adItemConfig, savedVideoIds, savedImageHashes };
     await supabase
       .from('campaign_job_items')
       .update({ config: updatedConfig })
@@ -1760,17 +1807,17 @@ async function createDLOCreativeAndAd(
           });
         }
       } else {
-        // Image - use URL directly (asset_feed_spec accepts url)
-        let imageUrl: string | null = null;
+        // Image - use uploaded hash
+        let imageHash: string | null = null;
         if (lang === defaultLang || lang.mediaUrl) {
-          imageUrl = lang.mediaUrl || defaultLang.mediaUrl || firstCreative?.url;
+          imageHash = savedImageHashes[localeKey] || savedImageHashes[String(defaultLang.locale)];
         } else {
-          imageUrl = defaultLang.mediaUrl || firstCreative?.url;
+          imageHash = savedImageHashes[String(defaultLang.locale)];
         }
 
-        if (imageUrl) {
+        if (imageHash) {
           mediaAssets.push({
-            url: imageUrl,
+            hash: imageHash,
             adlabels: [{ name: `${labelPrefix}_media` }],
           });
         }
@@ -1845,7 +1892,7 @@ async function createDLOCreativeAndAd(
     savedCreativeId = creativeResult.json.id;
 
     // Save creative ID for idempotency
-    const configWithCreative = { ...adItemConfig, savedVideoIds, savedCreativeId };
+    const configWithCreative = { ...adItemConfig, savedVideoIds, savedImageHashes, savedCreativeId };
     await supabase
       .from('campaign_job_items')
       .update({ config: configWithCreative })
