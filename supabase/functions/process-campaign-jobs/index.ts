@@ -207,6 +207,9 @@ async function getPageAccessTokenFromUserToken(
 }
 
 // Resolve Instagram Actor ID for a Page
+// Strategy: 1) Check existing PBIA/IG accounts 2) Check instagram_business_account 3) Create PBIA
+// If all fail, return null — the creative will be created without instagram_user_id,
+// relying on use_page_actor_override + page_id in object_story_spec
 async function resolveInstagramActorIdForPage(params: {
   userAccessToken: string;
   pageId: string;
@@ -217,79 +220,101 @@ async function resolveInstagramActorIdForPage(params: {
   if (igActorIdCache.has(pageId)) return igActorIdCache.get(pageId) ?? null;
 
   try {
+    // Collect all available tokens to try
     const pageAccessToken = pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId));
+    const tokensToTry = [pageAccessToken, userAccessToken].filter(Boolean) as string[];
 
-    if (pageAccessToken) {
-      // Try page_backed_instagram_accounts first
-      const pbiaUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?fields=id,username&access_token=${pageAccessToken}`;
-      const pbiaRes = await fetch(pbiaUrl);
-      const pbiaJson = await pbiaRes.json();
-
-      if (pbiaRes.ok && !pbiaJson?.error && Array.isArray(pbiaJson?.data) && pbiaJson.data.length > 0) {
-        const igId = pbiaJson.data[0].id as string;
-        console.log(`[process-jobs] Resolved Page-backed Instagram account ${igId}`);
-        igActorIdCache.set(pageId, igId);
-        return igId;
-      }
-
-      // Try instagram_accounts
-      const iaUrl = `${GRAPH_BASE_URL}/${pageId}/instagram_accounts?fields=id,username&access_token=${pageAccessToken}`;
-      const iaRes = await fetch(iaUrl);
-      const iaJson = await iaRes.json();
-
-      if (iaRes.ok && !iaJson?.error && Array.isArray(iaJson?.data) && iaJson.data.length > 0) {
-        const igId = iaJson.data[0].id as string;
-        igActorIdCache.set(pageId, igId);
-        return igId;
-      }
-      // No linked IG account found, try to CREATE a Page-Backed Instagram Account (PBIA)
-      console.log(`[process-jobs] No Instagram account found for page ${pageId}, creating PBIA...`);
-      const createPbiaUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${pageAccessToken}`;
-      const createPbiaRes = await fetch(createPbiaUrl, { method: 'POST' });
-      const createPbiaJson = await createPbiaRes.json();
-
-      if (createPbiaRes.ok && !createPbiaJson?.error && createPbiaJson?.id) {
-        const igId = createPbiaJson.id as string;
-        console.log(`[process-jobs] Created PBIA ${igId} for page ${pageId}`);
-        igActorIdCache.set(pageId, igId);
-        return igId;
-      }
-
-      console.warn(`[process-jobs] Failed to create PBIA for page ${pageId}:`, JSON.stringify(createPbiaJson));
-    }
-
-    // Fallback: instagram_business_account via user token
-    const ibaUrl = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${userAccessToken}`;
-    const ibaRes = await fetch(ibaUrl);
-    const ibaJson = await ibaRes.json();
-
-    if (ibaRes.ok && !ibaJson?.error && ibaJson?.instagram_business_account?.id) {
-      const igId = ibaJson.instagram_business_account.id as string;
-      igActorIdCache.set(pageId, igId);
-      return igId;
-    }
-
-    // Last resort: try creating PBIA with user token if no page token was available
-    if (!pageAccessTokenFromDb) {
-      const pageToken = await getPageAccessTokenFromUserToken(userAccessToken, pageId);
-      if (pageToken) {
-        const createUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${pageToken}`;
-        const createRes = await fetch(createUrl, { method: 'POST' });
-        const createJson = await createRes.json();
-        if (createRes.ok && !createJson?.error && createJson?.id) {
-          const igId = createJson.id as string;
-          console.log(`[process-jobs] Created PBIA ${igId} for page ${pageId} (user token fallback)`);
+    // Step 1: Check for existing Instagram accounts (PBIA, linked IG, business IG)
+    for (const token of tokensToTry) {
+      // Try page_backed_instagram_accounts
+      try {
+        const pbiaUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?fields=id,username&access_token=${token}`;
+        const pbiaRes = await fetch(pbiaUrl);
+        const pbiaJson = await pbiaRes.json();
+        if (pbiaRes.ok && !pbiaJson?.error && Array.isArray(pbiaJson?.data) && pbiaJson.data.length > 0) {
+          const igId = pbiaJson.data[0].id as string;
+          console.log(`[process-jobs] Resolved existing PBIA ${igId} for page ${pageId}`);
           igActorIdCache.set(pageId, igId);
           return igId;
         }
+      } catch (e) { /* continue */ }
+
+      // Try instagram_accounts (linked via page settings)
+      try {
+        const iaUrl = `${GRAPH_BASE_URL}/${pageId}/instagram_accounts?fields=id,username&access_token=${token}`;
+        const iaRes = await fetch(iaUrl);
+        const iaJson = await iaRes.json();
+        if (iaRes.ok && !iaJson?.error && Array.isArray(iaJson?.data) && iaJson.data.length > 0) {
+          const igId = iaJson.data[0].id as string;
+          console.log(`[process-jobs] Resolved linked Instagram account ${igId} for page ${pageId}`);
+          igActorIdCache.set(pageId, igId);
+          return igId;
+        }
+      } catch (e) { /* continue */ }
+    }
+
+    // Step 2: Try instagram_business_account via page fields
+    try {
+      const ibaUrl = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${userAccessToken}`;
+      const ibaRes = await fetch(ibaUrl);
+      const ibaJson = await ibaRes.json();
+      if (ibaRes.ok && !ibaJson?.error && ibaJson?.instagram_business_account?.id) {
+        const igId = ibaJson.instagram_business_account.id as string;
+        console.log(`[process-jobs] Resolved Instagram Business Account ${igId} for page ${pageId}`);
+        igActorIdCache.set(pageId, igId);
+        return igId;
+      }
+    } catch (e) { /* continue */ }
+
+    // Step 3: Create PBIA — try with each available token
+    for (const token of tokensToTry) {
+      try {
+        console.log(`[process-jobs] Creating PBIA for page ${pageId}...`);
+        const createUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${token}`;
+        const createRes = await fetch(createUrl, { method: 'POST' });
+        const createJson = await createRes.json();
+
+        if (createRes.ok && !createJson?.error && createJson?.id) {
+          const igId = createJson.id as string;
+          console.log(`[process-jobs] Created PBIA ${igId} for page ${pageId}`);
+          igActorIdCache.set(pageId, igId);
+          return igId;
+        }
+
+        // If PBIA creation returns data array (some API versions), check it
+        if (createRes.ok && Array.isArray(createJson?.data) && createJson.data.length > 0 && createJson.data[0]?.id) {
+          const igId = createJson.data[0].id as string;
+          console.log(`[process-jobs] Created PBIA (array response) ${igId} for page ${pageId}`);
+          igActorIdCache.set(pageId, igId);
+          return igId;
+        }
+
+        console.warn(`[process-jobs] PBIA creation attempt failed for page ${pageId}:`, JSON.stringify(createJson?.error || createJson).substring(0, 300));
+      } catch (e) {
+        console.warn(`[process-jobs] PBIA creation exception for page ${pageId}:`, e);
       }
     }
 
-    console.error(`[process-jobs] Could not resolve any Instagram identity for page ${pageId}`);
+    // Step 4: After creating PBIA, re-check if it now exists (some APIs have eventual consistency)
+    if (pageAccessToken) {
+      try {
+        const recheckUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?fields=id&access_token=${pageAccessToken}`;
+        const recheckRes = await fetch(recheckUrl);
+        const recheckJson = await recheckRes.json();
+        if (recheckRes.ok && Array.isArray(recheckJson?.data) && recheckJson.data.length > 0) {
+          const igId = recheckJson.data[0].id as string;
+          console.log(`[process-jobs] Found PBIA ${igId} on recheck for page ${pageId}`);
+          igActorIdCache.set(pageId, igId);
+          return igId;
+        }
+      } catch (e) { /* continue */ }
+    }
+
+    console.warn(`[process-jobs] Could not resolve Instagram identity for page ${pageId}. Creative will use page_id + use_page_actor_override only.`);
     igActorIdCache.set(pageId, null);
     return null;
   } catch (err) {
-    console.error(`[process-jobs] Error resolving Instagram actor:`, err);
+    console.error(`[process-jobs] Error resolving Instagram actor for page ${pageId}:`, err);
     igActorIdCache.set(pageId, null);
     return null;
   }
@@ -1126,25 +1151,23 @@ async function createAdsBatch(
   adsetIdMap: Map<string, string>,
   creativeIdMap: Map<string, string>,
   supabase: any,
+  retryContext?: {
+    config: Record<string, any>;
+    defaultPageId: string;
+    resolvedPages: PageWithCapacity[];
+  },
 ): Promise<number> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   let successCount = 0;
   
   // CRITICAL IDEMPOTENCY CHECK: Check for ads that already have facebook_id (from previous execution)
-  // This prevents creating duplicate ads when job resumes after timeout
   const adsNeedingCreation: typeof ads = [];
   
   for (const ad of ads) {
-    // Check both facebook_id from DB and savedAdId in config (redundancy)
     const existingFbId = ad.facebook_id || (ad.config as any)?.savedAdId;
-    
-    // Also check if already marked as completed
     if (existingFbId || ad.status === 'completed') {
-      // Ad already created in previous execution, count as success but don't create again
       successCount++;
       console.log(`[batch] SKIPPING existing ad ${existingFbId || 'completed'} for item ${ad.id}`);
-      
-      // Ensure it's marked as completed with the facebook_id
       if (existingFbId) {
         await supabase
           .from('campaign_job_items')
@@ -1153,7 +1176,6 @@ async function createAdsBatch(
       }
       continue;
     }
-    
     adsNeedingCreation.push(ad);
   }
   
@@ -1178,7 +1200,6 @@ async function createAdsBatch(
     }
     
     if (!creativeId) {
-      // Creative already marked as failed, skip
       return false;
     }
     
@@ -1213,6 +1234,9 @@ async function createAdsBatch(
   
   console.log(`[batch] Creating ${validAds.length} ads in ${chunks.length} batches (size: ${batchSize})`);
   
+  // Track ads that failed due to missing Instagram identity for retry
+  const instagramRetryAds: typeof validAds = [];
+  
   for (const chunk of chunks) {
     const batch = chunk.map(c => c.batchItem);
     
@@ -1232,26 +1256,32 @@ async function createAdsBatch(
         
         if (result.code === 200 && parsedBody.id) {
           successCount++;
-          
-          // CRITICAL: Save facebook_id to both column AND config for redundancy (idempotency)
-          // This ensures we can detect existing ads on re-execution after timeout
           const updatedConfig = { ...item.config, savedAdId: parsedBody.id };
           await supabase
             .from('campaign_job_items')
             .update({ status: 'completed', facebook_id: parsedBody.id, config: updatedConfig })
             .eq('id', item.id);
         } else {
-          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
-          const errorDetail = parsedBody.error?.error_user_title 
-            ? `${parsedBody.error.error_user_title}: ${parsedBody.error.error_user_msg || errorMsg}`
-            : errorMsg;
-          const fullError = JSON.stringify(parsedBody.error || parsedBody).substring(0, 500);
-          console.error(`[batch] Ad failed for item ${item.id}:`, fullError);
-          console.error(`[batch] Ad request body was:`, JSON.stringify(chunk[i].batchItem.body).substring(0, 500));
-          await supabase
-            .from('campaign_job_items')
-            .update({ status: 'failed', error_message: errorDetail })
-            .eq('id', item.id);
+          const errorSubcode = parsedBody.error?.error_subcode;
+          const errorCode = parsedBody.error?.code;
+          
+          // Check if this is an Instagram identity error (1772103) — eligible for PBIA retry
+          if ((errorSubcode === 1772103 || (errorCode === 100 && errorSubcode === 1772103)) && retryContext) {
+            console.warn(`[batch] Ad ${item.id} failed with Instagram identity error, queuing for PBIA retry`);
+            instagramRetryAds.push(item);
+          } else {
+            const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+            const errorDetail = parsedBody.error?.error_user_title 
+              ? `${parsedBody.error.error_user_title}: ${parsedBody.error.error_user_msg || errorMsg}`
+              : errorMsg;
+            const fullError = JSON.stringify(parsedBody.error || parsedBody).substring(0, 500);
+            console.error(`[batch] Ad failed for item ${item.id}:`, fullError);
+            console.error(`[batch] Ad request body was:`, JSON.stringify(chunk[i].batchItem.body).substring(0, 500));
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: errorDetail })
+              .eq('id', item.id);
+          }
         }
       }
     } catch (err: any) {
@@ -1265,6 +1295,117 @@ async function createAdsBatch(
     }
     
     await sleep(BATCH_CONFIG.BATCH_DELAY_MS);
+  }
+  
+  // RETRY: Handle Instagram identity errors by resolving PBIA and recreating creative + ad
+  if (instagramRetryAds.length > 0 && retryContext) {
+    console.log(`[batch] Retrying ${instagramRetryAds.length} ads with Instagram identity resolution (PBIA)...`);
+    
+    const { config, defaultPageId, resolvedPages } = retryContext;
+    
+    // Clear Instagram actor cache to force re-resolution
+    igActorIdCache.delete(defaultPageId);
+    for (const page of resolvedPages) {
+      igActorIdCache.delete(page.pageId);
+    }
+    
+    // Re-resolve Instagram actor IDs — this will create PBIAs if needed
+    for (const page of resolvedPages) {
+      const newIgId = await resolveInstagramActorIdForPage({
+        userAccessToken: accessToken,
+        pageId: page.pageId,
+        pageAccessTokenFromDb: page.accessToken,
+      });
+      page.instagramActorId = newIgId;
+      console.log(`[batch] Re-resolved Instagram for page ${page.pageId}: ${newIgId || 'null'}`);
+    }
+    
+    const retryDefaultIgId = resolvedPages.length > 0 ? resolvedPages[0].instagramActorId : null;
+    
+    if (retryDefaultIgId) {
+      // Recreate creatives WITH instagram_user_id for the retry ads
+      const retryCreativeMap = await createCatalogCreativesBatch(
+        accessToken,
+        adAccountId,
+        instagramRetryAds.map(ad => ({
+          ...ad,
+          config: { ...ad.config, savedCreativeId: undefined }, // Force new creative
+        })),
+        config,
+        resolvedPages,
+        defaultPageId,
+        retryDefaultIgId,
+        supabase,
+      );
+      
+      // Retry ad creation with new creatives
+      for (const ad of instagramRetryAds) {
+        const newCreativeId = retryCreativeMap.get(ad.id);
+        if (!newCreativeId) {
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'failed', error_message: 'Retry: falha ao recriar criativo com identidade Instagram (PBIA)' })
+            .eq('id', ad.id);
+          continue;
+        }
+        
+        const parentFbId = ad.parent_id ? adsetIdMap.get(ad.parent_id) : null;
+        if (!parentFbId) continue;
+        
+        const adParams = buildAdParams(parentFbId, newCreativeId, ad.name);
+        const adBody = new URLSearchParams(adParams).toString();
+        
+        try {
+          const { results } = await executeBatchRequest(accessToken, [{
+            method: 'POST',
+            relative_url: `${actId}/ads`,
+            body: adBody,
+            name: `ad_retry_${ad.id}`,
+          }], adAccountId);
+          
+          const res = results[0];
+          let body: any;
+          try { body = JSON.parse(res.body); } catch { body = {}; }
+          
+          if (res.code === 200 && body.id) {
+            successCount++;
+            const updatedConfig = { ...ad.config, savedAdId: body.id, savedCreativeId: newCreativeId };
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'completed', facebook_id: body.id, config: updatedConfig })
+              .eq('id', ad.id);
+            console.log(`[batch] RETRY SUCCESS: Ad ${body.id} created for item ${ad.id}`);
+          } else {
+            const errMsg = body.error?.error_user_title 
+              ? `${body.error.error_user_title}: ${body.error.error_user_msg || body.error?.message}`
+              : (body.error?.message || `HTTP ${res.code}`);
+            console.error(`[batch] RETRY FAILED for ad ${ad.id}:`, JSON.stringify(body.error || body).substring(0, 300));
+            await supabase
+              .from('campaign_job_items')
+              .update({ status: 'failed', error_message: `Retry: ${errMsg}` })
+              .eq('id', ad.id);
+          }
+        } catch (retryErr: any) {
+          console.error(`[batch] RETRY exception for ad ${ad.id}:`, retryErr.message);
+          await supabase
+            .from('campaign_job_items')
+            .update({ status: 'failed', error_message: `Retry: ${retryErr.message}` })
+            .eq('id', ad.id);
+        }
+      }
+    } else {
+      // Could not resolve Instagram even after retry — mark all as failed with clear error
+      console.error(`[batch] PBIA retry failed: could not resolve any Instagram identity`);
+      for (const ad of instagramRetryAds) {
+        await supabase
+          .from('campaign_job_items')
+          .update({ 
+            status: 'failed', 
+            error_message: 'Não foi possível resolver identidade Instagram. Verifique se a Página tem permissão para criar Page-Backed Instagram Account.' 
+          })
+          .eq('id', ad.id);
+      }
+    }
   }
   
   return successCount;
@@ -2147,6 +2288,11 @@ Deno.serve(async (req) => {
           adsetIdMap,
           creativeIdMap,
           supabase,
+          {
+            config,
+            defaultPageId,
+            resolvedPages,
+          },
         );
         totalAdsCreated += adsCreated;
         console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} new ads`);
