@@ -1826,16 +1826,17 @@ async function buildDLOCreative(
   if (descriptions.length > 0) assetFeedSpec.descriptions = descriptions;
 
   // NOTE: When using asset_feed_spec (DLO), instagram_actor_id must NOT be in object_story_spec
+  // For DLO creatives, rely on use_page_actor_override instead of instagram_actor_id
+  // to avoid "Param instagram_actor_id must be a valid Instagram account id" errors
+  // This matches the approach used for catalog creatives
   const objectStorySpec: any = { page_id: pageId };
-  if (igActorId) {
-    objectStorySpec.instagram_actor_id = igActorId;
-  }
 
   const creativeParams = new URLSearchParams({
     access_token: accessToken,
     name: `DLO_Creative_${name}`,
     asset_feed_spec: JSON.stringify(assetFeedSpec),
     object_story_spec: JSON.stringify(objectStorySpec),
+    use_page_actor_override: 'true',
     contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
   });
   if (urlParams) creativeParams.append('url_tags', urlParams.trim());
