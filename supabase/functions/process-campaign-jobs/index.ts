@@ -2391,6 +2391,12 @@ Deno.serve(async (req) => {
         );
         console.log(`[process-jobs] Created ${creativeIdMap.size}/${adsWithNames.length} creatives`);
 
+        // YIELD CHECK: if creatives batch was partial, yield before attempting ads
+        if (shouldYield() && creativeIdMap.size < adsWithNames.length) {
+          console.log(`[process-jobs] Yielding after partial creatives (${creativeIdMap.size}/${adsWithNames.length})`);
+          return yieldChunk(`Partial creatives: ${creativeIdMap.size}/${adsWithNames.length} for account ${accountIndex + 1}`);
+        }
+
         console.log(`[process-jobs] Creating ${adsWithNames.length} NEW ads via batch API...`);
         const adsCreated = await createAdsBatch(
           accessToken,
@@ -2408,6 +2414,12 @@ Deno.serve(async (req) => {
         );
         totalAdsCreated += adsCreated;
         console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} new ads`);
+
+        // YIELD CHECK: if ads batch was partial, yield before verification/completion
+        if (shouldYield() && adsCreated < adsWithNames.length) {
+          console.log(`[process-jobs] Yielding after partial ads (${adsCreated}/${adsWithNames.length})`);
+          return yieldChunk(`Partial ads: ${adsCreated}/${adsWithNames.length} for account ${accountIndex + 1}`);
+        }
         
         // ============= VERIFICATION: Query Facebook to confirm ad counts =============
         console.log(`\n[VERIFICATION] Checking ad counts in Facebook (sampling first 3 adsets)...`);
@@ -2511,9 +2523,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      // CHUNK CHECK: yield after completing an account if more accounts remain
-      if (shouldYield() && accountIndex < allAdAccounts.length - 1) {
-        return yieldChunk(`Completed account ${accountIndex + 1}/${allAdAccounts.length}`);
+      // CHUNK CHECK: yield after processing an account if time is running out
+      if (shouldYield()) {
+        const reason = accountIndex < allAdAccounts.length - 1
+          ? `Completed account ${accountIndex + 1}/${allAdAccounts.length}, more accounts remain`
+          : `Time limit reached on last account ${accountIndex + 1}/${allAdAccounts.length}`;
+        return yieldChunk(reason);
       }
     }
 
