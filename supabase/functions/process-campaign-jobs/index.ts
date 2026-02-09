@@ -1809,10 +1809,10 @@ async function createDLOCreativeAndAd(
     }
 
     // Step 3: Create creative with asset_feed_spec
+    // NOTE: When using asset_feed_spec (DLO), instagram_actor_id must NOT be included
+    // in object_story_spec — Facebook derives Instagram identity automatically from page_id.
+    // Including it causes error "(#100) Param instagram_actor_id must be a valid Instagram account id"
     const objectStorySpec: Record<string, any> = { page_id: pageId };
-    if (instagramUserId) {
-      objectStorySpec.instagram_actor_id = instagramUserId;
-    }
 
     const creativeParams = new URLSearchParams({
       access_token: accessToken,
