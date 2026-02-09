@@ -255,12 +255,16 @@ async function resolveInstagramActorIdForPage(params: {
       return igId;
     }
 
-    igActorIdCache.set(pageId, null);
-    return null;
+    // Fallback: use pageId as instagram_actor_id (equivalent to "Use Facebook Page" in Ads Manager)
+    console.log(`[process-jobs] No Instagram account found for page ${pageId}, using page ID as fallback (Use Facebook Page)`);
+    igActorIdCache.set(pageId, pageId);
+    return pageId;
   } catch (err) {
     console.error(`[process-jobs] Error resolving Instagram actor:`, err);
-    igActorIdCache.set(pageId, null);
-    return null;
+    // Even on error, fallback to pageId to avoid missing Instagram identity errors
+    console.log(`[process-jobs] Using page ID ${pageId} as Instagram fallback due to error`);
+    igActorIdCache.set(pageId, pageId);
+    return pageId;
   }
 }
 
