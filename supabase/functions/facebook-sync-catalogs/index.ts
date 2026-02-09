@@ -206,6 +206,7 @@ Deno.serve(async (req) => {
 
     const debug: Record<string, any> = {
       owned_product_catalogs: { count: 0 },
+      client_product_catalogs: { count: 0 },
       discovered_from_adsets: {
         accounts_processed: 0,
         adsets_scanned: 0,
@@ -219,6 +220,7 @@ Deno.serve(async (req) => {
     // A) Owned catalogs
     const ownedToken = profilesById.get(bm.profile_id)?.access_token;
     if (ownedToken) {
+      // A1) Owned catalogs (catálogos que o BM possui)
       try {
         const url = new URL(`https://graph.facebook.com/v21.0/${businessId}/owned_product_catalogs`);
         url.searchParams.set('fields', 'id,name,product_count,vertical');
@@ -233,8 +235,29 @@ Deno.serve(async (req) => {
         debug.owned_product_catalogs.error = err?.message || String(err);
         console.warn(`[sync-catalogs] owned_product_catalogs failed: ${debug.owned_product_catalogs.error}`);
       }
+
+      // A2) Client/shared catalogs (catálogos compartilhados com o BM)
+      try {
+        const url = new URL(`https://graph.facebook.com/v21.0/${businessId}/client_product_catalogs`);
+        url.searchParams.set('fields', 'id,name,product_count,vertical');
+        url.searchParams.set('limit', '500');
+        url.searchParams.set('access_token', ownedToken);
+
+        const shared = (await fetchAllPagesData(url.toString(), 'client_product_catalogs', 10)) as FacebookCatalog[];
+        debug.client_product_catalogs.count = shared.length;
+        for (const c of shared) {
+          if (!catalogMap.has(c.id)) {
+            catalogMap.set(c.id, c);
+          }
+        }
+        console.log(`[sync-catalogs] client_product_catalogs=${shared.length}`);
+      } catch (err: any) {
+        debug.client_product_catalogs.error = err?.message || String(err);
+        console.warn(`[sync-catalogs] client_product_catalogs failed: ${debug.client_product_catalogs.error}`);
+      }
     } else {
       debug.owned_product_catalogs.error = 'No active token for BM profile';
+      debug.client_product_catalogs.error = 'No active token for BM profile';
     }
 
     // B) If we still have nothing, discover catalogs via AdSets promoted_object.product_catalog_id
