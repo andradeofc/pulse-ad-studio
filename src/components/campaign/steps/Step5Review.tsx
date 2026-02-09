@@ -1,10 +1,10 @@
-import { Check, Video, Image, ExternalLink, Facebook, Shield, Users, Globe, Target, Save } from 'lucide-react';
+import { Check, Video, Image, ExternalLink, Facebook, Shield, Users, Globe, Target, Save, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { getCountryByCode } from '../GeoLocationSelector';
-import { getLocaleById } from '../LocaleSelector';
+import { getLocaleById, LOCALES } from '../LocaleSelector';
 import { AdLimitWarning } from '../AdLimitWarning';
 import { SaveTemplateModal } from '../SaveTemplateModal';
 import { 
@@ -642,6 +642,58 @@ export function Step5Review() {
                   <span className="text-sm text-muted-foreground">
                     {config.selectedPages.length} páginas selecionadas
                   </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* DLO Languages Review */}
+          {config.languageConfig?.enabled && !config.useCatalog && (
+            <Card className="glass-card border-primary/30">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Languages className="w-5 h-5 text-primary" />
+                  Idiomas (DLO)
+                  <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">
+                    {1 + config.languageConfig.secondaryLanguages.length} idiomas
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Default language */}
+                <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">Padrão</Badge>
+                    <span className="text-sm font-medium text-foreground">
+                      {LOCALES.find(l => l.id === config.languageConfig.defaultLanguage.locale)?.name || 'Não selecionado'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>Texto: {config.languageConfig.defaultLanguage.primaryText?.substring(0, 50) || '—'}...</p>
+                    <p>Título: {config.languageConfig.defaultLanguage.headline || '—'}</p>
+                    <p>URL: {config.languageConfig.defaultLanguage.websiteUrl || '—'}</p>
+                  </div>
+                </div>
+
+                {/* Secondary languages */}
+                {config.languageConfig.secondaryLanguages.map((lang, i) => (
+                  <div key={i} className="p-3 bg-secondary/30 rounded-lg border border-border">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-foreground">
+                        {LOCALES.find(l => l.id === lang.locale)?.name || `Idioma ${i + 2}`}
+                      </span>
+                      {lang.useDefaultMedia && (
+                        <Badge variant="outline" className="text-[10px]">Mídia do padrão</Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {lang.primaryText ? `Texto: ${lang.primaryText.substring(0, 40)}...` : 'Texto: fallback do padrão'}
+                    </div>
+                  </div>
+                ))}
+                
+                <div className="text-xs text-muted-foreground mt-2">
+                  <code className="px-1 py-0.5 bg-secondary rounded">is_dynamic_creative: true</code> será adicionado ao adset
                 </div>
               </CardContent>
             </Card>

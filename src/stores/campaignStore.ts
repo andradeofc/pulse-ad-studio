@@ -11,6 +11,26 @@ export interface Creative {
   size: number;
 }
 
+export interface DLOLanguage {
+  locale: number;        // Facebook locale ID
+  label: string;         // Nome legível
+  mediaId?: string;      // ID do criativo da biblioteca (opcional)
+  mediaType?: 'video' | 'image';
+  mediaUrl?: string;
+  mediaThumbnailUrl?: string;
+  useDefaultMedia: boolean;
+  websiteUrl?: string;
+  headline?: string;
+  primaryText?: string;
+  description?: string;
+}
+
+export interface LanguageConfig {
+  enabled: boolean;
+  defaultLanguage: DLOLanguage;
+  secondaryLanguages: DLOLanguage[];
+}
+
 export interface CampaignConfig {
   // Step 1 - Creatives
   selectedCreatives: Creative[];
@@ -102,6 +122,9 @@ export interface CampaignConfig {
   ctaType: string;
   urlParams: string;
   
+  // DLO - Dynamic Language Optimization
+  languageConfig: LanguageConfig;
+  
   // Custom naming variables for nomenclature system
   customNamingVariables: Record<string, string>;
 }
@@ -192,6 +215,19 @@ const defaultConfig: CampaignConfig = {
   destinationUrl: '',
   ctaType: 'LEARN_MORE',
   urlParams: 'utm_medium={{adset.name}}',
+  languageConfig: {
+    enabled: false,
+    defaultLanguage: {
+      locale: 0,
+      label: '',
+      useDefaultMedia: true,
+      websiteUrl: '',
+      headline: '',
+      primaryText: '',
+      description: '',
+    },
+    secondaryLanguages: [],
+  },
   customNamingVariables: {},
 };
 
