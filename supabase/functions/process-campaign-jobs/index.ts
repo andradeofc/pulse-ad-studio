@@ -1810,10 +1810,11 @@ async function buildDLOCreative(
   if (defaultDesc) defaultRule.description_label = { name: `${defaultPrefix}_desc` };
   if (defaultUrl) defaultRule.link_url_label = { name: `${defaultPrefix}_url` };
   defaultRule[mediaType === 'video' ? 'video_label' : 'image_label'] = { name: `${defaultPrefix}_media` };
-  defaultRule.is_default = true;
+  // No is_default field — Facebook uses position-based priority (last = default)
   customizationRules.push(defaultRule);
 
   const assetFeedSpec: any = {
+    optimization_type: 'LANGUAGE',
     bodies,
     titles,
     link_urls: linkUrls,
@@ -1843,7 +1844,8 @@ async function buildDLOCreative(
   });
   if (urlParams) creativeParams.append('url_tags', urlParams.trim());
 
-  console.log(`[DLO] Creating shared creative with ${allLangs.length} languages`);
+  console.log(`[DLO] Creating shared creative with ${allLangs.length} languages, optimization_type=LANGUAGE`);
+  console.log(`[DLO] asset_feed_spec rules: ${customizationRules.length}, formats: ${assetFeedSpec.ad_formats}, images: ${mediaAssets.length}`);
 
   const result = await fetchWithRetry(
     `${GRAPH_BASE_URL}/${actId}/adcreatives`,
