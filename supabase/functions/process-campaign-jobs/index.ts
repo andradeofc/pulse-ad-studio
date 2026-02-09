@@ -1832,13 +1832,14 @@ async function buildDLOCreative(
     objectStorySpec.instagram_user_id = instagramUserId;
   }
 
+  // DLO creatives with asset_customization_rules: follow Meta docs exactly
+  // Do NOT include use_page_actor_override or contextual_multi_ads — they cause
+  // "Invalid parameter" (2446485) at ad creation when combined with asset_customization_rules
   const creativeParams = new URLSearchParams({
     access_token: accessToken,
     name: `DLO_Creative_${name}`,
     asset_feed_spec: JSON.stringify(assetFeedSpec),
     object_story_spec: JSON.stringify(objectStorySpec),
-    use_page_actor_override: 'true',
-    contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
   });
   if (urlParams) creativeParams.append('url_tags', urlParams.trim());
 
@@ -2858,6 +2859,10 @@ Deno.serve(async (req) => {
                     .eq('id', item.id);
                 } else {
                   const errMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+                  const blameFields = parsedBody.error?.error_data?.blame_field_specs 
+                    ? JSON.stringify(parsedBody.error.error_data.blame_field_specs)
+                    : 'none';
+                  console.error(`[DLO] Ad creation failed: ${errMsg} | subcode: ${parsedBody.error?.error_subcode} | blame_fields: ${blameFields} | full_error: ${JSON.stringify(parsedBody.error).substring(0, 800)}`);
                   hasError = true;
                   lastError = errMsg;
                   await supabase.from('campaign_job_items')
