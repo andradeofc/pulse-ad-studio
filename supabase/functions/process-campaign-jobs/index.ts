@@ -1678,40 +1678,10 @@ async function uploadDLOMediaForAccount(
       mediaMap[localeKey] = videoId;
       console.log(`[DLO] Uploaded video for locale ${localeKey}: ${videoId}`);
     } else {
-      // Upload image using url parameter (Facebook downloads directly — no btoa/memory issues)
-      const imgParams = new URLSearchParams({
-        access_token: accessToken,
-        url: mediaUrl,
-      });
-
-      const result = await fetchWithRetry(
-        `${GRAPH_BASE_URL}/${actId}/adimages`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: imgParams.toString(),
-        },
-        3,
-        adAccountId,
-      );
-
-      if (!result.ok || result.json.error) {
-        throw new Error(`Image upload failed for locale ${localeKey}: ${result.json?.error?.message || 'unknown'}`);
-      }
-
-      const imagesObj = result.json?.images;
-      if (imagesObj) {
-        const firstKey = Object.keys(imagesObj)[0];
-        if (firstKey && imagesObj[firstKey]?.hash) {
-          mediaMap[localeKey] = imagesObj[firstKey].hash;
-        }
-      }
-
-      if (!mediaMap[localeKey]) {
-        throw new Error(`Image upload returned no hash for locale ${localeKey}`);
-      }
-
-      console.log(`[DLO] Uploaded image for locale ${localeKey}: ${mediaMap[localeKey]}`);
+      // For images: bypass /adimages (causes error #3 on some apps)
+      // Instead, save the URL directly — Facebook accepts "url" in asset_feed_spec.images
+      mediaMap[localeKey] = mediaUrl;
+      console.log(`[DLO] Image for locale ${localeKey}: using direct URL (bypassing /adimages)`);
     }
   }
 
@@ -1767,7 +1737,7 @@ async function buildDLOCreative(
       });
     } else if (mediaType === 'image' && mediaId) {
       mediaAssets.push({
-        hash: mediaId,
+        url: mediaId, // mediaId contains the image URL (not hash) — Facebook downloads it
         adlabels: [{ name: `${prefix}_media` }],
       });
     }
