@@ -635,9 +635,10 @@ function buildAdsetParams(
     params.promoted_object = JSON.stringify(promotedObject);
   }
 
-  // DLO: mark adset as dynamic creative
+  // DLO with asset_customization_rules requires is_dynamic_creative = false
+  // (Dynamic Creative = true is for mix-and-match; Asset Customization Rules = false)
   if (config.languageConfig?.enabled && !config.useCatalog) {
-    params.is_dynamic_creative = 'true';
+    params.is_dynamic_creative = 'false';
   }
 
   return params;
