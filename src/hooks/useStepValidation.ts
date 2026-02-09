@@ -28,8 +28,9 @@ export function useStepValidation(): AllStepsValidation {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // For catalog mode, creatives are optional (uses product images)
-    if (!config.useCatalog && config.selectedCreatives.length === 0) {
+    // For catalog mode or DLO mode, creatives are optional (media comes from config)
+    const isDLO = config.languageConfig?.enabled && !config.useCatalog;
+    if (!config.useCatalog && !isDLO && config.selectedCreatives.length === 0) {
       errors.push('Selecione pelo menos um criativo');
     }
     
@@ -38,7 +39,7 @@ export function useStepValidation(): AllStepsValidation {
     }
 
     return { isValid: errors.length === 0, errors, warnings };
-  }, [config.selectedCreatives, config.useCatalog]);
+  }, [config.selectedCreatives, config.useCatalog, config.languageConfig]);
 
   const step2 = useMemo((): StepValidation => {
     const errors: string[] = [];
