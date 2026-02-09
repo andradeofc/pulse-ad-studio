@@ -635,10 +635,10 @@ function buildAdsetParams(
     params.promoted_object = JSON.stringify(promotedObject);
   }
 
-  // DLO with asset_customization_rules requires is_dynamic_creative = false
-  // (Dynamic Creative = true is for mix-and-match; Asset Customization Rules = false)
+  // DLO with asset_feed_spec (Multi-Language Ads) requires is_dynamic_creative = true
+  // The adset must signal that its ads use asset_feed_spec creatives
   if (config.languageConfig?.enabled && !config.useCatalog) {
-    params.is_dynamic_creative = 'false';
+    params.is_dynamic_creative = 'true';
   }
 
   return params;
