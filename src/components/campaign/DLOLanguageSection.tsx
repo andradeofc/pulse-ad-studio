@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Globe, Plus, Trash2, Image, Video, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { useCampaignStore, type DLOLanguage } from '@/stores/campaignStore';
 import { LOCALES } from '@/components/campaign/LocaleSelector';
+import { fetchCreatives, type CreativeMetadata } from '@/services/creativesService';
 
 const MAX_LANGUAGES = 48;
 
@@ -33,17 +34,25 @@ function createEmptyLanguage(): DLOLanguage {
   };
 }
 
+interface MediaOption {
+  id: string;
+  name: string;
+  type: 'video' | 'image';
+  url: string;
+  thumbnailUrl: string;
+}
+
 interface LanguageCardProps {
   language: DLOLanguage;
   isDefault: boolean;
   index: number;
   usedLocales: number[];
-  selectedCreatives: Array<{ id: string; name: string; type: 'video' | 'image'; url: string; thumbnailUrl: string }>;
+  allCreatives: MediaOption[];
   onUpdate: (lang: DLOLanguage) => void;
   onRemove?: () => void;
 }
 
-function LanguageCard({ language, isDefault, index, usedLocales, selectedCreatives, onUpdate, onRemove }: LanguageCardProps) {
+function LanguageCard({ language, isDefault, index, usedLocales, allCreatives, onUpdate, onRemove }: LanguageCardProps) {
   const [expanded, setExpanded] = useState(isDefault || index === 0);
 
   const availableLocales = LOCALES.filter(
@@ -121,15 +130,15 @@ function LanguageCard({ language, isDefault, index, usedLocales, selectedCreativ
             </div>
           )}
 
-          {/* Media selector (from library) */}
+          {/* Media selector (from full library) */}
           {(isDefault || !language.useDefaultMedia) && (
             <div className="space-y-2">
               <Label className="text-xs">Mídia (da biblioteca)</Label>
-              {selectedCreatives.length > 0 ? (
+              {allCreatives.length > 0 ? (
                 <Select
                   value={language.mediaId || ''}
                   onValueChange={(v) => {
-                    const cr = selectedCreatives.find(c => c.id === v);
+                    const cr = allCreatives.find(c => c.id === v);
                     if (cr) {
                       onUpdate({
                         ...language,
@@ -145,7 +154,7 @@ function LanguageCard({ language, isDefault, index, usedLocales, selectedCreativ
                     <SelectValue placeholder="Selecionar criativo..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {selectedCreatives.map(cr => (
+                    {allCreatives.map(cr => (
                       <SelectItem key={cr.id} value={cr.id}>
                         <div className="flex items-center gap-2">
                           {cr.type === 'video' ? <Video className="w-3.5 h-3.5" /> : <Image className="w-3.5 h-3.5" />}
@@ -156,7 +165,7 @@ function LanguageCard({ language, isDefault, index, usedLocales, selectedCreativ
                   </SelectContent>
                 </Select>
               ) : (
-                <p className="text-xs text-muted-foreground">Selecione criativos na Etapa 1 primeiro</p>
+                <p className="text-xs text-muted-foreground">Nenhum criativo na biblioteca</p>
               )}
               {language.mediaThumbnailUrl && (
                 <div className="w-16 h-16 rounded bg-muted overflow-hidden">
@@ -221,6 +230,26 @@ function LanguageCard({ language, isDefault, index, usedLocales, selectedCreativ
 export function DLOLanguageSection() {
   const { config, updateConfig } = useCampaignStore();
   const languageConfig = config.languageConfig;
+  const [allCreatives, setAllCreatives] = useState<MediaOption[]>([]);
+
+  // Fetch all creatives from the library (not just Step 1 selection)
+  useEffect(() => {
+    if (!languageConfig.enabled) return;
+    
+    fetchCreatives().then(creatives => {
+      setAllCreatives(
+        creatives.map((c: CreativeMetadata) => ({
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          url: c.url,
+          thumbnailUrl: c.thumbnail_url || '',
+        }))
+      );
+    }).catch(err => {
+      console.error('[DLO] Failed to fetch creatives:', err);
+    });
+  }, [languageConfig.enabled]);
 
   const handleToggle = (enabled: boolean) => {
     updateConfig({
@@ -303,7 +332,7 @@ export function DLOLanguageSection() {
           <Alert className="border-ads-warning/30 bg-ads-warning/10">
             <AlertTriangle className="h-4 w-4 text-ads-warning" />
             <AlertDescription className="text-ads-warning text-sm">
-              Com DLO ativado, os campos de conteúdo global (texto, título, URL) são substituídos pela configuração por idioma abaixo. O adset será marcado com <code className="px-1 py-0.5 bg-ads-warning/20 rounded text-xs">is_dynamic_creative: true</code>.
+              Com DLO ativado, os campos de conteúdo global (texto, título, URL) são substituídos pela configuração por idioma abaixo. A mídia é selecionada diretamente da biblioteca. O adset será marcado com <code className="px-1 py-0.5 bg-ads-warning/20 rounded text-xs">is_dynamic_creative: true</code>.
             </AlertDescription>
           </Alert>
 
@@ -313,7 +342,7 @@ export function DLOLanguageSection() {
             isDefault
             index={0}
             usedLocales={usedLocales}
-            selectedCreatives={config.selectedCreatives}
+            allCreatives={allCreatives}
             onUpdate={updateDefaultLanguage}
           />
 
@@ -325,7 +354,7 @@ export function DLOLanguageSection() {
               isDefault={false}
               index={i + 1}
               usedLocales={usedLocales}
-              selectedCreatives={config.selectedCreatives}
+              allCreatives={allCreatives}
               onUpdate={(l) => updateSecondaryLanguage(i, l)}
               onRemove={() => removeSecondaryLanguage(i)}
             />
