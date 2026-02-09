@@ -2771,12 +2771,12 @@ Deno.serve(async (req) => {
             let dloCreativeId: string | undefined = (job.config as any)?.savedDLOCreativeIds?.[currentAccountId];
 
             if (!dloCreativeId) {
-              // Resolve Instagram actor ID for the DLO creative
-              const dloIgActorId = igActorIdCache.get(defaultPageId) ?? null;
+              // First attempt: do NOT pass instagram_actor_id — rely on use_page_actor_override
+              // If ads fail with 1772103, the retry flow will re-resolve PBIA and recreate creative WITH igActorId
               dloCreativeId = await buildDLOCreative(
                 accessToken, currentAccount.account_id, config,
                 dloMediaMap, dloMediaType, defaultPageId,
-                `${currentAccount.name}_DLO`, dloIgActorId,
+                `${currentAccount.name}_DLO`, null,
               );
 
               const updatedJobConfig = {
