@@ -1825,11 +1825,12 @@ async function buildDLOCreative(
   else if (mediaAssets.length > 0) assetFeedSpec.images = mediaAssets;
   if (descriptions.length > 0) assetFeedSpec.descriptions = descriptions;
 
-  // NOTE: When using asset_feed_spec (DLO), instagram_actor_id must NOT be in object_story_spec
-  // For DLO creatives, rely on use_page_actor_override instead of instagram_actor_id
-  // to avoid "Param instagram_actor_id must be a valid Instagram account id" errors
-  // This matches the approach used for catalog creatives
+  // For DLO creatives, use use_page_actor_override by default.
+  // When igActorId is provided (e.g. PBIA retry), include it in object_story_spec.
   const objectStorySpec: any = { page_id: pageId };
+  if (igActorId) {
+    objectStorySpec.instagram_actor_id = igActorId;
+  }
 
   const creativeParams = new URLSearchParams({
     access_token: accessToken,
@@ -2841,6 +2842,8 @@ Deno.serve(async (req) => {
                 accessToken, chunk.map(c => c.batchItem), currentAccount.account_id,
               );
 
+              const dloInstagramRetryAds: typeof adsWithNames = [];
+
               for (let i = 0; i < results.length; i++) {
                 const result = results[i];
                 const item = chunk[i].item;
@@ -2857,12 +2860,111 @@ Deno.serve(async (req) => {
                     })
                     .eq('id', item.id);
                 } else {
-                  const errMsg = parsedBody.error?.message || `HTTP ${result.code}`;
-                  hasError = true;
-                  lastError = errMsg;
-                  await supabase.from('campaign_job_items')
-                    .update({ status: 'failed', error_message: errMsg })
-                    .eq('id', item.id);
+                  const errorSubcode = parsedBody.error?.error_subcode;
+                  const errorCode = parsedBody.error?.code;
+
+                  if (errorSubcode === 1772103 || (errorCode === 100 && errorSubcode === 1772103)) {
+                    console.warn(`[DLO] Ad ${item.id} failed with Instagram identity error, queuing for PBIA retry`);
+                    dloInstagramRetryAds.push(item);
+                  } else {
+                    const errMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+                    hasError = true;
+                    lastError = errMsg;
+                    await supabase.from('campaign_job_items')
+                      .update({ status: 'failed', error_message: errMsg })
+                      .eq('id', item.id);
+                  }
+                }
+              }
+
+              // RETRY: Handle Instagram identity errors for DLO ads
+              if (dloInstagramRetryAds.length > 0) {
+                console.log(`[DLO] Retrying ${dloInstagramRetryAds.length} ads with PBIA resolution...`);
+
+                // Clear cache and re-resolve Instagram actor
+                igActorIdCache.delete(defaultPageId);
+                for (const page of resolvedPages) {
+                  igActorIdCache.delete(page.pageId);
+                }
+
+                for (const page of resolvedPages) {
+                  const newIgId = await resolveInstagramActorIdForPage({
+                    userAccessToken: accessToken,
+                    pageId: page.pageId,
+                    pageAccessTokenFromDb: page.accessToken,
+                  });
+                  page.instagramActorId = newIgId;
+                  console.log(`[DLO] Re-resolved Instagram for page ${page.pageId}: ${newIgId || 'null'}`);
+                }
+
+                const retryIgId = resolvedPages.length > 0 ? resolvedPages[0].instagramActorId : null;
+
+                if (retryIgId) {
+                  // Recreate DLO creative WITH instagram_actor_id in object_story_spec
+                  console.log(`[DLO] Recreating DLO creative with instagram_actor_id ${retryIgId}...`);
+                  const retryCreativeId = await buildDLOCreative(
+                    accessToken, currentAccount.account_id, config,
+                    dloMediaMap, dloMediaType, defaultPageId,
+                    `${currentAccount.name}_DLO_retry`, retryIgId,
+                  );
+                  console.log(`[DLO] Retry creative created: ${retryCreativeId}`);
+
+                  // Retry each ad with the new creative
+                  for (const ad of dloInstagramRetryAds) {
+                    const parentFbId = ad.parent_id ? adsetIdMap.get(ad.parent_id) : null;
+                    if (!parentFbId) continue;
+
+                    const retryBody = new URLSearchParams({
+                      name: ad.name,
+                      adset_id: parentFbId,
+                      creative: JSON.stringify({ creative_id: retryCreativeId }),
+                      status: 'ACTIVE',
+                    }).toString();
+
+                    try {
+                      const { results: retryResults } = await executeBatchRequest(accessToken, [{
+                        method: 'POST', relative_url: `${actId}/ads`, body: retryBody, name: `dlo_ad_retry_${ad.id}`,
+                      }], currentAccount.account_id);
+
+                      const res = retryResults[0];
+                      let body: any;
+                      try { body = JSON.parse(res.body); } catch { body = {}; }
+
+                      if (res.code === 200 && body.id) {
+                        totalAdsCreated++;
+                        await supabase.from('campaign_job_items')
+                          .update({
+                            status: 'completed',
+                            facebook_id: body.id,
+                            config: { ...(ad.config as any), savedAdId: body.id },
+                          })
+                          .eq('id', ad.id);
+                        console.log(`[DLO] RETRY SUCCESS: Ad ${body.id} created for item ${ad.id}`);
+                      } else {
+                        const errMsg = body.error?.message || `HTTP ${res.code}`;
+                        hasError = true;
+                        lastError = errMsg;
+                        console.error(`[DLO] RETRY FAILED for ad ${ad.id}:`, JSON.stringify(body.error || body).substring(0, 300));
+                        await supabase.from('campaign_job_items')
+                          .update({ status: 'failed', error_message: `Retry: ${errMsg}` })
+                          .eq('id', ad.id);
+                      }
+                    } catch (retryErr: any) {
+                      console.error(`[DLO] RETRY exception for ad ${ad.id}:`, retryErr.message);
+                      await supabase.from('campaign_job_items')
+                        .update({ status: 'failed', error_message: `Retry: ${retryErr.message}` })
+                        .eq('id', ad.id);
+                    }
+                  }
+                } else {
+                  console.error(`[DLO] PBIA retry failed: could not resolve any Instagram identity`);
+                  for (const ad of dloInstagramRetryAds) {
+                    hasError = true;
+                    lastError = 'Instagram identity not available';
+                    await supabase.from('campaign_job_items')
+                      .update({ status: 'failed', error_message: 'Identidade Instagram não disponível (PBIA não pôde ser criado)' })
+                      .eq('id', ad.id);
+                  }
                 }
               }
 
