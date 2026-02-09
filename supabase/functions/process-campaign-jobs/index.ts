@@ -386,7 +386,9 @@ async function executeBatchRequest(
     for (let i = 0; i < results.length; i++) {
       if (results[i].code >= 400) {
         errorCount++;
-        console.warn(`[batch] Item ${i} failed with code ${results[i].code}`);
+        let errDetail = '';
+        try { const b = JSON.parse(results[i].body); errDetail = JSON.stringify(b.error || b).substring(0, 500); } catch { errDetail = String(results[i].body).substring(0, 300); }
+        console.warn(`[batch] Item ${i} failed with code ${results[i].code}: ${errDetail}`);
       }
     }
     
