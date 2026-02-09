@@ -207,6 +207,7 @@ Deno.serve(async (req) => {
     const debug: Record<string, any> = {
       owned_product_catalogs: { count: 0 },
       client_product_catalogs: { count: 0 },
+      ad_account_catalogs: { count: 0, accounts_checked: 0 },
       discovered_from_adsets: {
         accounts_processed: 0,
         adsets_scanned: 0,
@@ -258,6 +259,47 @@ Deno.serve(async (req) => {
     } else {
       debug.owned_product_catalogs.error = 'No active token for BM profile';
       debug.client_product_catalogs.error = 'No active token for BM profile';
+    }
+
+    // B) Fetch catalogs shared directly with ad accounts (not via BM)
+    if (adAccountDbIds.length > 0) {
+      const { data: adAccounts, error: adAccountsError } = await supabase
+        .from('facebook_ad_accounts')
+        .select('id, profile_id, account_id')
+        .in('id', adAccountDbIds)
+        .in('profile_id', profileIds);
+
+      if (adAccountsError) {
+        debug.ad_account_catalogs.error = adAccountsError.message;
+      } else {
+        for (const acc of adAccounts || []) {
+          const tokenForAccount = profilesById.get(acc.profile_id)?.access_token;
+          if (!tokenForAccount) continue;
+
+          debug.ad_account_catalogs.accounts_checked++;
+          const actId = normalizeActId(acc.account_id);
+
+          try {
+            const url = new URL(`https://graph.facebook.com/v21.0/${actId}/product_catalogs`);
+            url.searchParams.set('fields', 'id,name,product_count,vertical');
+            url.searchParams.set('limit', '200');
+            url.searchParams.set('access_token', tokenForAccount);
+
+            const catalogs = (await fetchAllPagesData(url.toString(), `${actId}/product_catalogs`, 5)) as FacebookCatalog[];
+            
+            for (const c of catalogs) {
+              if (!catalogMap.has(c.id)) {
+                catalogMap.set(c.id, c);
+                debug.ad_account_catalogs.count++;
+              }
+            }
+            console.log(`[sync-catalogs] ${actId}/product_catalogs=${catalogs.length}`);
+          } catch (err: any) {
+            // This endpoint might fail for some accounts, continue with others
+            console.warn(`[sync-catalogs] ${actId}/product_catalogs failed: ${err?.message || String(err)}`);
+          }
+        }
+      }
     }
 
     // B) If we still have nothing, discover catalogs via AdSets promoted_object.product_catalog_id
