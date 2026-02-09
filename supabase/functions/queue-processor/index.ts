@@ -124,10 +124,13 @@ Deno.serve(async (req) => {
     // 1. Queued (not started yet)
     // 2. Paused but ready to resume (resume_after is in the past)
     // 3. Processing (might have been interrupted)
+    // IMPORTANT: Only pick up 'queued' and 'paused' jobs.
+    // Do NOT pick up 'processing' jobs — they are already being handled by another instance.
+    // The atomic lock in process-campaign-jobs prevents race conditions.
     const { data: jobs, error: jobsError } = await supabase
       .from('campaign_jobs')
       .select('*')
-      .or(`status.eq.queued,status.eq.paused,status.eq.processing`)
+      .or(`status.eq.queued,status.eq.paused`)
       .order('created_at', { ascending: true })
       .limit(5); // Process up to 5 jobs per run
 

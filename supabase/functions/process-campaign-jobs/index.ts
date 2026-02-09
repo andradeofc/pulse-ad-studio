@@ -1765,11 +1765,30 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Update job to processing
-    await supabase
+    // ATOMIC LOCK: Only proceed if we can atomically transition from queued/paused to processing
+    // This prevents race conditions when both queue-processor and manual trigger fire simultaneously
+    // By using .in('status', [...]) we ensure only ONE instance can claim the job
+    const { data: lockResult, error: lockError } = await supabase
       .from('campaign_jobs')
       .update({ status: 'processing', started_at: new Date().toISOString() })
-      .eq('id', jobId);
+      .eq('id', jobId)
+      .in('status', ['queued', 'paused'])
+      .select('id');
+
+    if (lockError || !lockResult || lockResult.length === 0) {
+      // Another instance already claimed this job OR it's already processing
+      console.log(`[process-jobs] Job ${jobId} already being processed by another instance (status: ${job.status}), skipping`);
+      return new Response(JSON.stringify({ 
+        error: 'Job already being processed by another instance', 
+        skipped: true,
+        currentStatus: job.status,
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`[process-jobs] Successfully acquired lock for job ${jobId}`);
 
     // Get job items
     const { data: items, error: itemsError } = await supabase
