@@ -120,31 +120,66 @@ export function useStepValidation(): AllStepsValidation {
       errors.push('Digite um nome para o anúncio');
     }
 
-    // For non-catalog campaigns, destination URL is required
-    if (!config.useCatalog && !config.destinationUrl) {
-      errors.push('Digite a URL de destino do anúncio');
-    }
+    // DLO validation
+    if (config.languageConfig?.enabled && !config.useCatalog) {
+      const dl = config.languageConfig.defaultLanguage;
+      if (!dl.locale || dl.locale === 0) {
+        errors.push('DLO: Selecione o idioma padrão');
+      }
+      if (!dl.primaryText || dl.primaryText.trim() === '') {
+        errors.push('DLO: Texto principal do idioma padrão é obrigatório');
+      }
+      if (!dl.headline || dl.headline.trim() === '') {
+        errors.push('DLO: Título do idioma padrão é obrigatório');
+      }
+      if (!dl.websiteUrl || dl.websiteUrl.trim() === '') {
+        errors.push('DLO: URL do idioma padrão é obrigatória');
+      }
+      if (config.languageConfig.secondaryLanguages.length === 0) {
+        errors.push('DLO: Adicione pelo menos 1 idioma secundário');
+      }
+      
+      const usedLocales = new Set<number>();
+      if (dl.locale > 0) usedLocales.add(dl.locale);
+      
+      config.languageConfig.secondaryLanguages.forEach((lang, i) => {
+        if (!lang.locale || lang.locale === 0) {
+          errors.push(`DLO: Idioma ${i + 2} não tem locale selecionado`);
+        } else if (usedLocales.has(lang.locale)) {
+          errors.push(`DLO: Idioma ${i + 2} tem locale duplicado`);
+        } else {
+          usedLocales.add(lang.locale);
+        }
+        if (!lang.useDefaultMedia && !lang.mediaId) {
+          errors.push(`DLO: Idioma ${i + 2} precisa de mídia selecionada`);
+        }
+      });
+    } else {
+      // Non-DLO validation: destination URL is required for non-catalog
+      if (!config.useCatalog && !config.destinationUrl) {
+        errors.push('Digite a URL de destino do anúncio');
+      }
 
-    // Validate URL format if provided
-    if (config.destinationUrl) {
-      try {
-        const url = config.destinationUrl.startsWith('http') 
-          ? config.destinationUrl 
-          : `https://${config.destinationUrl}`;
-        new URL(url);
-      } catch {
-        errors.push('URL de destino inválida');
+      // Validate URL format if provided
+      if (config.destinationUrl) {
+        try {
+          const url = config.destinationUrl.startsWith('http') 
+            ? config.destinationUrl 
+            : `https://${config.destinationUrl}`;
+          new URL(url);
+        } catch {
+          errors.push('URL de destino inválida');
+        }
       }
     }
 
     // Check page limit validation from store
-    // This is populated by PageSelector's onValidationChange callback
     if (pageLimitError) {
       errors.push(pageLimitError);
     }
 
     return { isValid: errors.length === 0, errors, warnings };
-  }, [config.selectedPages, config.adName, config.useCatalog, config.destinationUrl, pageLimitError]);
+  }, [config.selectedPages, config.adName, config.useCatalog, config.destinationUrl, pageLimitError, config.languageConfig]);
 
   const step5 = useMemo((): StepValidation => {
     // Step 5 is review - just aggregate all previous validations

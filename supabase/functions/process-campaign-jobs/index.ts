@@ -633,6 +633,11 @@ function buildAdsetParams(
     params.promoted_object = JSON.stringify(promotedObject);
   }
 
+  // DLO: mark adset as dynamic creative
+  if (config.languageConfig?.enabled && !config.useCatalog) {
+    params.is_dynamic_creative = 'true';
+  }
+
   return params;
 }
 
@@ -1592,6 +1597,296 @@ async function createNonCatalogAd(
   return { success: true, id: adResult.json.id };
 }
 
+// Create DLO ad (Dynamic Language Optimization) - uses asset_feed_spec instead of object_story_spec
+async function createDLOCreativeAndAd(
+  accessToken: string,
+  adAccountId: string,
+  adsetId: string,
+  config: Record<string, any>,
+  name: string,
+  pageId: string,
+  instagramUserId: string | null,
+  adItemConfig: Record<string, any>,
+  supabase: any,
+  adItemId: string,
+): Promise<{ success: boolean; id?: string; creativeId?: string; error?: string }> {
+  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  const languageConfig = config.languageConfig;
+  if (!languageConfig?.enabled) {
+    return { success: false, error: 'DLO not enabled' };
+  }
+
+  const defaultLang = languageConfig.defaultLanguage;
+  const secondaryLangs: any[] = languageConfig.secondaryLanguages || [];
+  const allLangs = [defaultLang, ...secondaryLangs];
+  const urlParams = config.urlParams || '';
+
+  // Check idempotency - reuse saved creative/ad IDs
+  if (adItemConfig.savedAdId) {
+    return { success: true, id: adItemConfig.savedAdId, creativeId: adItemConfig.savedCreativeId };
+  }
+
+  let savedCreativeId = adItemConfig.savedCreativeId;
+
+  if (!savedCreativeId) {
+    // Determine media type from first available media
+    const defaultMedia = defaultLang.mediaUrl ? defaultLang : null;
+    const firstCreative = (config.selectedCreatives || [])[0];
+    const isVideo = defaultMedia?.mediaType === 'video' || firstCreative?.type === 'video';
+
+    // Step 1: Upload/resolve media per language
+    const savedVideoIds: Record<string, string> = adItemConfig.savedVideoIds || {};
+    const savedImageHashes: Record<string, string> = adItemConfig.savedImageHashes || {};
+
+    for (const lang of allLangs) {
+      const localeKey = String(lang.locale);
+
+      // Determine media source for this language
+      let mediaUrl: string | null = null;
+      let mediaType: string | null = null;
+
+      if (lang === defaultLang || !lang.useDefaultMedia) {
+        mediaUrl = lang.mediaUrl || firstCreative?.url || null;
+        mediaType = lang.mediaType || firstCreative?.type || null;
+      } else {
+        // Use default media
+        mediaUrl = defaultLang.mediaUrl || firstCreative?.url || null;
+        mediaType = defaultLang.mediaType || firstCreative?.type || null;
+      }
+
+      if (!mediaUrl) continue;
+
+      if (isVideo && !savedVideoIds[localeKey]) {
+        // Upload video for this locale
+        const uploadParams = new URLSearchParams({
+          access_token: accessToken,
+          file_url: mediaUrl,
+        });
+
+        const uploadResult = await fetchWithRetry(
+          `${GRAPH_BASE_URL}/${actId}/advideos`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: uploadParams.toString(),
+          },
+          3,
+          adAccountId,
+        );
+
+        if (!uploadResult.ok || uploadResult.json.error || !uploadResult.json.id) {
+          return { success: false, error: `DLO video upload failed for locale ${localeKey}: ${uploadResult.json?.error?.message || 'unknown'}` };
+        }
+
+        savedVideoIds[localeKey] = uploadResult.json.id;
+
+        // Wait for video to be ready
+        for (let attempt = 0; attempt < 30; attempt++) {
+          await sleep(2000);
+          const statusRes = await fetch(
+            `${GRAPH_BASE_URL}/${savedVideoIds[localeKey]}?fields=status&access_token=${accessToken}`,
+          );
+          const statusJson = await statusRes.json();
+          const videoStatus = statusJson?.status?.video_status;
+          if (videoStatus === 'ready') break;
+          if (videoStatus === 'error') {
+            return { success: false, error: `DLO video processing error for locale ${localeKey}` };
+          }
+        }
+      }
+      // For images, we just use the URL directly in the spec (picture field)
+    }
+
+    // Save video IDs for idempotency
+    const updatedConfig = { ...adItemConfig, savedVideoIds, savedImageHashes };
+    await supabase
+      .from('campaign_job_items')
+      .update({ config: updatedConfig })
+      .eq('id', adItemId);
+
+    // Step 2: Build asset_feed_spec
+    const bodies: any[] = [];
+    const titles: any[] = [];
+    const linkUrls: any[] = [];
+    const descriptions: any[] = [];
+    const mediaAssets: any[] = [];
+    const customizationRules: any[] = [];
+
+    for (const lang of allLangs) {
+      const localeKey = String(lang.locale);
+      const labelPrefix = `locale_${localeKey}`;
+
+      // Body (primaryText) - use fallback to default
+      const bodyText = lang.primaryText || defaultLang.primaryText || '';
+      if (bodyText) {
+        bodies.push({ text: bodyText, adlabels: [{ name: `${labelPrefix}_body` }] });
+      }
+
+      // Title (headline) - use fallback to default
+      const titleText = lang.headline || defaultLang.headline || '';
+      if (titleText) {
+        titles.push({ text: titleText, adlabels: [{ name: `${labelPrefix}_title` }] });
+      }
+
+      // Description - use fallback to default
+      const descText = lang.description || defaultLang.description || '';
+      if (descText) {
+        descriptions.push({ text: descText, adlabels: [{ name: `${labelPrefix}_desc` }] });
+      }
+
+      // Link URL - use fallback to default
+      const url = lang.websiteUrl || defaultLang.websiteUrl || '';
+      if (url) {
+        linkUrls.push({ website_url: url, adlabels: [{ name: `${labelPrefix}_url` }] });
+      }
+
+      // Media
+      if (isVideo) {
+        // Get video_id - either own or default's
+        let videoId: string | null = null;
+        if (lang === defaultLang || !lang.useDefaultMedia) {
+          videoId = savedVideoIds[localeKey] || savedVideoIds[String(defaultLang.locale)];
+        } else {
+          videoId = savedVideoIds[String(defaultLang.locale)];
+        }
+
+        const thumbnailUrl = lang.mediaThumbnailUrl || defaultLang.mediaThumbnailUrl || firstCreative?.thumbnailUrl || '';
+
+        if (videoId) {
+          mediaAssets.push({
+            video_id: videoId,
+            thumbnail_url: thumbnailUrl,
+            adlabels: [{ name: `${labelPrefix}_media` }],
+          });
+        }
+      } else {
+        // Image - use URL directly
+        let imageUrl: string | null = null;
+        if (lang === defaultLang || !lang.useDefaultMedia) {
+          imageUrl = lang.mediaUrl || defaultLang.mediaUrl || firstCreative?.url;
+        } else {
+          imageUrl = defaultLang.mediaUrl || firstCreative?.url;
+        }
+
+        if (imageUrl) {
+          mediaAssets.push({
+            url: imageUrl,
+            adlabels: [{ name: `${labelPrefix}_media` }],
+          });
+        }
+      }
+
+      // Customization rule
+      const rule: any = {
+        customization_spec: { locales: [lang.locale] },
+      };
+      if (bodyText) rule.body_label = { name: `${labelPrefix}_body` };
+      if (titleText) rule.title_label = { name: `${labelPrefix}_title` };
+      if (descText) rule.description_label = { name: `${labelPrefix}_desc` };
+      if (url) rule.link_url_label = { name: `${labelPrefix}_url` };
+      rule[isVideo ? 'video_label' : 'image_label'] = { name: `${labelPrefix}_media` };
+
+      customizationRules.push(rule);
+    }
+
+    const assetFeedSpec: any = {
+      bodies,
+      titles,
+      link_urls: linkUrls,
+      call_to_action_types: [config.ctaType || 'LEARN_MORE'],
+      ad_formats: [isVideo ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE'],
+      asset_customization_rules: customizationRules,
+    };
+
+    if (isVideo && mediaAssets.length > 0) {
+      assetFeedSpec.videos = mediaAssets;
+    } else if (!isVideo && mediaAssets.length > 0) {
+      assetFeedSpec.images = mediaAssets;
+    }
+
+    if (descriptions.length > 0) {
+      assetFeedSpec.descriptions = descriptions;
+    }
+
+    // Step 3: Create creative with asset_feed_spec
+    const objectStorySpec: Record<string, any> = { page_id: pageId };
+    if (instagramUserId) {
+      objectStorySpec.instagram_actor_id = instagramUserId;
+    }
+
+    const creativeParams = new URLSearchParams({
+      access_token: accessToken,
+      name: `DLO_Creative_${name}`,
+      asset_feed_spec: JSON.stringify(assetFeedSpec),
+      object_story_spec: JSON.stringify(objectStorySpec),
+      contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
+    });
+    if (urlParams) creativeParams.append('url_tags', urlParams.trim());
+
+    console.log(`[DLO] Creating creative with ${allLangs.length} languages for ad ${name}`);
+
+    const creativeResult = await fetchWithRetry(
+      `${GRAPH_BASE_URL}/${actId}/adcreatives`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: creativeParams.toString(),
+      },
+      3,
+      adAccountId,
+    );
+
+    if (!creativeResult.ok || creativeResult.json.error) {
+      const errMsg = creativeResult.json?.error?.message || 'DLO creative creation failed';
+      console.error(`[DLO] Creative creation failed:`, JSON.stringify(creativeResult.json?.error || {}).substring(0, 500));
+      return { success: false, error: errMsg };
+    }
+
+    savedCreativeId = creativeResult.json.id;
+
+    // Save creative ID for idempotency
+    const configWithCreative = { ...adItemConfig, savedVideoIds, savedImageHashes, savedCreativeId };
+    await supabase
+      .from('campaign_job_items')
+      .update({ config: configWithCreative })
+      .eq('id', adItemId);
+  }
+
+  // Step 4: Create the ad
+  const adParams = new URLSearchParams({
+    access_token: accessToken,
+    name,
+    adset_id: adsetId,
+    creative: JSON.stringify({ creative_id: savedCreativeId }),
+    status: 'ACTIVE',
+  });
+
+  const adResult = await fetchWithRetry(
+    `${GRAPH_BASE_URL}/${actId}/ads`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: adParams.toString(),
+    },
+    3,
+    adAccountId,
+  );
+
+  if (!adResult.ok || adResult.json.error) {
+    return { success: false, error: adResult.json?.error?.message || 'DLO ad creation failed', creativeId: savedCreativeId };
+  }
+
+  // Save ad ID for idempotency
+  const finalConfig = { ...adItemConfig, savedCreativeId, savedAdId: adResult.json.id };
+  await supabase
+    .from('campaign_job_items')
+    .update({ config: finalConfig })
+    .eq('id', adItemId);
+
+  console.log(`[DLO] Successfully created ad ${adResult.json.id} with ${allLangs.length} languages`);
+  return { success: true, id: adResult.json.id, creativeId: savedCreativeId };
+}
+
 // Naming variable replacer
 function createNamingReplacer(
   account: { name: string; account_id: string },
@@ -2449,7 +2744,8 @@ Deno.serve(async (req) => {
       } else if (adsWithNames.length > 0) {
         // Non-catalog ads: sequential processing (video upload required)
         const selectedCreatives = config.selectedCreatives || [];
-        console.log(`[process-jobs] Creating ${adsWithNames.length} NEW non-catalog ads (sequential for video upload)...`);
+        const isDLO = config.languageConfig?.enabled === true;
+        console.log(`[process-jobs] Creating ${adsWithNames.length} NEW non-catalog ads${isDLO ? ' (DLO mode)' : ''} (sequential for video upload)...`);
         
         // Calculate smart page distribution for non-catalog ads
         let pageAssignments: Array<{ pageId: string; instagramActorId: string | null }> = [];
@@ -2470,18 +2766,6 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Get creative for this ad
-          const creativeIndex = adIndex % selectedCreatives.length;
-          const creative = selectedCreatives[creativeIndex];
-
-          if (!creative) {
-            await supabase
-              .from('campaign_job_items')
-              .update({ status: 'failed', error_message: 'No creative available' })
-              .eq('id', ad.id);
-            continue;
-          }
-
           // Use smart page distribution if available
           let currentPageId = defaultPageId;
           let currentInstagramUserId = defaultInstagramUserId;
@@ -2491,30 +2775,74 @@ Deno.serve(async (req) => {
             currentInstagramUserId = pageAssignments[adIndex].instagramActorId;
           }
 
-          const result = await createNonCatalogAd(
-            accessToken,
-            currentAccount.account_id,
-            parentFbId,
-            config,
-            ad.name,
-            currentPageId,
-            currentInstagramUserId,
-            creative,
-          );
+          if (isDLO) {
+            // DLO mode: use asset_feed_spec with multiple languages
+            const result = await createDLOCreativeAndAd(
+              accessToken,
+              currentAccount.account_id,
+              parentFbId,
+              config,
+              ad.name,
+              currentPageId,
+              currentInstagramUserId,
+              ad.config,
+              supabase,
+              ad.id,
+            );
 
-          if (result.success && result.id) {
-            totalAdsCreated++;
-            await supabase
-              .from('campaign_job_items')
-              .update({ status: 'completed', facebook_id: result.id })
-              .eq('id', ad.id);
+            if (result.success && result.id) {
+              totalAdsCreated++;
+              await supabase
+                .from('campaign_job_items')
+                .update({ status: 'completed', facebook_id: result.id })
+                .eq('id', ad.id);
+            } else {
+              hasError = true;
+              lastError = result.error || 'DLO error';
+              await supabase
+                .from('campaign_job_items')
+                .update({ status: 'failed', error_message: result.error })
+                .eq('id', ad.id);
+            }
           } else {
-            hasError = true;
-            lastError = result.error || 'Unknown error';
-            await supabase
-              .from('campaign_job_items')
-              .update({ status: 'failed', error_message: result.error })
-              .eq('id', ad.id);
+            // Standard non-catalog mode
+            // Get creative for this ad
+            const creativeIndex = adIndex % selectedCreatives.length;
+            const creative = selectedCreatives[creativeIndex];
+
+            if (!creative) {
+              await supabase
+                .from('campaign_job_items')
+                .update({ status: 'failed', error_message: 'No creative available' })
+                .eq('id', ad.id);
+              continue;
+            }
+
+            const result = await createNonCatalogAd(
+              accessToken,
+              currentAccount.account_id,
+              parentFbId,
+              config,
+              ad.name,
+              currentPageId,
+              currentInstagramUserId,
+              creative,
+            );
+
+            if (result.success && result.id) {
+              totalAdsCreated++;
+              await supabase
+                .from('campaign_job_items')
+                .update({ status: 'completed', facebook_id: result.id })
+                .eq('id', ad.id);
+            } else {
+              hasError = true;
+              lastError = result.error || 'Unknown error';
+              await supabase
+                .from('campaign_job_items')
+                .update({ status: 'failed', error_message: result.error })
+                .eq('id', ad.id);
+            }
           }
 
           // Update progress

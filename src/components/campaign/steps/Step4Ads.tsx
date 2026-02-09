@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { PageSelector } from '@/components/campaign/PageSelector';
 import { NamingModal } from '@/components/campaign/NamingModal';
+import { DLOLanguageSection } from '@/components/campaign/DLOLanguageSection';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 // CTA options mapped to Facebook API call_to_action.type values
@@ -225,87 +226,95 @@ export function Step4Ads() {
         </p>
       </section>
 
+      {/* DLO Language Section - only for non-catalog campaigns */}
+      {!config.useCatalog && (
+        <DLOLanguageSection />
+      )}
+
       {/* Ad Content Section */}
       {/* API: object_story_spec.link_data fields */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Conteúdo do Anúncio
-          </h3>
-          <Badge variant="outline" className="text-xs font-mono">
-            link_data
-          </Badge>
-        </div>
-
-        <div className="space-y-4">
-          {/* Primary Text - API: message */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label>Texto Principal</Label>
-              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
-                message
-              </Badge>
-            </div>
-            <Textarea
-              value={config.primaryText}
-              onChange={(e) => updateConfig({ primaryText: e.target.value })}
-              placeholder="Descubra o segredo para uma pele radiante! 🌟 Nosso sérum revolucionário..."
-              className="bg-secondary/50 min-h-[100px] resize-none"
-              maxLength={500}
-            />
-            <p className="text-xs text-muted-foreground">
-              O texto principal aparece acima da mídia do anúncio (recomendado: até 125 caracteres)
-            </p>
+      {/* Hidden when DLO is enabled (content comes from language config) */}
+      {(!config.languageConfig.enabled || config.useCatalog) && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Conteúdo do Anúncio
+            </h3>
+            <Badge variant="outline" className="text-xs font-mono">
+              link_data
+            </Badge>
           </div>
 
-          {/* Headline - API: name */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label>Título (Headline)</Label>
-              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
-                name
-              </Badge>
+          <div className="space-y-4">
+            {/* Primary Text - API: message */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>Texto Principal</Label>
+                <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                  message
+                </Badge>
+              </div>
+              <Textarea
+                value={config.primaryText}
+                onChange={(e) => updateConfig({ primaryText: e.target.value })}
+                placeholder="Descubra o segredo para uma pele radiante! 🌟 Nosso sérum revolucionário..."
+                className="bg-secondary/50 min-h-[100px] resize-none"
+                maxLength={500}
+              />
+              <p className="text-xs text-muted-foreground">
+                O texto principal aparece acima da mídia do anúncio (recomendado: até 125 caracteres)
+              </p>
             </div>
-            <Input
-              value={config.headline}
-              onChange={(e) => updateConfig({ headline: e.target.value })}
-              placeholder="Transforme sua pele em 7 dias"
-              className="bg-secondary/50"
-              maxLength={40}
-            />
-            <p className="text-xs text-muted-foreground">
-              Aparece em destaque abaixo da mídia (máx. 40 caracteres)
-            </p>
+
+            {/* Headline - API: name */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>Título (Headline)</Label>
+                <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                  name
+                </Badge>
+              </div>
+              <Input
+                value={config.headline}
+                onChange={(e) => updateConfig({ headline: e.target.value })}
+                placeholder="Transforme sua pele em 7 dias"
+                className="bg-secondary/50"
+                maxLength={40}
+              />
+              <p className="text-xs text-muted-foreground">
+                Aparece em destaque abaixo da mídia (máx. 40 caracteres)
+              </p>
+            </div>
+
+            {/* Description - API: description */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>Descrição</Label>
+                <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                  description
+                </Badge>
+              </div>
+              <Input
+                value={config.description}
+                onChange={(e) => updateConfig({ description: e.target.value })}
+                placeholder="Frete grátis para todo Brasil"
+                className="bg-secondary/50"
+                maxLength={90}
+              />
+              <p className="text-xs text-muted-foreground">
+                Texto adicional abaixo do título (nem sempre visível, máx. 90 caracteres)
+              </p>
+            </div>
           </div>
 
-          {/* Description - API: description */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label>Descrição</Label>
-              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
-                description
-              </Badge>
-            </div>
-            <Input
-              value={config.description}
-              onChange={(e) => updateConfig({ description: e.target.value })}
-              placeholder="Frete grátis para todo Brasil"
-              className="bg-secondary/50"
-              maxLength={90}
-            />
-            <p className="text-xs text-muted-foreground">
-              Texto adicional abaixo do título (nem sempre visível, máx. 90 caracteres)
+          {/* Dynamic Variables Info */}
+          <div className="p-4 bg-ads-warning/10 rounded-lg border border-ads-warning/20">
+            <p className="text-sm text-ads-warning">
+              Use {`{{conta_nome}}`}, {`{{conta_apelido}}`}, {`{{criativo}}`} nos textos para personalização dinâmica por conta/anúncio
             </p>
           </div>
-        </div>
-
-        {/* Dynamic Variables Info */}
-        <div className="p-4 bg-ads-warning/10 rounded-lg border border-ads-warning/20">
-          <p className="text-sm text-ads-warning">
-            Use {`{{conta_nome}}`}, {`{{conta_apelido}}`}, {`{{criativo}}`} nos textos para personalização dinâmica por conta/anúncio
-          </p>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Link and CTA Section */}
       {/* API: link_data.link, link_data.call_to_action */}
@@ -320,25 +329,27 @@ export function Step4Ads() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Destination URL - API: link */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label>URL de Destino</Label>
-              <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
-                link
-              </Badge>
+          {/* Destination URL - API: link (hidden when DLO enabled) */}
+          {(!config.languageConfig.enabled || config.useCatalog) && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>URL de Destino</Label>
+                <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                  link
+                </Badge>
+              </div>
+              <Input
+                type="url"
+                value={config.destinationUrl}
+                onChange={(e) => updateConfig({ destinationUrl: e.target.value })}
+                placeholder="https://seusite.com/oferta"
+                className="bg-secondary/50"
+              />
+              <p className="text-xs text-muted-foreground">
+                Link de destino do anúncio (obrigatório)
+              </p>
             </div>
-            <Input
-              type="url"
-              value={config.destinationUrl}
-              onChange={(e) => updateConfig({ destinationUrl: e.target.value })}
-              placeholder="https://seusite.com/oferta"
-              className="bg-secondary/50"
-            />
-            <p className="text-xs text-muted-foreground">
-              Link de destino do anúncio (obrigatório)
-            </p>
-          </div>
+          )}
           
           {/* CTA Button - API: call_to_action.type */}
           <div className="space-y-2">
