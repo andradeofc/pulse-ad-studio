@@ -2026,6 +2026,65 @@ Deno.serve(async (req) => {
     let lastError = '';
     let totalAdsCreated = 0;
 
+    // ============= CHUNKED PROCESSING =============
+    // Edge Functions have a ~150s timeout. We yield at ~90s to save progress
+    // and let queue-processor resume us in the next cycle.
+    // The existing idempotency system (facebook_id, savedAdId, savedCreativeId)
+    // ensures no duplicates when the job resumes.
+    const CHUNK_TIME_LIMIT_MS = 90_000; // 90s work limit, ~60s buffer
+    const shouldYield = (): boolean => (Date.now() - startTime) >= CHUNK_TIME_LIMIT_MS;
+
+    // Yield helper: saves progress, sets job back to queued, returns response
+    const yieldChunk = async (reason: string): Promise<Response> => {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      console.log(`[process-jobs] CHUNK YIELD after ${elapsed}s: ${reason}`);
+
+      // Increment ad usage for ads created in this chunk
+      if (totalAdsCreated > 0) {
+        try {
+          await supabase.rpc('increment_ad_usage', {
+            p_user_id: user.id,
+            p_ads_count: totalAdsCreated,
+          });
+        } catch (usageError) {
+          console.error('[process-jobs] Failed to increment ad usage on yield:', usageError);
+        }
+      }
+
+      // Calculate overall progress based on completed items
+      const { count: completedCount } = await supabase
+        .from('campaign_job_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('job_id', jobId)
+        .in('status', ['completed', 'failed']);
+
+      const totalItems = items.length;
+      const progress = totalItems > 0 ? Math.round(((completedCount || 0) / totalItems) * 100) : 0;
+
+      // Set job back to queued so queue-processor picks it up in the next cycle
+      await supabase
+        .from('campaign_jobs')
+        .update({
+          status: 'queued',
+          progress,
+          processed_items: (job.processed_items || 0) + totalAdsCreated,
+        })
+        .eq('id', jobId);
+
+      console.log(`[process-jobs] Job ${jobId} yielded at ${progress}% progress, will resume automatically`);
+
+      return new Response(JSON.stringify({
+        success: true,
+        status: 'chunked',
+        message: `Yielded after ${elapsed}s: ${reason}`,
+        adsCreated: totalAdsCreated,
+        progress,
+        elapsedSeconds: elapsed,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    };
+
     // Process each account
     for (let accountIndex = 0; accountIndex < allAdAccounts.length; accountIndex++) {
       const currentAccount = allAdAccounts[accountIndex];
@@ -2175,6 +2234,11 @@ Deno.serve(async (req) => {
         console.log(`[process-jobs] No new campaigns to create (all already processed)`);
       }
 
+      // CHUNK CHECK: yield after campaigns if time is running out
+      if (shouldYield()) {
+        return yieldChunk(`Completed campaigns for account ${accountIndex + 1}/${allAdAccounts.length}`);
+      }
+
       // CRITICAL: Include facebook_id so batch functions can detect already-created items
       const adsetsWithNames = adsetsForAccount.map((a, i) => ({
         id: a.id,
@@ -2252,6 +2316,11 @@ Deno.serve(async (req) => {
         console.log(`[VERIFICATION] Adset verification complete\n`);
       } else {
         console.log(`[process-jobs] No new adsets to create (all already processed)`);
+      }
+
+      // CHUNK CHECK: yield after adsets if time is running out
+      if (shouldYield()) {
+        return yieldChunk(`Completed adsets for account ${accountIndex + 1}/${allAdAccounts.length}`);
       }
 
       // Prepare ads with resolved names
@@ -2416,6 +2485,11 @@ Deno.serve(async (req) => {
           const progress = Math.round(((adIndex + 1) / adsWithNames.length) * 100);
           await supabase.from('campaign_jobs').update({ progress }).eq('id', jobId);
         }
+      }
+
+      // CHUNK CHECK: yield after completing an account if more accounts remain
+      if (shouldYield() && accountIndex < allAdAccounts.length - 1) {
+        return yieldChunk(`Completed account ${accountIndex + 1}/${allAdAccounts.length}`);
       }
     }
 
