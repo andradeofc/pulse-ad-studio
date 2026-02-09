@@ -1645,7 +1645,7 @@ async function createDLOCreativeAndAd(
       let mediaUrl: string | null = null;
       let mediaType: string | null = null;
 
-      if (lang === defaultLang || !lang.useDefaultMedia) {
+      if (lang === defaultLang || lang.mediaUrl) {
         mediaUrl = lang.mediaUrl || firstCreative?.url || null;
         mediaType = lang.mediaType || firstCreative?.type || null;
       } else {
@@ -1693,8 +1693,43 @@ async function createDLOCreativeAndAd(
             return { success: false, error: `DLO video processing error for locale ${localeKey}` };
           }
         }
+      } else if (!isVideo && !savedImageHashes[localeKey]) {
+        // Upload image to get hash (Facebook requires hash for asset_feed_spec images)
+        console.log(`[DLO] Uploading image for locale ${localeKey}: ${mediaUrl.substring(0, 80)}...`);
+        const imgUploadParams = new URLSearchParams({
+          access_token: accessToken,
+          url: mediaUrl,
+        });
+
+        const imgResult = await fetchWithRetry(
+          `${GRAPH_BASE_URL}/${actId}/adimages`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: imgUploadParams.toString(),
+          },
+          3,
+          adAccountId,
+        );
+
+        if (!imgResult.ok || imgResult.json.error) {
+          return { success: false, error: `DLO image upload failed for locale ${localeKey}: ${imgResult.json?.error?.message || 'unknown'}` };
+        }
+
+        // Extract hash from response - format: { images: { <filename>: { hash: "..." } } }
+        const imagesObj = imgResult.json?.images;
+        if (imagesObj) {
+          const firstKey = Object.keys(imagesObj)[0];
+          if (firstKey && imagesObj[firstKey]?.hash) {
+            savedImageHashes[localeKey] = imagesObj[firstKey].hash;
+            console.log(`[DLO] Image hash for locale ${localeKey}: ${savedImageHashes[localeKey]}`);
+          }
+        }
+
+        if (!savedImageHashes[localeKey]) {
+          return { success: false, error: `DLO image upload returned no hash for locale ${localeKey}` };
+        }
       }
-      // For images, we just use the URL directly in the spec (picture field)
     }
 
     // Save video IDs for idempotency
@@ -1744,7 +1779,7 @@ async function createDLOCreativeAndAd(
       if (isVideo) {
         // Get video_id - either own or default's
         let videoId: string | null = null;
-        if (lang === defaultLang || !lang.useDefaultMedia) {
+        if (lang === defaultLang || lang.mediaUrl) {
           videoId = savedVideoIds[localeKey] || savedVideoIds[String(defaultLang.locale)];
         } else {
           videoId = savedVideoIds[String(defaultLang.locale)];
@@ -1760,17 +1795,17 @@ async function createDLOCreativeAndAd(
           });
         }
       } else {
-        // Image - use URL directly
-        let imageUrl: string | null = null;
-        if (lang === defaultLang || !lang.useDefaultMedia) {
-          imageUrl = lang.mediaUrl || defaultLang.mediaUrl || firstCreative?.url;
+        // Image - use uploaded hash
+        let imageHash: string | null = null;
+        if (lang === defaultLang || lang.mediaUrl) {
+          imageHash = savedImageHashes[localeKey] || savedImageHashes[String(defaultLang.locale)];
         } else {
-          imageUrl = defaultLang.mediaUrl || firstCreative?.url;
+          imageHash = savedImageHashes[String(defaultLang.locale)];
         }
 
-        if (imageUrl) {
+        if (imageHash) {
           mediaAssets.push({
-            url: imageUrl,
+            hash: imageHash,
             adlabels: [{ name: `${labelPrefix}_media` }],
           });
         }
