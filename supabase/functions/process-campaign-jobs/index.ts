@@ -1736,6 +1736,7 @@ async function buildDLOCreative(
   mediaType: 'video' | 'image',
   pageId: string,
   name: string,
+  igActorId?: string | null,
 ): Promise<string> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const languageConfig = config.languageConfig;
@@ -1825,11 +1826,16 @@ async function buildDLOCreative(
   if (descriptions.length > 0) assetFeedSpec.descriptions = descriptions;
 
   // NOTE: When using asset_feed_spec (DLO), instagram_actor_id must NOT be in object_story_spec
+  const objectStorySpec: any = { page_id: pageId };
+  if (igActorId) {
+    objectStorySpec.instagram_actor_id = igActorId;
+  }
+
   const creativeParams = new URLSearchParams({
     access_token: accessToken,
     name: `DLO_Creative_${name}`,
     asset_feed_spec: JSON.stringify(assetFeedSpec),
-    object_story_spec: JSON.stringify({ page_id: pageId }),
+    object_story_spec: JSON.stringify(objectStorySpec),
     contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
   });
   if (urlParams) creativeParams.append('url_tags', urlParams.trim());
@@ -2763,10 +2769,12 @@ Deno.serve(async (req) => {
             let dloCreativeId: string | undefined = (job.config as any)?.savedDLOCreativeIds?.[currentAccountId];
 
             if (!dloCreativeId) {
+              // Resolve Instagram actor ID for the DLO creative
+              const dloIgActorId = igActorIdCache.get(defaultPageId) ?? null;
               dloCreativeId = await buildDLOCreative(
                 accessToken, currentAccount.account_id, config,
                 dloMediaMap, dloMediaType, defaultPageId,
-                `${currentAccount.name}_DLO`,
+                `${currentAccount.name}_DLO`, dloIgActorId,
               );
 
               const updatedJobConfig = {
