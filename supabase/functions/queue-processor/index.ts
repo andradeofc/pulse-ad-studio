@@ -120,13 +120,28 @@ Deno.serve(async (req) => {
     const now = new Date();
     console.log(`[queue-processor] Running at ${now.toISOString()}`);
 
+    // ============= STALE LOCK RECOVERY =============
+    // If a process-campaign-jobs invocation timed out or crashed, the job stays
+    // in 'processing' forever. Reset jobs stuck in 'processing' for > 3 minutes
+    // back to 'queued' so they can be resumed. The idempotency system in
+    // process-campaign-jobs ensures no duplicates on re-execution.
+    const staleThreshold = new Date(now.getTime() - 3 * 60 * 1000).toISOString();
+    const { data: staleJobs } = await supabase
+      .from('campaign_jobs')
+      .update({ status: 'queued' })
+      .eq('status', 'processing')
+      .lt('started_at', staleThreshold)
+      .select('id');
+
+    if (staleJobs && staleJobs.length > 0) {
+      console.log(`[queue-processor] Reset ${staleJobs.length} stale processing job(s) to queued`);
+    }
+
     // Find jobs that are:
-    // 1. Queued (not started yet)
+    // 1. Queued (not started yet, or yielded by chunked processing)
     // 2. Paused but ready to resume (resume_after is in the past)
-    // 3. Processing (might have been interrupted)
-    // IMPORTANT: Only pick up 'queued' and 'paused' jobs.
-    // Do NOT pick up 'processing' jobs — they are already being handled by another instance.
-    // The atomic lock in process-campaign-jobs prevents race conditions.
+    // Do NOT pick up 'processing' jobs — they are currently being handled.
+    // Stale 'processing' jobs are recovered above.
     const { data: jobs, error: jobsError } = await supabase
       .from('campaign_jobs')
       .select('*')
