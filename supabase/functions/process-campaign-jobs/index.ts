@@ -1211,10 +1211,15 @@ async function createAdsBatch(
             .eq('id', item.id);
         } else {
           const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
-          console.error(`[batch] Ad failed:`, errorMsg);
+          const errorDetail = parsedBody.error?.error_user_title 
+            ? `${parsedBody.error.error_user_title}: ${parsedBody.error.error_user_msg || errorMsg}`
+            : errorMsg;
+          const fullError = JSON.stringify(parsedBody.error || parsedBody).substring(0, 500);
+          console.error(`[batch] Ad failed for item ${item.id}:`, fullError);
+          console.error(`[batch] Ad request body was:`, JSON.stringify(chunk[i].batchItem.body).substring(0, 500));
           await supabase
             .from('campaign_job_items')
-            .update({ status: 'failed', error_message: errorMsg })
+            .update({ status: 'failed', error_message: errorDetail })
             .eq('id', item.id);
         }
       }
