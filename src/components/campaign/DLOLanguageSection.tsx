@@ -116,64 +116,48 @@ function LanguageCard({ language, isDefault, index, usedLocales, allCreatives, o
             </Select>
           </div>
 
-          {/* Use default media checkbox (only for secondary) */}
-          {!isDefault && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id={`use-default-media-${index}`}
-                checked={language.useDefaultMedia}
-                onCheckedChange={(checked) => onUpdate({ ...language, useDefaultMedia: !!checked })}
-              />
-              <Label htmlFor={`use-default-media-${index}`} className="text-xs text-muted-foreground">
-                Usar mídia do idioma padrão
-              </Label>
-            </div>
-          )}
-
-          {/* Media selector (from full library) */}
-          {(isDefault || !language.useDefaultMedia) && (
-            <div className="space-y-2">
-              <Label className="text-xs">Mídia (da biblioteca)</Label>
-              {allCreatives.length > 0 ? (
-                <Select
-                  value={language.mediaId || ''}
-                  onValueChange={(v) => {
-                    const cr = allCreatives.find(c => c.id === v);
-                    if (cr) {
-                      onUpdate({
-                        ...language,
-                        mediaId: cr.id,
-                        mediaType: cr.type,
-                        mediaUrl: cr.url,
-                        mediaThumbnailUrl: cr.thumbnailUrl,
-                      });
-                    }
-                  }}
-                >
-                  <SelectTrigger className="bg-secondary/50">
-                    <SelectValue placeholder="Selecionar criativo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allCreatives.map(cr => (
-                      <SelectItem key={cr.id} value={cr.id}>
-                        <div className="flex items-center gap-2">
-                          {cr.type === 'video' ? <Video className="w-3.5 h-3.5" /> : <Image className="w-3.5 h-3.5" />}
-                          <span className="truncate max-w-[200px]">{cr.name}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <p className="text-xs text-muted-foreground">Nenhum criativo na biblioteca</p>
-              )}
-              {language.mediaThumbnailUrl && (
-                <div className="w-16 h-16 rounded bg-muted overflow-hidden">
-                  <img src={language.mediaThumbnailUrl} alt="" className="w-full h-full object-cover" />
-                </div>
-              )}
-            </div>
-          )}
+          {/* Media selector (from full library) - always visible */}
+          <div className="space-y-2">
+            <Label className="text-xs">Mídia (da biblioteca)</Label>
+            {allCreatives.length > 0 ? (
+              <Select
+                value={language.mediaId || ''}
+                onValueChange={(v) => {
+                  const cr = allCreatives.find(c => c.id === v);
+                  if (cr) {
+                    onUpdate({
+                      ...language,
+                      mediaId: cr.id,
+                      mediaType: cr.type,
+                      mediaUrl: cr.url,
+                      mediaThumbnailUrl: cr.thumbnailUrl,
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger className="bg-secondary/50">
+                  <SelectValue placeholder={isDefault ? 'Selecionar criativo...' : 'Vazio = usar mídia do idioma padrão'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {allCreatives.map(cr => (
+                    <SelectItem key={cr.id} value={cr.id}>
+                      <div className="flex items-center gap-2">
+                        {cr.type === 'video' ? <Video className="w-3.5 h-3.5" /> : <Image className="w-3.5 h-3.5" />}
+                        <span className="truncate max-w-[200px]">{cr.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-xs text-muted-foreground">Nenhum criativo na biblioteca</p>
+            )}
+            {language.mediaThumbnailUrl && (
+              <div className="w-16 h-16 rounded bg-muted overflow-hidden">
+                <img src={language.mediaThumbnailUrl} alt="" className="w-full h-full object-cover" />
+              </div>
+            )}
+          </div>
 
           {/* Text fields */}
           <div className="space-y-3">

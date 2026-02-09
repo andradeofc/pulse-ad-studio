@@ -151,9 +151,7 @@ export function useStepValidation(): AllStepsValidation {
         } else {
           usedLocales.add(lang.locale);
         }
-        if (!lang.useDefaultMedia && !lang.mediaId) {
-          errors.push(`DLO: Idioma ${i + 2} precisa de mídia selecionada`);
-        }
+        // Media is optional for secondary languages - falls back to default automatically
       });
     } else {
       // Non-DLO validation: destination URL is required for non-catalog
