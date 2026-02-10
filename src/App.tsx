@@ -17,6 +17,16 @@ import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage";
 
+// Public Pages (Footer)
+import ChangelogPage from "@/pages/public/ChangelogPage";
+import SobrePage from "@/pages/public/SobrePage";
+import BlogPage from "@/pages/public/BlogPage";
+import CarreirasPage from "@/pages/public/CarreirasPage";
+import ContatoPage from "@/pages/public/ContatoPage";
+import TermosPage from "@/pages/public/TermosPage";
+import PrivacidadePage from "@/pages/public/PrivacidadePage";
+import CookiesPage from "@/pages/public/CookiesPage";
+
 // Dashboard Pages
 import DashboardPage from "@/pages/dashboard/DashboardPage";
 import FacebookProfilesPage from "@/pages/dashboard/FacebookProfilesPage";
@@ -70,6 +80,14 @@ const App = () => {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/changelog" element={<ChangelogPage />} />
+            <Route path="/sobre" element={<SobrePage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/carreiras" element={<CarreirasPage />} />
+            <Route path="/contato" element={<ContatoPage />} />
+            <Route path="/termos" element={<TermosPage />} />
+            <Route path="/privacidade" element={<PrivacidadePage />} />
+            <Route path="/cookies" element={<CookiesPage />} />
           </Route>
 
           {/* Dashboard Routes */}
