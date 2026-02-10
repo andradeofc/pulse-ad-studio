@@ -635,12 +635,40 @@ function buildAdsetParams(
     params.promoted_object = JSON.stringify(promotedObject);
   }
 
-  // DLO (Dynamic Language Optimization) uses asset_customization_rules inside
-  // the creative's asset_feed_spec. This is INCOMPATIBLE with is_dynamic_creative=true
-  // on the adset. Facebook considers DLO and Dynamic Creative as separate, mutually
-  // exclusive features. The adset must remain a normal (non-dynamic-creative) adset.
-  // Reference: Meta docs state "you can't pair dynamic creative ads with
-  // dynamic language optimization or asset customization"
+  // DLO (Multi-Language Ads) with asset_customization_rules:
+  // 1. Do NOT set is_dynamic_creative (incompatible with asset_customization_rules)
+  // 2. MUST explicitly set placements to exclude incompatible ones:
+  //    - Facebook Business Explore
+  //    - Facebook Notifications  
+  //    - Facebook Profile Feed
+  //    - Facebook Reels (overlay ads)
+  //    - Facebook Search Results
+  //    Without explicit placements, Advantage+ includes ALL placements,
+  //    and DLO ads are rejected with error 2446485 "Invalid parameter"
+  if (config.languageConfig?.enabled && !config.useCatalog) {
+    const dloTargeting: Record<string, any> = {
+      ...targetingObj,
+      publisher_platforms: ['facebook', 'instagram', 'audience_network'],
+      facebook_positions: [
+        'feed',
+        'instant_article',
+        'instream_video',
+        'marketplace',
+        'video_feeds',
+        'story',
+        'right_hand_column',
+      ],
+      instagram_positions: [
+        'stream',
+        'story',
+        'explore',
+        'explore_home',
+        'reels',
+      ],
+      audience_network_positions: ['classic', 'instream_video'],
+    };
+    params.targeting = JSON.stringify(dloTargeting);
+  }
 
   return params;
 }
