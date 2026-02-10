@@ -12,6 +12,7 @@ export interface CreativeMetadata {
   height: number | null;
   size: number;
   duration: number | null;
+  folder_id: string | null;
   created_at: string;
   updated_at: string;
 }

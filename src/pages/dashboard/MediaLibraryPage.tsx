@@ -20,7 +20,13 @@ import {
   CheckCircle2,
   Pencil,
   Check,
-  X
+  X,
+  FolderPlus,
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  ArrowLeft,
+  FolderInput
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +37,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
   Select,
@@ -50,9 +60,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { CreativeUploadModal } from '@/components/campaign/CreativeUploadModal';
 import { fetchCreatives, deleteCreative, renameCreative, CreativeMetadata } from '@/services/creativesService';
+import { fetchFolders, createFolder, renameFolder, deleteFolder, moveCreativesToFolder, CreativeFolder } from '@/services/folderService';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -73,11 +91,26 @@ export default function MediaLibraryPage() {
   const [editedName, setEditedName] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
+  // Folder state
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [folderToDelete, setFolderToDelete] = useState<CreativeFolder | null>(null);
+  const [folderToRename, setFolderToRename] = useState<CreativeFolder | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState('');
+  const folderNameInputRef = useRef<HTMLInputElement>(null);
+
   const { data: creatives = [], isLoading } = useQuery({
     queryKey: ['creatives'],
     queryFn: fetchCreatives,
   });
 
+  const { data: folders = [], isLoading: foldersLoading } = useQuery({
+    queryKey: ['creative-folders'],
+    queryFn: fetchFolders,
+  });
+
+  // Mutations
   const deleteMutation = useMutation({
     mutationFn: ({ id, filePath }: { id: string; filePath: string }) => 
       deleteCreative(id, filePath),
@@ -87,10 +120,7 @@ export default function MediaLibraryPage() {
       setDeleteDialogOpen(false);
       setCreativeToDelete(null);
     },
-    onError: (error) => {
-      toast.error('Erro ao excluir criativo');
-      console.error('Delete error:', error);
-    },
+    onError: () => toast.error('Erro ao excluir criativo'),
   });
 
   const renameMutation = useMutation({
@@ -102,10 +132,51 @@ export default function MediaLibraryPage() {
       toast.success('Nome atualizado com sucesso');
       setIsEditingName(false);
     },
-    onError: (error) => {
-      toast.error('Erro ao renomear criativo');
-      console.error('Rename error:', error);
+    onError: () => toast.error('Erro ao renomear criativo'),
+  });
+
+  const createFolderMutation = useMutation({
+    mutationFn: (name: string) => createFolder(name, currentFolderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creative-folders'] });
+      toast.success('Pasta criada com sucesso');
+      setNewFolderDialogOpen(false);
+      setNewFolderName('');
     },
+    onError: () => toast.error('Erro ao criar pasta'),
+  });
+
+  const renameFolderMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => renameFolder(id, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creative-folders'] });
+      toast.success('Pasta renomeada com sucesso');
+      setFolderToRename(null);
+      setRenameFolderName('');
+    },
+    onError: () => toast.error('Erro ao renomear pasta'),
+  });
+
+  const deleteFolderMutation = useMutation({
+    mutationFn: (id: string) => deleteFolder(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creative-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['creatives'] });
+      toast.success('Pasta excluída. Os criativos foram movidos para a raiz.');
+      setFolderToDelete(null);
+    },
+    onError: () => toast.error('Erro ao excluir pasta'),
+  });
+
+  const moveCreativesMutation = useMutation({
+    mutationFn: ({ ids, folderId }: { ids: string[]; folderId: string | null }) => 
+      moveCreativesToFolder(ids, folderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['creatives'] });
+      setSelectedCreatives(new Set());
+      toast.success('Criativos movidos com sucesso');
+    },
+    onError: () => toast.error('Erro ao mover criativos'),
   });
 
   useEffect(() => {
@@ -114,6 +185,12 @@ export default function MediaLibraryPage() {
       nameInputRef.current.select();
     }
   }, [isEditingName]);
+
+  useEffect(() => {
+    if (folderToRename && folderNameInputRef.current) {
+      setTimeout(() => folderNameInputRef.current?.focus(), 50);
+    }
+  }, [folderToRename]);
 
   const startEditing = () => {
     if (previewCreative) {
@@ -136,16 +213,38 @@ export default function MediaLibraryPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      saveNewName();
-    } else if (e.key === 'Escape') {
-      cancelEditing();
-    }
+    if (e.key === 'Enter') saveNewName();
+    else if (e.key === 'Escape') cancelEditing();
   };
 
-  const filteredCreatives = creatives.filter((creative) => {
+  // Folder navigation
+  const currentFolder = folders.find(f => f.id === currentFolderId) || null;
+  const subFolders = folders.filter(f => f.parent_id === currentFolderId);
+
+  // Build breadcrumb path
+  const getBreadcrumbs = () => {
+    const crumbs: (CreativeFolder | null)[] = [null]; // root
+    let current = currentFolder;
+    const path: CreativeFolder[] = [];
+    while (current) {
+      path.unshift(current);
+      current = folders.find(f => f.id === current!.parent_id) || null;
+    }
+    return [...crumbs, ...path];
+  };
+
+  // Filter creatives for current folder
+  const creativesInCurrentFolder = creatives.filter(c => {
+    if (searchQuery) {
+      // When searching, search across all folders
+      return c.name.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+    return currentFolderId ? c.folder_id === currentFolderId : !c.folder_id;
+  });
+
+  const filteredCreatives = creativesInCurrentFolder.filter((creative) => {
     const matchesType = filterType === 'all' || creative.type === filterType;
-    const matchesSearch = creative.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = searchQuery ? creative.name.toLowerCase().includes(searchQuery.toLowerCase()) : true;
     return matchesType && matchesSearch;
   });
 
@@ -187,11 +286,8 @@ export default function MediaLibraryPage() {
   const toggleSelection = (id: string) => {
     setSelectedCreatives((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
       return newSet;
     });
   };
@@ -199,6 +295,13 @@ export default function MediaLibraryPage() {
   const totalSize = creatives.reduce((acc, c) => acc + c.size, 0);
   const imageCount = creatives.filter((c) => c.type === 'image').length;
   const videoCount = creatives.filter((c) => c.type === 'video').length;
+
+  const breadcrumbs = getBreadcrumbs();
+
+  // Count creatives in a folder
+  const getCreativeCount = (folderId: string) => {
+    return creatives.filter(c => c.folder_id === folderId).length;
+  };
 
   return (
     <div className="space-y-6">
@@ -210,14 +313,23 @@ export default function MediaLibraryPage() {
             Gerencie seus criativos para campanhas
           </p>
         </div>
-        <Button onClick={() => setUploadModalOpen(true)} className="glow-primary">
-          <Upload className="w-4 h-4 mr-2" />
-          Fazer Upload
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => setNewFolderDialogOpen(true)}
+          >
+            <FolderPlus className="w-4 h-4 mr-2" />
+            Nova Pasta
+          </Button>
+          <Button onClick={() => setUploadModalOpen(true)} className="glow-primary">
+            <Upload className="w-4 h-4 mr-2" />
+            Fazer Upload
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card className="bg-secondary/30 border-border/50">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="p-3 rounded-xl bg-primary/10">
@@ -256,7 +368,96 @@ export default function MediaLibraryPage() {
             <p className="text-xs text-muted-foreground ml-auto">Imagens / Vídeos</p>
           </CardContent>
         </Card>
+        <Card className="bg-secondary/30 border-border/50">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-amber-500/10">
+              <Folder className="w-5 h-5 text-amber-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground">{folders.length}</p>
+              <p className="text-xs text-muted-foreground">Pastas</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Breadcrumb Navigation */}
+      {(currentFolderId || searchQuery) && !searchQuery && (
+        <div className="flex items-center gap-1 text-sm">
+          {breadcrumbs.map((crumb, index) => (
+            <div key={crumb?.id || 'root'} className="flex items-center gap-1">
+              {index > 0 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+              <button
+                onClick={() => setCurrentFolderId(crumb?.id || null)}
+                className={cn(
+                  "px-2 py-1 rounded-md hover:bg-secondary transition-colors",
+                  index === breadcrumbs.length - 1 
+                    ? "text-foreground font-medium" 
+                    : "text-muted-foreground"
+                )}
+              >
+                {crumb ? crumb.name : 'Todos os Arquivos'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Bulk actions bar */}
+      {selectedCreatives.size > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 border border-primary/20"
+        >
+          <span className="text-sm font-medium text-foreground">
+            {selectedCreatives.size} selecionado(s)
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <FolderInput className="w-4 h-4 mr-2" />
+                  Mover para pasta
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => moveCreativesMutation.mutate({ 
+                    ids: Array.from(selectedCreatives), 
+                    folderId: null 
+                  })}
+                >
+                  <Folder className="w-4 h-4 mr-2 text-muted-foreground" />
+                  Raiz (sem pasta)
+                </DropdownMenuItem>
+                {folders.length > 0 && <DropdownMenuSeparator />}
+                {folders.map(folder => (
+                  <DropdownMenuItem
+                    key={folder.id}
+                    onClick={() => moveCreativesMutation.mutate({ 
+                      ids: Array.from(selectedCreatives), 
+                      folderId: folder.id 
+                    })}
+                    disabled={folder.id === currentFolderId}
+                  >
+                    <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
+                    {folder.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedCreatives(new Set())}
+            >
+              <X className="w-4 h-4 mr-1" />
+              Limpar
+            </Button>
+          </div>
+        </motion.div>
+      )}
 
       {/* Filters & Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -301,7 +502,7 @@ export default function MediaLibraryPage() {
       </div>
 
       {/* Content */}
-      {isLoading ? (
+      {isLoading || foldersLoading ? (
         <div className={cn(
           viewMode === 'grid' 
             ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4'
@@ -311,251 +512,397 @@ export default function MediaLibraryPage() {
             <Skeleton key={i} className={viewMode === 'grid' ? 'aspect-square rounded-xl' : 'h-16 rounded-lg'} />
           ))}
         </div>
-      ) : filteredCreatives.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="p-4 rounded-full bg-secondary mb-4">
-              <FileImage className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-medium text-foreground mb-1">
-              {searchQuery || filterType !== 'all' ? 'Nenhum resultado' : 'Biblioteca vazia'}
-            </h3>
-            <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
-              {searchQuery || filterType !== 'all'
-                ? 'Tente ajustar os filtros ou a busca'
-                : 'Faça upload de imagens e vídeos para usar em suas campanhas'}
-            </p>
-            {!searchQuery && filterType === 'all' && (
-              <Button onClick={() => setUploadModalOpen(true)}>
-                <Upload className="w-4 h-4 mr-2" />
-                Fazer Upload
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          <AnimatePresence mode="popLayout">
-            {filteredCreatives.map((creative) => (
-              <motion.div
-                key={creative.id}
-                layout
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="group relative"
-              >
-                <Card className="overflow-hidden border-border/50 hover:border-primary/50 transition-colors">
-                  <div 
-                    className="relative cursor-pointer"
-                    onClick={() => setPreviewCreative(creative)}
-                  >
-                    <AspectRatio ratio={1}>
-                      <img
-                        src={creative.thumbnail_url || creative.url}
-                        alt={creative.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </AspectRatio>
-                    
-                    {/* Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    
-                    {/* Type Badge */}
-                    <Badge 
-                      variant="secondary" 
-                      className="absolute top-2 left-2 text-xs bg-black/50 border-0"
-                    >
-                      {creative.type === 'video' ? (
-                        <Video className="w-3 h-3 mr-1" />
-                      ) : (
-                        <ImageIcon className="w-3 h-3 mr-1" />
-                      )}
-                      {creative.type === 'video' ? 'Vídeo' : 'Imagem'}
-                    </Badge>
-                    
-                    {/* Duration for videos */}
-                    {creative.type === 'video' && creative.duration && (
-                      <Badge 
-                        variant="secondary" 
-                        className="absolute bottom-2 right-2 text-xs bg-black/50 border-0"
-                      >
-                        {formatDuration(creative.duration)}
-                      </Badge>
-                    )}
-
-                    {/* Play icon for videos */}
-                    {creative.type === 'video' && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="p-3 rounded-full bg-black/50 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all">
-                          <Play className="w-6 h-6 text-white fill-white" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Selection checkbox */}
-                    <div 
-                      className={cn(
-                        "absolute top-2 right-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
-                        selectedCreatives.has(creative.id)
-                          ? "bg-primary border-primary"
-                          : "bg-black/30 border-white/50 opacity-0 group-hover:opacity-100"
-                      )}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSelection(creative.id);
-                      }}
-                    >
-                      {selectedCreatives.has(creative.id) && (
-                        <CheckCircle2 className="w-4 h-4 text-primary-foreground" />
-                      )}
-                    </div>
-
-                    {/* Actions on hover */}
-                    <div className="absolute bottom-2 left-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <p className="text-xs text-white truncate font-medium">{creative.name}</p>
-                      <p className="text-[10px] text-white/70">{formatFileSize(creative.size)}</p>
-                    </div>
-                  </div>
-
-                  {/* Actions dropdown */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute bottom-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 hover:bg-black/70"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="w-4 h-4 text-white" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setPreviewCreative(creative)}>
-                        <Eye className="w-4 h-4 mr-2" />
-                        Visualizar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <a href={creative.url} download={creative.name} target="_blank" rel="noopener noreferrer">
-                          <Download className="w-4 h-4 mr-2" />
-                          Download
-                        </a>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => handleDelete(creative)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Excluir
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </Card>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
       ) : (
-        <div className="space-y-2">
-          <AnimatePresence mode="popLayout">
-            {filteredCreatives.map((creative) => (
-              <motion.div
-                key={creative.id}
-                layout
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-              >
-                <Card 
-                  className={cn(
-                    "group hover:border-primary/50 transition-colors cursor-pointer",
-                    selectedCreatives.has(creative.id) && "border-primary bg-primary/5"
-                  )}
-                  onClick={() => toggleSelection(creative.id)}
-                >
-                  <CardContent className="p-3 flex items-center gap-4">
-                    {/* Thumbnail */}
-                    <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                      <img
-                        src={creative.thumbnail_url || creative.url}
-                        alt={creative.name}
-                        className="w-full h-full object-cover"
-                      />
-                      {creative.type === 'video' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                          <Play className="w-4 h-4 text-white fill-white" />
+        <>
+          {/* Folders (only show when not searching) */}
+          {!searchQuery && subFolders.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              <AnimatePresence mode="popLayout">
+                {subFolders.map((folder) => (
+                  <motion.div
+                    key={folder.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="group"
+                  >
+                    <Card 
+                      className="overflow-hidden border-border/50 hover:border-primary/50 transition-colors cursor-pointer"
+                      onDoubleClick={() => setCurrentFolderId(folder.id)}
+                      onClick={() => setCurrentFolderId(folder.id)}
+                    >
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <FolderOpen className="w-8 h-8 flex-shrink-0" style={{ color: folder.color }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground truncate text-sm">{folder.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {getCreativeCount(folder.id)} arquivo(s)
+                          </p>
                         </div>
-                      )}
-                    </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={(e) => {
+                              e.stopPropagation();
+                              setFolderToRename(folder);
+                              setRenameFolderName(folder.name);
+                            }}>
+                              <Pencil className="w-4 h-4 mr-2" />
+                              Renomear
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              className="text-destructive focus:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFolderToDelete(folder);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Excluir pasta
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-foreground truncate">{creative.name}</p>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                        <span className="flex items-center gap-1">
+          {/* Back button when inside a folder */}
+          {currentFolderId && !searchQuery && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-muted-foreground"
+              onClick={() => {
+                const parent = currentFolder?.parent_id || null;
+                setCurrentFolderId(parent);
+              }}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Voltar
+            </Button>
+          )}
+
+          {/* Creatives */}
+          {filteredCreatives.length === 0 && subFolders.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <div className="p-4 rounded-full bg-secondary mb-4">
+                  <FileImage className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium text-foreground mb-1">
+                  {searchQuery || filterType !== 'all' ? 'Nenhum resultado' : currentFolderId ? 'Pasta vazia' : 'Biblioteca vazia'}
+                </h3>
+                <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
+                  {searchQuery || filterType !== 'all'
+                    ? 'Tente ajustar os filtros ou a busca'
+                    : currentFolderId 
+                      ? 'Faça upload de arquivos ou mova criativos para esta pasta'
+                      : 'Faça upload de imagens e vídeos para usar em suas campanhas'}
+                </p>
+                {!searchQuery && filterType === 'all' && (
+                  <Button onClick={() => setUploadModalOpen(true)}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Fazer Upload
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ) : filteredCreatives.length === 0 ? null : viewMode === 'grid' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              <AnimatePresence mode="popLayout">
+                {filteredCreatives.map((creative) => (
+                  <motion.div
+                    key={creative.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="group relative"
+                  >
+                    <Card className="overflow-hidden border-border/50 hover:border-primary/50 transition-colors">
+                      <div 
+                        className="relative cursor-pointer"
+                        onClick={() => setPreviewCreative(creative)}
+                      >
+                        <AspectRatio ratio={1}>
+                          <img
+                            src={creative.thumbnail_url || creative.url}
+                            alt={creative.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </AspectRatio>
+                        
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        
+                        <Badge 
+                          variant="secondary" 
+                          className="absolute top-2 left-2 text-xs bg-black/50 border-0"
+                        >
                           {creative.type === 'video' ? (
-                            <Video className="w-3 h-3" />
+                            <Video className="w-3 h-3 mr-1" />
                           ) : (
-                            <ImageIcon className="w-3 h-3" />
+                            <ImageIcon className="w-3 h-3 mr-1" />
                           )}
                           {creative.type === 'video' ? 'Vídeo' : 'Imagem'}
-                        </span>
-                        {creative.width && creative.height && (
-                          <span>{creative.width}x{creative.height}</span>
-                        )}
-                        <span>{formatFileSize(creative.size)}</span>
-                        {creative.duration && (
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
+                        </Badge>
+                        
+                        {creative.type === 'video' && creative.duration && (
+                          <Badge 
+                            variant="secondary" 
+                            className="absolute bottom-2 right-2 text-xs bg-black/50 border-0"
+                          >
                             {formatDuration(creative.duration)}
-                          </span>
+                          </Badge>
                         )}
+
+                        {creative.type === 'video' && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="p-3 rounded-full bg-black/50 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all">
+                              <Play className="w-6 h-6 text-white fill-white" />
+                            </div>
+                          </div>
+                        )}
+
+                        <div 
+                          className={cn(
+                            "absolute top-2 right-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
+                            selectedCreatives.has(creative.id)
+                              ? "bg-primary border-primary"
+                              : "bg-black/30 border-white/50 opacity-0 group-hover:opacity-100"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelection(creative.id);
+                          }}
+                        >
+                          {selectedCreatives.has(creative.id) && (
+                            <CheckCircle2 className="w-4 h-4 text-primary-foreground" />
+                          )}
+                        </div>
+
+                        <div className="absolute bottom-2 left-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-xs text-white truncate font-medium">{creative.name}</p>
+                          <p className="text-[10px] text-white/70">{formatFileSize(creative.size)}</p>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Date */}
-                    <div className="hidden sm:block text-sm text-muted-foreground">
-                      {formatDate(creative.created_at)}
-                    </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute bottom-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 hover:bg-black/70"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="w-4 h-4 text-white" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setPreviewCreative(creative)}>
+                            <Eye className="w-4 h-4 mr-2" />
+                            Visualizar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <a href={creative.url} download={creative.name} target="_blank" rel="noopener noreferrer">
+                              <Download className="w-4 h-4 mr-2" />
+                              Download
+                            </a>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <FolderInput className="w-4 h-4 mr-2" />
+                              Mover para
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuItem
+                                onClick={() => moveCreativesMutation.mutate({ 
+                                  ids: [creative.id], 
+                                  folderId: null 
+                                })}
+                                disabled={!creative.folder_id}
+                              >
+                                <Folder className="w-4 h-4 mr-2 text-muted-foreground" />
+                                Raiz (sem pasta)
+                              </DropdownMenuItem>
+                              {folders.length > 0 && <DropdownMenuSeparator />}
+                              {folders.map(folder => (
+                                <DropdownMenuItem
+                                  key={folder.id}
+                                  onClick={() => moveCreativesMutation.mutate({ 
+                                    ids: [creative.id], 
+                                    folderId: folder.id 
+                                  })}
+                                  disabled={creative.folder_id === folder.id}
+                                >
+                                  <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
+                                  {folder.name}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem 
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => handleDelete(creative)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Excluir
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </Card>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <AnimatePresence mode="popLayout">
+                {filteredCreatives.map((creative) => (
+                  <motion.div
+                    key={creative.id}
+                    layout
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                  >
+                    <Card 
+                      className={cn(
+                        "group hover:border-primary/50 transition-colors cursor-pointer",
+                        selectedCreatives.has(creative.id) && "border-primary bg-primary/5"
+                      )}
+                      onClick={() => toggleSelection(creative.id)}
+                    >
+                      <CardContent className="p-3 flex items-center gap-4">
+                        <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                          <img
+                            src={creative.thumbnail_url || creative.url}
+                            alt={creative.name}
+                            className="w-full h-full object-cover"
+                          />
+                          {creative.type === 'video' && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                              <Play className="w-4 h-4 text-white fill-white" />
+                            </div>
+                          )}
+                        </div>
 
-                    {/* Actions */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setPreviewCreative(creative)}>
-                          <Eye className="w-4 h-4 mr-2" />
-                          Visualizar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <a href={creative.url} download={creative.name} target="_blank" rel="noopener noreferrer">
-                            <Download className="w-4 h-4 mr-2" />
-                            Download
-                          </a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => handleDelete(creative)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Excluir
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground truncate">{creative.name}</p>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                            <span className="flex items-center gap-1">
+                              {creative.type === 'video' ? (
+                                <Video className="w-3 h-3" />
+                              ) : (
+                                <ImageIcon className="w-3 h-3" />
+                              )}
+                              {creative.type === 'video' ? 'Vídeo' : 'Imagem'}
+                            </span>
+                            {creative.width && creative.height && (
+                              <span>{creative.width}x{creative.height}</span>
+                            )}
+                            <span>{formatFileSize(creative.size)}</span>
+                            {creative.duration && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {formatDuration(creative.duration)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="hidden sm:block text-sm text-muted-foreground">
+                          {formatDate(creative.created_at)}
+                        </div>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setPreviewCreative(creative)}>
+                              <Eye className="w-4 h-4 mr-2" />
+                              Visualizar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <a href={creative.url} download={creative.name} target="_blank" rel="noopener noreferrer">
+                                <Download className="w-4 h-4 mr-2" />
+                                Download
+                              </a>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>
+                                <FolderInput className="w-4 h-4 mr-2" />
+                                Mover para
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent>
+                                <DropdownMenuItem
+                                  onClick={() => moveCreativesMutation.mutate({ 
+                                    ids: [creative.id], 
+                                    folderId: null 
+                                  })}
+                                  disabled={!creative.folder_id}
+                                >
+                                  <Folder className="w-4 h-4 mr-2 text-muted-foreground" />
+                                  Raiz (sem pasta)
+                                </DropdownMenuItem>
+                                {folders.length > 0 && <DropdownMenuSeparator />}
+                                {folders.map(folder => (
+                                  <DropdownMenuItem
+                                    key={folder.id}
+                                    onClick={() => moveCreativesMutation.mutate({ 
+                                      ids: [creative.id], 
+                                      folderId: folder.id 
+                                    })}
+                                    disabled={creative.folder_id === folder.id}
+                                  >
+                                    <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
+                                    {folder.name}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleDelete(creative)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </>
       )}
 
       {/* Upload Modal */}
@@ -567,7 +914,98 @@ export default function MediaLibraryPage() {
         }}
       />
 
-      {/* Delete Confirmation Dialog */}
+      {/* New Folder Dialog */}
+      <Dialog open={newFolderDialogOpen} onOpenChange={setNewFolderDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nova Pasta</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Nome da pasta"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newFolderName.trim()) {
+                  createFolderMutation.mutate(newFolderName.trim());
+                }
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewFolderDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => createFolderMutation.mutate(newFolderName.trim())}
+              disabled={!newFolderName.trim() || createFolderMutation.isPending}
+            >
+              {createFolderMutation.isPending ? 'Criando...' : 'Criar Pasta'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Folder Dialog */}
+      <Dialog open={!!folderToRename} onOpenChange={(open) => !open && setFolderToRename(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renomear Pasta</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              ref={folderNameInputRef}
+              placeholder="Nome da pasta"
+              value={renameFolderName}
+              onChange={(e) => setRenameFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && renameFolderName.trim() && folderToRename) {
+                  renameFolderMutation.mutate({ id: folderToRename.id, name: renameFolderName.trim() });
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFolderToRename(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (folderToRename && renameFolderName.trim()) {
+                  renameFolderMutation.mutate({ id: folderToRename.id, name: renameFolderName.trim() });
+                }
+              }}
+              disabled={!renameFolderName.trim() || renameFolderMutation.isPending}
+            >
+              {renameFolderMutation.isPending ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Folder Dialog */}
+      <AlertDialog open={!!folderToDelete} onOpenChange={(open) => !open && setFolderToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir pasta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A pasta "{folderToDelete?.name}" será excluída. Os criativos dentro dela serão movidos para a raiz.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => folderToDelete && deleteFolderMutation.mutate(folderToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteFolderMutation.isPending ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Creative Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

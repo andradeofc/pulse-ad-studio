@@ -432,11 +432,50 @@ export type Database = {
           },
         ]
       }
+      creative_folders: {
+        Row: {
+          color: string | null
+          created_at: string
+          id: string
+          name: string
+          parent_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          parent_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          parent_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creative_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "creative_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creatives: {
         Row: {
           created_at: string
           duration: number | null
           file_path: string
+          folder_id: string | null
           height: number | null
           id: string
           name: string
@@ -452,6 +491,7 @@ export type Database = {
           created_at?: string
           duration?: number | null
           file_path: string
+          folder_id?: string | null
           height?: number | null
           id?: string
           name: string
@@ -467,6 +507,7 @@ export type Database = {
           created_at?: string
           duration?: number | null
           file_path?: string
+          folder_id?: string | null
           height?: number | null
           id?: string
           name?: string
@@ -478,7 +519,15 @@ export type Database = {
           user_id?: string
           width?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "creatives_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "creative_folders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       facebook_ad_accounts: {
         Row: {
