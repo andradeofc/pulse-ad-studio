@@ -22,13 +22,13 @@ export function DailyAdsChart() {
       const now = new Date();
       const startDate = startOfDay(subDays(now, days - 1));
 
-      // Fetch all completed jobs in the last 7 days
-      const { data: jobs, error } = await supabase
-        .from('campaign_jobs')
-        .select('total_ads, completed_at')
+      // Fetch actually completed ad items in the last 7 days
+      const { data: adItems, error } = await supabase
+        .from('campaign_job_items')
+        .select('created_at')
+        .eq('item_type', 'ad')
         .eq('status', 'completed')
-        .gte('completed_at', startDate.toISOString())
-        .order('completed_at', { ascending: true });
+        .gte('created_at', startDate.toISOString());
 
       if (error) throw error;
 
@@ -40,12 +40,11 @@ export function DailyAdsChart() {
         dailyMap.set(key, 0);
       }
 
-      // Aggregate ads per day
-      for (const job of jobs || []) {
-        if (!job.completed_at) continue;
-        const key = format(new Date(job.completed_at), 'yyyy-MM-dd');
+      // Aggregate completed ads per day
+      for (const item of adItems || []) {
+        const key = format(new Date(item.created_at), 'yyyy-MM-dd');
         if (dailyMap.has(key)) {
-          dailyMap.set(key, (dailyMap.get(key) || 0) + (job.total_ads || 0));
+          dailyMap.set(key, (dailyMap.get(key) || 0) + 1);
         }
       }
 
