@@ -2835,7 +2835,10 @@ Deno.serve(async (req) => {
 
               // Idempotency: already created?
               if (ad.facebook_id || (ad.config as any)?.savedAdId) {
-                totalAdsCreated++;
+                // Only count as created if the item actually succeeded
+                if (ad.status === 'completed') {
+                  totalAdsCreated++;
+                }
                 continue;
               }
 
