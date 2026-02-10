@@ -22,30 +22,36 @@ export function DailyAdsChart() {
       const now = new Date();
       const startDate = startOfDay(subDays(now, days - 1));
 
-      // Fetch actually completed ad items in the last 7 days
-      const { data: adItems, error } = await supabase
-        .from('campaign_job_items')
-        .select('created_at')
-        .eq('item_type', 'ad')
-        .eq('status', 'completed')
-        .gte('created_at', startDate.toISOString());
-
-      if (error) throw error;
-
-      // Build daily buckets
-      const dailyMap = new Map<string, number>();
+      // Count completed ads per day using count queries (avoids 1000 row limit)
+      const dailyPromises = [];
+      const dayKeys: string[] = [];
+      
       for (let i = 0; i < days; i++) {
         const day = subDays(now, days - 1 - i);
+        const dayStart = startOfDay(day);
+        const dayEnd = endOfDay(day);
         const key = format(day, 'yyyy-MM-dd');
-        dailyMap.set(key, 0);
+        dayKeys.push(key);
+        
+        dailyPromises.push(
+          supabase
+            .from('campaign_job_items')
+            .select('*', { count: 'exact', head: true })
+            .eq('item_type', 'ad')
+            .eq('status', 'completed')
+            .gte('created_at', dayStart.toISOString())
+            .lte('created_at', dayEnd.toISOString())
+        );
       }
 
-      // Aggregate completed ads per day
-      for (const item of adItems || []) {
-        const key = format(new Date(item.created_at), 'yyyy-MM-dd');
-        if (dailyMap.has(key)) {
-          dailyMap.set(key, (dailyMap.get(key) || 0) + 1);
-        }
+      const results = await Promise.all(dailyPromises);
+
+      // Build daily buckets from count results
+      const dailyMap = new Map<string, number>();
+      for (let i = 0; i < dayKeys.length; i++) {
+        const { count, error: dayError } = results[i];
+        if (dayError) throw dayError;
+        dailyMap.set(dayKeys[i], count || 0);
       }
 
       const result: DailyData[] = [];
