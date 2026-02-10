@@ -156,7 +156,7 @@ export function PublicLayout() {
 
             <div className="border-t border-border mt-12 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
               <p className="text-sm text-muted-foreground">
-                © 2024 AdStorm. Todos os direitos reservados.
+                © {new Date().getFullYear()} AdStorm. Todos os direitos reservados.
               </p>
               <div className="flex items-center gap-4">
                 <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
