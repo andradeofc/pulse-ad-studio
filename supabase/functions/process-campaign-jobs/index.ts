@@ -1874,6 +1874,8 @@ async function buildDLOCreative(
 
   console.log(`[DLO] Creating shared creative with ${allLangs.length} languages, optimization_type=LANGUAGE`);
   console.log(`[DLO] asset_feed_spec rules: ${customizationRules.length}, formats: ${assetFeedSpec.ad_formats}, images: ${mediaAssets.length}`);
+  console.log(`[DLO] object_story_spec:`, JSON.stringify(objectStorySpec));
+  console.log(`[DLO] asset_feed_spec full:`, JSON.stringify(assetFeedSpec).substring(0, 1500));
 
   const result = await fetchWithRetry(
     `${GRAPH_BASE_URL}/${actId}/adcreatives`,
@@ -2845,12 +2847,21 @@ Deno.serve(async (req) => {
                 continue;
               }
 
-              const body = new URLSearchParams({
+              const adParams: Record<string, string> = {
                 name: ad.name,
                 adset_id: parentFbId,
                 creative: JSON.stringify({ creative_id: dloCreativeId }),
                 status: 'ACTIVE',
-              }).toString();
+              };
+
+              // Add contextual_multi_ads (multi-advertiser opt-out) if configured
+              if (config.multiAdvertiser === false) {
+                adParams.contextual_multi_ads = JSON.stringify({ enroll_status: 'OPT_OUT' });
+              }
+
+              console.log(`[DLO] Ad payload for ${ad.name}:`, JSON.stringify(adParams));
+
+              const body = new URLSearchParams(adParams).toString();
 
               adBatchItems.push({
                 item: ad,
