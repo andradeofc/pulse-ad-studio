@@ -635,11 +635,12 @@ function buildAdsetParams(
     params.promoted_object = JSON.stringify(promotedObject);
   }
 
-  // DLO with asset_feed_spec (Multi-Language Ads) requires is_dynamic_creative = true
-  // The adset must signal that its ads use asset_feed_spec creatives
-  if (config.languageConfig?.enabled && !config.useCatalog) {
-    params.is_dynamic_creative = 'true';
-  }
+  // DLO (Dynamic Language Optimization) uses asset_customization_rules inside
+  // the creative's asset_feed_spec. This is INCOMPATIBLE with is_dynamic_creative=true
+  // on the adset. Facebook considers DLO and Dynamic Creative as separate, mutually
+  // exclusive features. The adset must remain a normal (non-dynamic-creative) adset.
+  // Reference: Meta docs state "you can't pair dynamic creative ads with
+  // dynamic language optimization or asset customization"
 
   return params;
 }
