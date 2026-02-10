@@ -2854,10 +2854,7 @@ Deno.serve(async (req) => {
                 status: 'ACTIVE',
               };
 
-              // Add contextual_multi_ads (multi-advertiser opt-out) if configured
-              if (config.multiAdvertiser === false) {
-                adParams.contextual_multi_ads = JSON.stringify({ enroll_status: 'OPT_OUT' });
-              }
+              // NOTE: contextual_multi_ads is NOT supported for DLO ads (causes error 2446485)
 
               console.log(`[DLO] Ad payload for ${ad.name}:`, JSON.stringify(adParams));
 
