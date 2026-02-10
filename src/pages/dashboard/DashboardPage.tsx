@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowUpRight,
-  BarChart3,
   Loader2,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { AdUsageCard } from '@/components/dashboard/AdUsageCard';
+import { DailyAdsChart } from '@/components/dashboard/DailyAdsChart';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -124,22 +124,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart Placeholder */}
-        <Card className="lg:col-span-2 glass-card">
-          <CardHeader>
-            <CardTitle className="text-foreground">Performance</CardTitle>
-            <CardDescription>Métricas de campanhas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64 flex items-center justify-center text-muted-foreground">
-              <div className="text-center">
-                <BarChart3 className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                <p>Gráfico de performance</p>
-                <p className="text-sm">Em breve: métricas de campanhas do Facebook</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Daily Ads Chart */}
+        <DailyAdsChart />
 
         {/* Alerts */}
         <Card className="glass-card">

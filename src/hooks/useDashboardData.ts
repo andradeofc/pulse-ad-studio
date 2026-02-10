@@ -49,25 +49,35 @@ export function useDashboardData() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      // Get all jobs to calculate metrics
-      const { data: jobs, error } = await supabase
+      // Total campaigns count
+      const { count: totalCampaignsCount, error: campError } = await supabase
         .from('campaign_jobs')
-        .select('id, status, completed_at, total_campaigns');
+        .select('*', { count: 'exact', head: true });
 
-      if (error) throw error;
+      if (campError) throw campError;
 
-      const totalCampaigns = jobs?.reduce((sum, job) => sum + (job.total_campaigns || 0), 0) || 0;
-      const processingQueue = jobs?.filter(j => j.status === 'queued' || j.status === 'processing').length || 0;
-      const completedToday = jobs?.filter(j => {
-        if (!j.completed_at) return false;
-        const completedDate = new Date(j.completed_at);
-        return completedDate >= today;
-      }).length || 0;
+      // Processing queue count
+      const { count: processingCount, error: procError } = await supabase
+        .from('campaign_jobs')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['queued', 'processing']);
+
+      if (procError) throw procError;
+
+      // Completed today - use UTC start of day to match DB timestamps
+      const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+      const { count: completedTodayCount, error: compError } = await supabase
+        .from('campaign_jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed')
+        .gte('completed_at', todayUTC.toISOString());
+
+      if (compError) throw compError;
 
       return {
-        totalCampaigns,
-        processingQueue,
-        completedToday,
+        totalCampaigns: totalCampaignsCount || 0,
+        processingQueue: processingCount || 0,
+        completedToday: completedTodayCount || 0,
       };
     },
   });
