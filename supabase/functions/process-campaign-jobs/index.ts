@@ -654,7 +654,6 @@ function buildAdsetParams(
         'instant_article',
         'instream_video',
         'marketplace',
-        'video_feeds',
         'story',
         'right_hand_column',
       ],
