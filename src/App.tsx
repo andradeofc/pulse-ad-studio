@@ -27,6 +27,7 @@ import ProcessingQueuePage from "@/pages/dashboard/ProcessingQueuePage";
 import MediaLibraryPage from "@/pages/dashboard/MediaLibraryPage";
 import CatalogSchedulingPage from "@/pages/dashboard/CatalogSchedulingPage";
 import SettingsPage from "@/pages/dashboard/SettingsPage";
+import HelpPage from "@/pages/dashboard/HelpPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
 import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
 
@@ -88,7 +89,7 @@ const App = () => {
             <Route path="/relatorios" element={<PlaceholderPage title="Relatórios" description="Relatórios personalizados" />} />
             <Route path="/planos" element={<PlaceholderPage title="Planos" description="Gerencie sua assinatura" />} />
             <Route path="/configuracoes" element={<SettingsPage />} />
-            <Route path="/ajuda" element={<PlaceholderPage title="Obter Ajuda" description="Central de ajuda e suporte" />} />
+            <Route path="/ajuda" element={<HelpPage />} />
           </Route>
 
           {/* Admin Routes - Obscure path for security */}
