@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Users,
@@ -75,6 +76,8 @@ import { ptBR } from 'date-fns/locale';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/currencyUtils';
+import { useImpersonationStore } from '@/stores/impersonationStore';
+import { useAuthStore } from '@/stores/authStore';
 
 interface UserProfile {
   id: string;
@@ -142,7 +145,9 @@ function getInitials(name: string | null): string {
 export default function AdminUsersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
+  const navigate = useNavigate();
+  const startImpersonation = useImpersonationStore((s) => s.startImpersonation);
+  const initialize = useAuthStore((s) => s.initialize);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [planFilter, setPlanFilter] = useState<string>('all');
@@ -342,6 +347,50 @@ export default function AdminUsersPage() {
   const handleStatusChange = (userId: string, newStatus: string) => {
     updateUserMutation.mutate({ id: userId, status: newStatus as any });
   };
+
+  // Impersonate user
+  const impersonateMutation = useMutation({
+    mutationFn: async (user: UserProfile) => {
+      // Save current admin session
+      const { data: { session: adminSession } } = await supabase.auth.getSession();
+      if (!adminSession) throw new Error('No admin session');
+
+      // Call edge function to get impersonation token
+      const res = await supabase.functions.invoke('admin-impersonate', {
+        body: { target_user_id: user.user_id },
+      });
+      if (res.error) throw new Error(res.error.message);
+      if (res.data?.error) throw new Error(res.data.error);
+
+      const { token_hash, target_user } = res.data;
+
+      // Store admin tokens before switching
+      startImpersonation(
+        target_user,
+        adminSession.access_token,
+        adminSession.refresh_token
+      );
+
+      // Exchange token for session
+      const { error: otpError } = await supabase.auth.verifyOtp({
+        token_hash,
+        type: 'magiclink',
+      });
+      if (otpError) throw otpError;
+
+      // Re-initialize auth store with new session
+      await initialize();
+
+      return target_user;
+    },
+    onSuccess: (targetUser) => {
+      toast({ title: `Logado como ${targetUser.name}`, description: 'Você está no modo de impersonação. A sessão expira em 30 minutos.' });
+      navigate('/dashboard', { replace: true });
+    },
+    onError: (error) => {
+      toast({ title: 'Erro ao impersonar', description: String(error), variant: 'destructive' });
+    },
+  });
 
   const handleExportCSV = useCallback(() => {
     if (!usersData?.users.length) return;
@@ -609,6 +658,14 @@ export default function AdminUsersPage() {
                                 Reativar Conta
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => impersonateMutation.mutate(user)}
+                              disabled={impersonateMutation.isPending}
+                            >
+                              <LogIn className="w-4 h-4 mr-2" />
+                              Login como Usuário
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => { setTargetUser(user); setShowDeleteDialog(true); }}
