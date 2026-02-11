@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Users,
@@ -8,6 +8,7 @@ import {
   Download,
   Plus,
   MoreHorizontal,
+  Eye,
   Edit,
   Key,
   RefreshCw,
@@ -198,18 +199,36 @@ export default function AdminUsersPage() {
     return map;
   }, [allStats]);
 
+  // Email search via edge function
+  const { data: emailSearchIds } = useQuery({
+    queryKey: ['admin-email-search', debouncedSearch],
+    queryFn: async () => {
+      const res = await supabase.functions.invoke('admin-search-users', {
+        body: { query: debouncedSearch },
+      });
+      if (res.error) throw res.error;
+      return (res.data as { user_ids: string[] }).user_ids;
+    },
+    enabled: !!debouncedSearch && debouncedSearch.includes('@'),
+  });
+
   // Fetch users
   const { data: usersData, isLoading } = useQuery({
-    queryKey: ['admin-users', debouncedSearch, planFilter, statusFilter, sortBy, currentPage],
+    queryKey: ['admin-users', debouncedSearch, planFilter, statusFilter, sortBy, currentPage, emailSearchIds],
     queryFn: async () => {
       let query = supabase.from('user_profiles').select('*', { count: 'exact' });
 
       if (planFilter !== 'all') query = query.eq('plan', planFilter);
       if (statusFilter !== 'all') query = query.eq('status', statusFilter as any);
       if (debouncedSearch) {
-        // Search by name or user_id prefix
         const isUuid = /^[0-9a-f-]{4,}$/i.test(debouncedSearch);
-        if (isUuid) {
+        const isEmail = debouncedSearch.includes('@');
+        if (isEmail && emailSearchIds && emailSearchIds.length > 0) {
+          query = query.in('user_id', emailSearchIds);
+        } else if (isEmail && emailSearchIds && emailSearchIds.length === 0) {
+          // No results from email search
+          return { users: [] as UserProfile[], total: 0, totalPages: 0 };
+        } else if (isUuid) {
           query = query.or(`user_id.eq.${debouncedSearch},full_name.ilike.%${debouncedSearch}%`);
         } else {
           query = query.ilike('full_name', `%${debouncedSearch}%`);
@@ -478,7 +497,7 @@ export default function AdminUsersPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar por nome ou ID..."
+                    placeholder="Buscar por nome, email ou ID..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
@@ -622,6 +641,12 @@ export default function AdminUsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link to={`/ops-center/usuarios/${user.user_id}`}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                Ver Detalhes
+                              </Link>
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => { setEditingUser(user); setShowEditModal(true); }}>
                               <Edit className="w-4 h-4 mr-2" />
                               Editar Dados

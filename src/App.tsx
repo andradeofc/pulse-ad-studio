@@ -44,6 +44,7 @@ import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
 // Admin Pages
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
+import AdminUserDetailsPage from "@/pages/admin/AdminUserDetailsPage";
 import AdminCampaignsPage from "@/pages/admin/AdminCampaignsPage";
 import AdminSearchPage from "@/pages/admin/AdminSearchPage";
 import AdminAuditLogsPage from "@/pages/admin/AdminAuditLogsPage";
@@ -113,6 +114,7 @@ const App = () => {
           {/* Admin Routes - Obscure path for security */}
           <Route path="/ops-center" element={<AdminDashboardPage />} />
           <Route path="/ops-center/usuarios" element={<AdminUsersPage />} />
+          <Route path="/ops-center/usuarios/:userId" element={<AdminUserDetailsPage />} />
           <Route path="/ops-center/campanhas" element={<AdminCampaignsPage />} />
           <Route path="/ops-center/busca" element={<AdminSearchPage />} />
           <Route path="/ops-center/auditoria" element={<AdminAuditLogsPage />} />
