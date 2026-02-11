@@ -1,6 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Users,
@@ -8,7 +7,6 @@ import {
   Download,
   Plus,
   MoreHorizontal,
-  Eye,
   Edit,
   Key,
   RefreshCw,
@@ -18,9 +16,12 @@ import {
   LogIn,
   ChevronLeft,
   ChevronRight,
-  Filter,
+  UserPlus,
+  TrendingUp,
+  AlertTriangle,
+  Calendar,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -54,8 +55,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -83,7 +96,25 @@ interface UserProfile {
   total_spend?: number;
 }
 
-const statusConfig = {
+interface UserStats {
+  user_id: string;
+  fb_accounts_count: number;
+  ad_accounts_count: number;
+  campaigns_count: number;
+  total_spend: number;
+}
+
+interface SummaryMetrics {
+  total_users: number;
+  active_users: number;
+  suspended_users: number;
+  new_this_month: number;
+  starter_count: number;
+  pro_count: number;
+  enterprise_count: number;
+}
+
+const statusConfig: Record<string, { label: string; color: string }> = {
   active: { label: 'Ativo', color: 'bg-green-500/10 text-green-500 border-green-500/30' },
   inactive: { label: 'Inativo', color: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30' },
   suspended: { label: 'Suspenso', color: 'bg-orange-500/10 text-orange-500 border-orange-500/30' },
@@ -98,11 +129,22 @@ const planConfig: Record<string, { label: string; color: string }> = {
 
 const ITEMS_PER_PAGE = 25;
 
+function getInitials(name: string | null): string {
+  if (!name) return '?';
+  return name
+    .split(' ')
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase();
+}
+
 export default function AdminUsersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [planFilter, setPlanFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState('newest');
@@ -110,28 +152,65 @@ export default function AdminUsersPage() {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [targetUser, setTargetUser] = useState<UserProfile | null>(null);
+  const [newPassword, setNewPassword] = useState('');
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', plan: 'starter' });
 
-  // Fetch users with stats
-  const { data: usersData, isLoading } = useQuery({
-    queryKey: ['admin-users', searchQuery, planFilter, statusFilter, sortBy, currentPage],
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Summary metrics
+  const { data: summary } = useQuery({
+    queryKey: ['admin-users-summary'],
     queryFn: async () => {
-      let query = supabase
-        .from('user_profiles')
-        .select('*', { count: 'exact' });
+      const { data, error } = await supabase.rpc('get_admin_users_summary');
+      if (error) throw error;
+      return data as unknown as SummaryMetrics;
+    },
+  });
 
-      // Apply filters
-      if (planFilter !== 'all') {
-        query = query.eq('plan', planFilter);
-      }
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter as any);
-      }
-      if (searchQuery) {
-        query = query.or(`full_name.ilike.%${searchQuery}%,user_id.eq.${searchQuery}`);
+  // Bulk stats
+  const { data: allStats } = useQuery({
+    queryKey: ['admin-users-stats'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_admin_all_user_stats');
+      if (error) throw error;
+      return (data as unknown as UserStats[]) || [];
+    },
+  });
+
+  const statsMap = useMemo(() => {
+    const map = new Map<string, UserStats>();
+    allStats?.forEach((s) => map.set(s.user_id, s));
+    return map;
+  }, [allStats]);
+
+  // Fetch users
+  const { data: usersData, isLoading } = useQuery({
+    queryKey: ['admin-users', debouncedSearch, planFilter, statusFilter, sortBy, currentPage],
+    queryFn: async () => {
+      let query = supabase.from('user_profiles').select('*', { count: 'exact' });
+
+      if (planFilter !== 'all') query = query.eq('plan', planFilter);
+      if (statusFilter !== 'all') query = query.eq('status', statusFilter as any);
+      if (debouncedSearch) {
+        // Search by name or user_id prefix
+        const isUuid = /^[0-9a-f-]{4,}$/i.test(debouncedSearch);
+        if (isUuid) {
+          query = query.or(`user_id.eq.${debouncedSearch},full_name.ilike.%${debouncedSearch}%`);
+        } else {
+          query = query.ilike('full_name', `%${debouncedSearch}%`);
+        }
       }
 
-      // Sorting
       switch (sortBy) {
         case 'newest':
           query = query.order('created_at', { ascending: false });
@@ -144,34 +223,22 @@ export default function AdminUsersPage() {
           break;
       }
 
-      // Pagination
       const from = (currentPage - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
-      query = query.range(from, to);
+      query = query.range(from, from + ITEMS_PER_PAGE - 1);
 
       const { data, error, count } = await query;
-
       if (error) throw error;
 
-      // Enrich with additional stats
-      const enrichedUsers = await Promise.all(
-        (data || []).map(async (user) => {
-          const [fbAccounts, adAccounts, campaigns, spendData] = await Promise.all([
-            supabase.from('facebook_profiles').select('*', { count: 'exact', head: true }).eq('user_id', user.user_id),
-            supabase.from('facebook_ad_accounts').select('*', { count: 'exact', head: true }),
-            supabase.from('campaign_jobs').select('*', { count: 'exact', head: true }).eq('user_id', user.user_id),
-            supabase.from('facebook_ad_accounts').select('amount_spent'),
-          ]);
-
-          return {
-            ...user,
-            fb_accounts_count: fbAccounts.count || 0,
-            ad_accounts_count: adAccounts.count || 0,
-            campaigns_count: campaigns.count || 0,
-            total_spend: spendData.data?.reduce((sum, acc) => sum + (acc.amount_spent || 0), 0) || 0,
-          };
-        })
-      );
+      const enrichedUsers = (data || []).map((user) => {
+        const stats = statsMap.get(user.user_id);
+        return {
+          ...user,
+          fb_accounts_count: stats?.fb_accounts_count || 0,
+          ad_accounts_count: stats?.ad_accounts_count || 0,
+          campaigns_count: stats?.campaigns_count || 0,
+          total_spend: stats?.total_spend || 0,
+        };
+      });
 
       return {
         users: enrichedUsers as UserProfile[],
@@ -179,6 +246,7 @@ export default function AdminUsersPage() {
         totalPages: Math.ceil((count || 0) / ITEMS_PER_PAGE),
       };
     },
+    enabled: !!allStats,
   });
 
   // Update user mutation
@@ -189,77 +257,36 @@ export default function AdminUsersPage() {
         .from('user_profiles')
         .update(data as any)
         .eq('id', id);
-
       if (error) throw error;
-
-      // Log admin action
-      await supabase.from('admin_audit_logs').insert({
-        admin_user_id: (await supabase.auth.getUser()).data.user?.id,
-        action: 'update_user',
-        target_type: 'user',
-        target_id: id,
-        details: { updates: data },
-        ip_address: 'unknown', // Would need to get from server
-      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-users-summary'] });
       toast({ title: 'Usuário atualizado com sucesso' });
       setShowEditModal(false);
       setEditingUser(null);
     },
     onError: (error) => {
-      toast({ title: 'Erro ao atualizar usuário', description: String(error), variant: 'destructive' });
+      toast({ title: 'Erro ao atualizar', description: String(error), variant: 'destructive' });
     },
   });
 
-  const handleStatusChange = async (userId: string, newStatus: string) => {
-    await updateUserMutation.mutateAsync({ id: userId, status: newStatus as any });
-  };
-
-  const handleEdit = (user: UserProfile) => {
-    setEditingUser(user);
-    setShowEditModal(true);
-  };
-
-  // Create user mutation
+  // Create user via edge function
   const createUserMutation = useMutation({
     mutationFn: async (userData: { name: string; email: string; password: string; plan: string }) => {
-      // Create auth user via admin API (this would need an edge function for full implementation)
-      // For now, we'll use signUp which requires email confirmation
-      const { data, error } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          data: { name: userData.name },
-        },
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke('admin-create-user', {
+        body: userData,
       });
-
-      if (error) throw error;
-
-      if (data.user) {
-        // Update the auto-created profile with the selected plan
-        await supabase
-          .from('user_profiles')
-          .update({ plan: userData.plan, full_name: userData.name })
-          .eq('user_id', data.user.id);
-
-        // Log admin action
-        await supabase.from('admin_audit_logs').insert({
-          admin_user_id: (await supabase.auth.getUser()).data.user?.id,
-          action: 'create_user',
-          target_type: 'user',
-          target_id: data.user.id,
-          details: { email: userData.email, name: userData.name, plan: userData.plan },
-          ip_address: 'unknown',
-        });
-      }
-
-      return data;
+      if (res.error) throw new Error(res.error.message || 'Failed to create user');
+      if (res.data?.error) throw new Error(res.data.error);
+      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast({ title: 'Usuário criado com sucesso', description: 'Um email de confirmação foi enviado.' });
+      queryClient.invalidateQueries({ queryKey: ['admin-users-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-users-stats'] });
+      toast({ title: 'Usuário criado com sucesso' });
       setShowCreateModal(false);
       setNewUser({ name: '', email: '', password: '', plan: 'starter' });
     },
@@ -267,6 +294,87 @@ export default function AdminUsersPage() {
       toast({ title: 'Erro ao criar usuário', description: String(error), variant: 'destructive' });
     },
   });
+
+  // Reset password via edge function
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      const res = await supabase.functions.invoke('admin-manage-user', {
+        body: { action: 'reset_password', target_user_id: userId, new_password: password },
+      });
+      if (res.error) throw new Error(res.error.message);
+      if (res.data?.error) throw new Error(res.data.error);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast({ title: 'Senha alterada com sucesso' });
+      setShowResetPasswordModal(false);
+      setNewPassword('');
+      setTargetUser(null);
+    },
+    onError: (error) => {
+      toast({ title: 'Erro ao alterar senha', description: String(error), variant: 'destructive' });
+    },
+  });
+
+  // Delete user via edge function
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await supabase.functions.invoke('admin-manage-user', {
+        body: { action: 'delete_user', target_user_id: userId },
+      });
+      if (res.error) throw new Error(res.error.message);
+      if (res.data?.error) throw new Error(res.data.error);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-users-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-users-stats'] });
+      toast({ title: 'Usuário deletado com sucesso' });
+      setShowDeleteDialog(false);
+      setTargetUser(null);
+    },
+    onError: (error) => {
+      toast({ title: 'Erro ao deletar', description: String(error), variant: 'destructive' });
+    },
+  });
+
+  const handleStatusChange = (userId: string, newStatus: string) => {
+    updateUserMutation.mutate({ id: userId, status: newStatus as any });
+  };
+
+  const handleExportCSV = useCallback(() => {
+    if (!usersData?.users.length) return;
+    const headers = ['Nome', 'User ID', 'Plano', 'Status', 'FB Accounts', 'Ad Accounts', 'Campanhas', 'Gasto Total', 'Último Login', 'Cadastro'];
+    const rows = usersData.users.map((u) => [
+      u.full_name || 'Sem nome',
+      u.user_id,
+      u.plan,
+      u.status,
+      u.fb_accounts_count || 0,
+      u.ad_accounts_count || 0,
+      u.campaigns_count || 0,
+      u.total_spend || 0,
+      u.last_login_at ? format(new Date(u.last_login_at), 'dd/MM/yyyy HH:mm') : 'Nunca',
+      format(new Date(u.created_at), 'dd/MM/yyyy'),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `usuarios_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'CSV exportado com sucesso' });
+  }, [usersData, toast]);
+
+  const summaryCards = [
+    { label: 'Total de Usuários', value: summary?.total_users ?? '—', icon: Users, color: 'text-foreground' },
+    { label: 'Ativos', value: summary?.active_users ?? '—', icon: TrendingUp, color: 'text-green-500' },
+    { label: 'Suspensos / Banidos', value: summary?.suspended_users ?? '—', icon: AlertTriangle, color: 'text-orange-500' },
+    { label: 'Novos este Mês', value: summary?.new_this_month ?? '—', icon: Calendar, color: 'text-blue-500' },
+  ];
 
   return (
     <AdminLayout>
@@ -276,14 +384,14 @@ export default function AdminUsersPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
               <Users className="w-6 h-6" />
-              Usuários
+              Gestão de Usuários
             </h1>
-            <p className="text-muted-foreground">
-              {usersData?.total || 0} usuários registrados
+            <p className="text-muted-foreground text-sm">
+              Gerencie contas, planos e permissões
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!usersData?.users.length}>
               <Download className="w-4 h-4 mr-2" />
               Exportar CSV
             </Button>
@@ -294,6 +402,25 @@ export default function AdminUsersPage() {
           </div>
         </div>
 
+        {/* Metrics Cards */}
+        <div className="grid grid-cols-4 gap-4">
+          {summaryCards.map((card) => (
+            <Card key={card.label} className="glass-card">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className={`p-2 rounded-lg bg-secondary ${card.color}`}>
+                  <card.icon className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">
+                    {summary ? card.value : <Skeleton className="h-7 w-10 inline-block" />}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{card.label}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
         {/* Filters */}
         <Card className="glass-card">
           <CardContent className="p-4">
@@ -302,14 +429,14 @@ export default function AdminUsersPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar por nome, email ou ID..."
+                    placeholder="Buscar por nome ou ID..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
                   />
                 </div>
               </div>
-              <Select value={planFilter} onValueChange={setPlanFilter}>
+              <Select value={planFilter} onValueChange={(v) => { setPlanFilter(v); setCurrentPage(1); }}>
                 <SelectTrigger className="w-[140px]">
                   <SelectValue placeholder="Plano" />
                 </SelectTrigger>
@@ -320,7 +447,7 @@ export default function AdminUsersPage() {
                   <SelectItem value="enterprise">Enterprise</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
                 <SelectTrigger className="w-[140px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -365,12 +492,29 @@ export default function AdminUsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
-                      Carregando...
-                    </TableCell>
-                  </TableRow>
+                {isLoading || !allStats ? (
+                  Array.from({ length: 8 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="h-8 w-8 rounded-full" />
+                          <div className="space-y-1.5">
+                            <Skeleton className="h-4 w-28" />
+                            <Skeleton className="h-3 w-16" />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-14" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-6 mx-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-6 mx-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-6 mx-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-6" /></TableCell>
+                    </TableRow>
+                  ))
                 ) : usersData?.users.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
@@ -381,13 +525,20 @@ export default function AdminUsersPage() {
                   usersData?.users.map((user) => (
                     <TableRow key={user.id} className="hover:bg-secondary/30">
                       <TableCell>
-                        <div>
-                          <p className="font-medium text-foreground">
-                            {user.full_name || 'Sem nome'}
-                          </p>
-                          <p className="text-xs text-muted-foreground font-mono">
-                            {user.user_id.slice(0, 8)}...
-                          </p>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="text-xs bg-secondary text-foreground">
+                              {getInitials(user.full_name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium text-foreground text-sm">
+                              {user.full_name || 'Sem nome'}
+                            </p>
+                            <p className="text-xs text-muted-foreground font-mono">
+                              {user.user_id.slice(0, 8)}...
+                            </p>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -400,10 +551,10 @@ export default function AdminUsersPage() {
                           {statusConfig[user.status]?.label || user.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-center">{user.fb_accounts_count}</TableCell>
-                      <TableCell className="text-center">{user.ad_accounts_count}</TableCell>
-                      <TableCell className="text-center">{user.campaigns_count}</TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-center text-sm">{user.fb_accounts_count}</TableCell>
+                      <TableCell className="text-center text-sm">{user.ad_accounts_count}</TableCell>
+                      <TableCell className="text-center text-sm">{user.campaigns_count}</TableCell>
+                      <TableCell className="text-right text-sm font-medium">
                         {formatCurrency(user.total_spend || 0, 'BRL')}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -422,27 +573,17 @@ export default function AdminUsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link to={`/ops-center/usuarios/${user.id}`}>
-                                <Eye className="w-4 h-4 mr-2" />
-                                Ver Detalhes
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEdit(user)}>
+                            <DropdownMenuItem onClick={() => { setEditingUser(user); setShowEditModal(true); }}>
                               <Edit className="w-4 h-4 mr-2" />
                               Editar Dados
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setTargetUser(user); setNewPassword(''); setShowResetPasswordModal(true); }}>
                               <Key className="w-4 h-4 mr-2" />
                               Alterar Senha
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                              Resetar Senha
-                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {user.status !== 'suspended' && (
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => handleStatusChange(user.id, 'suspended')}
                                 className="text-orange-500"
                               >
@@ -451,7 +592,7 @@ export default function AdminUsersPage() {
                               </DropdownMenuItem>
                             )}
                             {user.status !== 'banned' && (
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => handleStatusChange(user.id, 'banned')}
                                 className="text-red-500"
                               >
@@ -460,7 +601,7 @@ export default function AdminUsersPage() {
                               </DropdownMenuItem>
                             )}
                             {(user.status === 'suspended' || user.status === 'banned') && (
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => handleStatusChange(user.id, 'active')}
                                 className="text-green-500"
                               >
@@ -469,12 +610,10 @@ export default function AdminUsersPage() {
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem>
-                              <LogIn className="w-4 h-4 mr-2" />
-                              Login como Usuário
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-red-500">
+                            <DropdownMenuItem
+                              onClick={() => { setTargetUser(user); setShowDeleteDialog(true); }}
+                              className="text-red-500"
+                            >
                               <Trash2 className="w-4 h-4 mr-2" />
                               Deletar Conta
                             </DropdownMenuItem>
@@ -491,13 +630,13 @@ export default function AdminUsersPage() {
             {usersData && usersData.totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-border">
                 <p className="text-sm text-muted-foreground">
-                  Página {currentPage} de {usersData.totalPages}
+                  Página {currentPage} de {usersData.totalPages} · {usersData.total} usuários
                 </p>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -505,7 +644,7 @@ export default function AdminUsersPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage(p => Math.min(usersData.totalPages, p + 1))}
+                    onClick={() => setCurrentPage((p) => Math.min(usersData.totalPages, p + 1))}
                     disabled={currentPage === usersData.totalPages}
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -521,9 +660,7 @@ export default function AdminUsersPage() {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Criar Novo Usuário</DialogTitle>
-              <DialogDescription>
-                Preencha os dados para criar uma nova conta
-              </DialogDescription>
+              <DialogDescription>O usuário será criado com email já confirmado.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -554,10 +691,7 @@ export default function AdminUsersPage() {
               </div>
               <div>
                 <Label>Plano</Label>
-                <Select
-                  value={newUser.plan}
-                  onValueChange={(v) => setNewUser({ ...newUser, plan: v })}
-                >
+                <Select value={newUser.plan} onValueChange={(v) => setNewUser({ ...newUser, plan: v })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -669,6 +803,65 @@ export default function AdminUsersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Reset Password Modal */}
+        <Dialog open={showResetPasswordModal} onOpenChange={setShowResetPasswordModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Alterar Senha</DialogTitle>
+              <DialogDescription>
+                Definir nova senha para {targetUser?.full_name || 'usuário'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Nova Senha</Label>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowResetPasswordModal(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => targetUser && resetPasswordMutation.mutate({ userId: targetUser.user_id, password: newPassword })}
+                disabled={resetPasswordMutation.isPending || newPassword.length < 6}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {resetPasswordMutation.isPending ? 'Salvando...' : 'Alterar Senha'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete User Dialog */}
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Deletar conta permanentemente?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação é irreversível. Todos os dados de{' '}
+                <strong>{targetUser?.full_name || 'este usuário'}</strong> serão removidos permanentemente,
+                incluindo perfis do Facebook, campanhas e criativos.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => targetUser && deleteUserMutation.mutate(targetUser.user_id)}
+                className="bg-red-600 hover:bg-red-700"
+                disabled={deleteUserMutation.isPending}
+              >
+                {deleteUserMutation.isPending ? 'Deletando...' : 'Sim, Deletar'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AdminLayout>
   );
