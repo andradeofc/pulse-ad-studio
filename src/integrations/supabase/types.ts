@@ -1180,6 +1180,18 @@ export type Database = {
           remaining: number
         }[]
       }
+      get_admin_all_user_stats: {
+        Args: never
+        Returns: {
+          ad_accounts_count: number
+          campaigns_count: number
+          fb_accounts_count: number
+          total_spend: number
+          user_id: string
+        }[]
+      }
+      get_admin_user_stats: { Args: { target_user_id: string }; Returns: Json }
+      get_admin_users_summary: { Args: never; Returns: Json }
       get_current_ad_usage: {
         Args: { check_user_id: string }
         Returns: {
