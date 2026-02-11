@@ -1,6 +1,7 @@
 import { ReactNode, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { ImpersonationBanner } from '@/components/layout/ImpersonationBanner';
 import {
   LayoutDashboard,
   Users,
@@ -151,6 +152,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
+        <ImpersonationBanner />
         {/* Admin Warning Banner */}
         <div className="bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-2 text-sm flex items-center justify-center gap-2">
           <Shield className="w-4 h-4" />
