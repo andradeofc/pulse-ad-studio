@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
         target_type: 'user',
         target_id: newUser.user?.id,
         details: { email, name, plan },
-        ip_address: req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown',
+        ip_address: req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('cf-connecting-ip') || 'unknown',
       })
     }
 

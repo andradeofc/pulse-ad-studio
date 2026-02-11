@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
       .maybeSingle()
 
     // Audit log
-    const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown'
+    const ipAddress = req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('cf-connecting-ip') || 'unknown'
     await adminClient.from('admin_audit_logs').insert({
       admin_user_id: adminUser.id,
       action: 'impersonate_user',
