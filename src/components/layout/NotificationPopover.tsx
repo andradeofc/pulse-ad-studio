@@ -133,6 +133,34 @@ export function NotificationPopover() {
         }
       }
 
+      // Check for recent catalog media alerts (video missing)
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+      const { data: mediaAlerts } = await supabase
+        .from('catalog_media_alerts')
+        .select('id, retailer_id, product_name, product_set_name, catalog_name, status, created_at')
+        .gte('created_at', threeDaysAgo.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (mediaAlerts) {
+        for (const alert of mediaAlerts) {
+          const isRepaired = alert.status === 'repaired';
+          alertsList.push({
+            id: `media-${alert.id}`,
+            type: isRepaired ? 'success' : 'warning',
+            message: isRepaired
+              ? `Vídeo reparado: "${alert.product_name || alert.retailer_id}" (${alert.product_set_name})`
+              : `Vídeo ausente: "${alert.product_name || alert.retailer_id}" (${alert.product_set_name})`,
+            action: 'Ver monitor',
+            href: '/monitor-catalogo',
+            createdAt: new Date(alert.created_at),
+            source: 'system',
+          });
+        }
+      }
+
       return alertsList;
     },
     refetchInterval: 60000, // Refetch every 60 seconds
