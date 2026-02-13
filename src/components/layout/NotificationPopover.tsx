@@ -1,4 +1,4 @@
-import { Bell, AlertTriangle, CheckCircle2, Info, Megaphone } from 'lucide-react';
+import { Bell, AlertTriangle, CheckCircle2, Info, Megaphone, CheckCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { differenceInDays, parseISO, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 
 interface SystemNotification {
@@ -40,6 +40,14 @@ type Notification = SystemNotification | AdminNotification;
 
 export function NotificationPopover() {
   const [open, setOpen] = useState(false);
+  const [dismissedSystemIds, setDismissedSystemIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('dismissed-system-notifications');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
 
@@ -226,6 +234,34 @@ export function NotificationPopover() {
     },
   });
 
+  // Mark all notifications as read
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) return;
+
+      // Mark admin notifications as read in DB
+      const unreadAdmin = adminNotifications.filter((n) => !n.read);
+      if (unreadAdmin.length > 0) {
+        const rows = unreadAdmin.map((n) => ({
+          user_id: user.id,
+          notification_id: n.id,
+        }));
+        await supabase.from('user_notification_reads').upsert(rows, {
+          onConflict: 'user_id,notification_id',
+        });
+      }
+
+      // Dismiss system notifications via localStorage
+      const systemIds = systemNotifications.map((n) => n.id);
+      const merged = new Set([...dismissedSystemIds, ...systemIds]);
+      localStorage.setItem('dismissed-system-notifications', JSON.stringify([...merged]));
+      setDismissedSystemIds(merged);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-broadcast-notifications'] });
+    },
+  });
+
   // Combine and sort all notifications
   const allNotifications = useMemo(() => {
     const combined: Notification[] = [...systemNotifications, ...adminNotifications];
@@ -239,8 +275,9 @@ export function NotificationPopover() {
 
   const unreadCount = useMemo(() => {
     const unreadAdmin = adminNotifications.filter((n) => !n.read).length;
-    return systemNotifications.length + unreadAdmin;
-  }, [systemNotifications, adminNotifications]);
+    const unreadSystem = systemNotifications.filter((n) => !dismissedSystemIds.has(n.id)).length;
+    return unreadSystem + unreadAdmin;
+  }, [systemNotifications, adminNotifications, dismissedSystemIds]);
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {
@@ -302,11 +339,25 @@ export function NotificationPopover() {
       <PopoverContent className="w-80 p-0" align="end">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h4 className="font-semibold text-foreground">Notificações</h4>
-          {unreadCount > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {unreadCount} {unreadCount === 1 ? 'nova' : 'novas'}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {unreadCount} {unreadCount === 1 ? 'nova' : 'novas'}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                  onClick={() => markAllAsReadMutation.mutate()}
+                  disabled={markAllAsReadMutation.isPending}
+                  title="Marcar todas como lidas"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+          </div>
         </div>
         <ScrollArea className="h-[320px]">
           {allNotifications.length === 0 ? (
@@ -318,7 +369,7 @@ export function NotificationPopover() {
             <div className="p-2 space-y-2">
               {allNotifications.map((notification) => {
                 const isAdmin = notification.source === 'admin';
-                const isRead = isAdmin ? notification.read : false;
+                const isRead = isAdmin ? notification.read : dismissedSystemIds.has(notification.id);
 
                 if (isAdmin) {
                   return (
@@ -356,7 +407,7 @@ export function NotificationPopover() {
                     key={notification.id}
                     to={notification.href}
                     onClick={() => handleNotificationClick(notification)}
-                    className={`block p-3 rounded-lg border transition-colors hover:bg-secondary/50 ${getBgColor(notification.type)}`}
+                    className={`block p-3 rounded-lg border transition-colors hover:bg-secondary/50 ${getBgColor(notification.type, isRead)} ${isRead ? 'opacity-60' : ''}`}
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex-shrink-0 mt-0.5">
