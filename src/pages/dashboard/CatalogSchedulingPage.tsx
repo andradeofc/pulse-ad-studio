@@ -398,12 +398,42 @@ export default function CatalogSchedulingPage() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['catalog-schedules'] });
       toast({
         title: 'Agendamento criado',
         description: 'O agendamento foi criado com sucesso.',
       });
+
+      // Auto-create monitor for this product set (isolated, won't affect scheduling)
+      try {
+        const productSet = productSets?.find(ps => ps.id === selectedProductSet);
+        if (productSet) {
+          supabase.auth.getUser().then(({ data: { user } }) => {
+            if (!user) return;
+            supabase
+              .from('catalog_media_monitors')
+              .upsert({
+                user_id: user.id,
+                profile_id: selectedProfile,
+                catalog_id: selectedCatalog,
+                product_set_id: selectedProductSet,
+                product_set_name: productSet.name,
+                creative_id: selectedCreative,
+                is_active: true,
+                auto_repair: false,
+                source: 'schedule',
+              }, { onConflict: 'user_id,product_set_id' })
+              .then(({ error }) => {
+                if (error) console.warn('[CatalogScheduling] Failed to auto-create monitor:', error);
+                else console.log('[CatalogScheduling] Auto-created monitor for', productSet.name);
+              });
+          });
+        }
+      } catch (e) {
+        console.warn('[CatalogScheduling] Monitor auto-create error:', e);
+      }
+
       resetForm();
       setIsDialogOpen(false);
     },
