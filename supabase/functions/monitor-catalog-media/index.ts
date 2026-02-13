@@ -111,6 +111,24 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Fetch recently repaired retailer_ids (cooldown 30 min)
+        const cooldownMinutes = 30;
+        const cooldownCutoff = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
+        const { data: recentRepairs } = await supabase
+          .from('catalog_media_alerts')
+          .select('retailer_id')
+          .eq('monitor_id', monitor.id)
+          .eq('status', 'repaired')
+          .gte('repaired_at', cooldownCutoff);
+
+        const recentlyRepairedIds = new Set(
+          (recentRepairs || []).map(r => canonicalizeRetailerId(r.retailer_id))
+        );
+
+        if (recentlyRepairedIds.size > 0) {
+          console.log(`[monitor-catalog-media] Cooldown: ${recentlyRepairedIds.size} products repaired in last ${cooldownMinutes}min will be skipped`);
+        }
+
         // Fetch products from product set
         const productsWithIssues: Array<{ retailer_id: string; name: string }> = [];
         let nextUrl: string | null = `https://graph.facebook.com/v21.0/${productSetFbId}/products?fields=id,retailer_id,name,video,image_url&limit=500&access_token=${accessToken}`;
@@ -131,7 +149,8 @@ Deno.serve(async (req) => {
 
         console.log(`[monitor-catalog-media] Found ${allProducts.length} products in ${monitor.product_set_name}`);
 
-        // Detect products missing video (have image but no video)
+        // Detect products missing video (have image but no video), skip recently repaired
+        let skippedCooldown = 0;
         for (const product of allProducts) {
           const hasVideo = product.video && (
             (typeof product.video === 'object' && Object.keys(product.video).length > 0) ||
@@ -139,11 +158,20 @@ Deno.serve(async (req) => {
           );
           
           if (!hasVideo && product.image_url) {
+            const rid = canonicalizeRetailerId(product.retailer_id);
+            if (recentlyRepairedIds.has(rid)) {
+              skippedCooldown++;
+              continue;
+            }
             productsWithIssues.push({
-              retailer_id: canonicalizeRetailerId(product.retailer_id),
+              retailer_id: rid,
               name: product.name || product.retailer_id,
             });
           }
+        }
+
+        if (skippedCooldown > 0) {
+          console.log(`[monitor-catalog-media] Skipped ${skippedCooldown} products (cooldown active)`);
         }
 
         // Update last_checked_at
