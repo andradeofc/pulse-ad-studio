@@ -238,10 +238,53 @@ export default function CatalogMonitorPage() {
     },
   });
 
+  // Sync state
+  const [isSyncingCatalogs, setIsSyncingCatalogs] = useState(false);
+  const [isSyncingProductSets, setIsSyncingProductSets] = useState(false);
+
   // Reset cascading selects
   useEffect(() => { setSelectedBM(''); setSelectedCatalog(''); setSelectedProductSet(''); }, [selectedProfile]);
   useEffect(() => { setSelectedCatalog(''); setSelectedProductSet(''); }, [selectedBM]);
   useEffect(() => { setSelectedProductSet(''); }, [selectedCatalog]);
+
+  // Sync catalogs
+  const handleSyncCatalogs = async () => {
+    if (!selectedProfile || !selectedBM) {
+      toast({ title: 'Selecione uma BM', description: 'Selecione um Business Manager antes de sincronizar.', variant: 'destructive' });
+      return;
+    }
+    const bm = businessManagers?.find(b => b.id === selectedBM);
+    if (!bm) return;
+    setIsSyncingCatalogs(true);
+    try {
+      const { error } = await supabase.functions.invoke('facebook-sync-catalogs', { body: { business_id: bm.business_id } });
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey: ['facebook-catalogs', selectedProfile, selectedBM] });
+      toast({ title: 'Catálogos sincronizados' });
+    } catch (error) {
+      toast({ title: 'Erro ao sincronizar', description: error instanceof Error ? error.message : 'Erro desconhecido', variant: 'destructive' });
+    } finally {
+      setIsSyncingCatalogs(false);
+    }
+  };
+
+  // Sync product sets
+  const handleSyncProductSets = async () => {
+    if (!selectedCatalog) return;
+    const catalog = catalogs?.find(c => c.id === selectedCatalog);
+    if (!catalog) return;
+    setIsSyncingProductSets(true);
+    try {
+      const { error } = await supabase.functions.invoke('facebook-sync-product-sets', { body: { profileId: selectedProfile, catalogId: catalog.catalog_id, internalCatalogId: selectedCatalog } });
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey: ['facebook-product-sets', selectedCatalog] });
+      toast({ title: 'Conjuntos sincronizados' });
+    } catch (error) {
+      toast({ title: 'Erro ao sincronizar', description: error instanceof Error ? error.message : 'Erro desconhecido', variant: 'destructive' });
+    } finally {
+      setIsSyncingProductSets(false);
+    }
+  };
 
   // Toggle active
   const toggleActiveMutation = useMutation({
@@ -397,7 +440,15 @@ export default function CatalogMonitorPage() {
               {/* Catalog */}
               {selectedProfile && (
                 <div className="space-y-2">
-                  <Label>Catálogo</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Catálogo</Label>
+                    {selectedBM && (
+                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleSyncCatalogs} disabled={isSyncingCatalogs}>
+                        <RefreshCw className={cn("w-3 h-3", isSyncingCatalogs && "animate-spin")} />
+                        Sincronizar
+                      </Button>
+                    )}
+                  </div>
                   <Select value={selectedCatalog} onValueChange={setSelectedCatalog}>
                     <SelectTrigger><SelectValue placeholder="Selecione um catálogo" /></SelectTrigger>
                     <SelectContent>
@@ -412,7 +463,13 @@ export default function CatalogMonitorPage() {
               {/* Product Set */}
               {selectedCatalog && (
                 <div className="space-y-2">
-                  <Label>Conjunto de Produtos</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Conjunto de Produtos</Label>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleSyncProductSets} disabled={isSyncingProductSets}>
+                      <RefreshCw className={cn("w-3 h-3", isSyncingProductSets && "animate-spin")} />
+                      Sincronizar
+                    </Button>
+                  </div>
                   <Select value={selectedProductSet} onValueChange={setSelectedProductSet}>
                     <SelectTrigger><SelectValue placeholder="Selecione um conjunto" /></SelectTrigger>
                     <SelectContent>
