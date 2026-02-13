@@ -314,6 +314,145 @@ export type Database = {
         }
         Relationships: []
       }
+      catalog_media_alerts: {
+        Row: {
+          alert_type: string
+          catalog_name: string
+          created_at: string
+          id: string
+          monitor_id: string
+          product_name: string | null
+          product_set_name: string
+          repaired_at: string | null
+          retailer_id: string
+          status: string
+          user_id: string
+          webhook_sent: boolean
+        }
+        Insert: {
+          alert_type?: string
+          catalog_name: string
+          created_at?: string
+          id?: string
+          monitor_id: string
+          product_name?: string | null
+          product_set_name: string
+          repaired_at?: string | null
+          retailer_id: string
+          status?: string
+          user_id: string
+          webhook_sent?: boolean
+        }
+        Update: {
+          alert_type?: string
+          catalog_name?: string
+          created_at?: string
+          id?: string
+          monitor_id?: string
+          product_name?: string | null
+          product_set_name?: string
+          repaired_at?: string | null
+          retailer_id?: string
+          status?: string
+          user_id?: string
+          webhook_sent?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_media_alerts_monitor_id_fkey"
+            columns: ["monitor_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_media_monitors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_media_monitors: {
+        Row: {
+          auto_repair: boolean
+          catalog_id: string
+          created_at: string
+          creative_id: string | null
+          id: string
+          is_active: boolean
+          issues_found: number
+          last_checked_at: string | null
+          last_issue_at: string | null
+          product_set_id: string
+          product_set_name: string
+          profile_id: string
+          source: string
+          updated_at: string
+          user_id: string
+          webhook_url: string | null
+        }
+        Insert: {
+          auto_repair?: boolean
+          catalog_id: string
+          created_at?: string
+          creative_id?: string | null
+          id?: string
+          is_active?: boolean
+          issues_found?: number
+          last_checked_at?: string | null
+          last_issue_at?: string | null
+          product_set_id: string
+          product_set_name: string
+          profile_id: string
+          source?: string
+          updated_at?: string
+          user_id: string
+          webhook_url?: string | null
+        }
+        Update: {
+          auto_repair?: boolean
+          catalog_id?: string
+          created_at?: string
+          creative_id?: string | null
+          id?: string
+          is_active?: boolean
+          issues_found?: number
+          last_checked_at?: string | null
+          last_issue_at?: string | null
+          product_set_id?: string
+          product_set_name?: string
+          profile_id?: string
+          source?: string
+          updated_at?: string
+          user_id?: string
+          webhook_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_media_monitors_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_media_monitors_creative_id_fkey"
+            columns: ["creative_id"]
+            isOneToOne: false
+            referencedRelation: "creatives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_media_monitors_product_set_id_fkey"
+            columns: ["product_set_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_product_sets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_media_monitors_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       catalog_schedule_products: {
         Row: {
           created_at: string

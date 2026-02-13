@@ -36,6 +36,7 @@ import CreateCampaignPage from "@/pages/dashboard/CreateCampaignPage";
 import ProcessingQueuePage from "@/pages/dashboard/ProcessingQueuePage";
 import MediaLibraryPage from "@/pages/dashboard/MediaLibraryPage";
 import CatalogSchedulingPage from "@/pages/dashboard/CatalogSchedulingPage";
+import CatalogMonitorPage from "@/pages/dashboard/CatalogMonitorPage";
 import SettingsPage from "@/pages/dashboard/SettingsPage";
 import HelpPage from "@/pages/dashboard/HelpPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
@@ -103,6 +104,7 @@ const App = () => {
             <Route path="/fila-processamento" element={<ProcessingQueuePage />} />
             <Route path="/biblioteca-midia" element={<MediaLibraryPage />} />
             <Route path="/agendamento-catalogo" element={<CatalogSchedulingPage />} />
+            <Route path="/monitor-catalogo" element={<CatalogMonitorPage />} />
             <Route path="/publicos" element={<PlaceholderPage title="Públicos" description="Gerencie seus públicos salvos" />} />
             <Route path="/analytics" element={<PlaceholderPage title="Analytics" description="Métricas e performance" />} />
             <Route path="/relatorios" element={<PlaceholderPage title="Relatórios" description="Relatórios personalizados" />} />
