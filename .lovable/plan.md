@@ -1,37 +1,40 @@
 
 
-## Botao "Marcar todas como lidas" nas Notificacoes
+## Corrigir persistencia de sessao ao atualizar a pagina (F5)
 
-### Contexto
-Atualmente, as notificacoes administrativas (vindas da tabela `admin_notifications`) ja possuem um sistema de leitura individual via `user_notification_reads`. As notificacoes de sistema (tokens, jobs, alertas de catalogo) nao possuem estado de leitura persistente.
+### Problema
+Ao pressionar F5, o usuario e redirecionado para a tela de login mesmo tendo uma sessao valida. Isso acontece porque:
 
-### O que sera feito
+1. O `DashboardLayout` verifica `isAuthenticated` imediatamente no primeiro render.
+2. Nesse momento, o auth store ainda esta inicializando (`isLoading: true`, `isAuthenticated: false`).
+3. O componente redireciona para `/login` antes do sistema ter tempo de recuperar a sessao salva no navegador.
 
-1. **Adicionar botao "Marcar todas como lidas"** no cabecalho do popover de notificacoes, visivel apenas quando existirem notificacoes nao lidas.
+### Comportamento esperado (padrao profissional)
+- A sessao persiste entre atualizacoes de pagina.
+- O usuario so precisa logar novamente se a sessao expirar (tipicamente 7 a 30 dias) ou se fizer logout manualmente.
+- Durante a verificacao da sessao, o usuario ve uma tela de carregamento em vez de ser redirecionado.
 
-2. **Logica do botao:**
-   - Para notificacoes **admin**: inserir registros em `user_notification_reads` para todas as notificacoes admin ainda nao lidas (usando um upsert em lote).
-   - Para notificacoes **de sistema**: armazenar os IDs das notificacoes de sistema "dispensadas" no `localStorage`, para que elas aparecam como lidas na sessao atual sem precisar de tabela extra.
-
-3. **Atualizar a contagem de nao lidas** (`unreadCount`) para considerar tambem as notificacoes de sistema que foram dispensadas via localStorage.
-
-4. **Atualizar o estilo visual** das notificacoes de sistema dispensadas para ficarem com opacidade reduzida (mesmo comportamento ja existente nas admin lidas).
+### Solucao
+Alterar o `DashboardLayout` para aguardar a inicializacao do auth antes de decidir se redireciona.
 
 ### Detalhes tecnicos
 
-**Arquivo**: `src/components/layout/NotificationPopover.tsx`
+**Arquivo**: `src/components/layout/DashboardLayout.tsx`
 
-- Novo estado: `dismissedSystemIds` carregado do `localStorage` (chave `dismissed-system-notifications`).
-- Nova mutation `markAllAsReadMutation`:
-  - Coleta IDs das notificacoes admin nao lidas e faz upsert em lote na tabela `user_notification_reads`.
-  - Coleta IDs das notificacoes de sistema e salva no localStorage.
-  - Invalida a query `admin-broadcast-notifications` ao concluir.
-- O botao aparece ao lado do titulo "Notificacoes" no header do popover, usando um icone `CheckCheck` do lucide-react.
-- O calculo de `unreadCount` passa a descontar as notificacoes de sistema cujo ID esta em `dismissedSystemIds`.
-- Notificacoes de sistema dispensadas recebem `opacity-60` para indicar que ja foram vistas.
+- Importar `isLoading` do `useAuthStore` alem de `isAuthenticated`.
+- Enquanto `isLoading` for `true`, renderizar um estado de carregamento (spinner ou skeleton) em vez de redirecionar.
+- Somente apos `isLoading` ser `false`, verificar `isAuthenticated` e redirecionar se necessario.
+
+```text
+Fluxo atual (com bug):
+  F5 -> isAuthenticated=false -> Navigate(/login) -> sessao recuperada (tarde demais)
+
+Fluxo corrigido:
+  F5 -> isLoading=true -> mostra loading -> sessao recuperada -> isAuthenticated=true -> mostra dashboard
+```
 
 ### O que NAO muda
-- O fluxo de marcar notificacoes admin como lidas individualmente continua funcionando.
-- A busca de notificacoes (system e admin) permanece identica.
-- A estrutura visual do popover e preservada.
+- A logica de autenticacao no `authStore` permanece identica.
+- O fluxo de login/logout nao e alterado.
+- Nenhuma tabela ou configuracao de banco de dados precisa ser modificada.
 
