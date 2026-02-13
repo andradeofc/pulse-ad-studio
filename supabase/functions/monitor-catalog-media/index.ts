@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
 
         // Fetch products from product set
         const productsWithIssues: Array<{ retailer_id: string; name: string }> = [];
-        let nextUrl: string | null = `https://graph.facebook.com/v21.0/${productSetFbId}/products?fields=id,retailer_id,name,video,image_url&limit=500&access_token=${accessToken}`;
+        let nextUrl: string | null = `https://graph.facebook.com/v21.0/${productSetFbId}/products?fields=id,retailer_id,name,videos,image_url&limit=500&access_token=${accessToken}`;
         const allProducts: any[] = [];
 
         while (nextUrl) {
@@ -149,13 +149,15 @@ Deno.serve(async (req) => {
 
         console.log(`[monitor-catalog-media] Found ${allProducts.length} products in ${monitor.product_set_name}`);
 
+        // Debug: log raw videos field for first 3 products
+        for (const p of allProducts.slice(0, 3)) {
+          console.log(`[monitor-catalog-media] DEBUG product "${p.retailer_id}" videos field:`, JSON.stringify(p.videos), `| type: ${typeof p.videos} | isArray: ${Array.isArray(p.videos)}`);
+        }
+
         // Detect products missing video (have image but no video), skip recently repaired
         let skippedCooldown = 0;
         for (const product of allProducts) {
-          const hasVideo = product.video && (
-            (typeof product.video === 'object' && Object.keys(product.video).length > 0) ||
-            (typeof product.video === 'string' && product.video.length > 0)
-          );
+          const hasVideo = product.videos && Array.isArray(product.videos) && product.videos.length > 0;
           
           if (!hasVideo && product.image_url) {
             const rid = canonicalizeRetailerId(product.retailer_id);
