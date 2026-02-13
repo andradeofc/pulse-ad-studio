@@ -1,109 +1,147 @@
 
 
-# Plano: Profissionalizar a Pagina de Usuarios do Ops Center
+# Monitor de Midia do Catalogo
 
-## Problemas Identificados
+## Objetivo
+Monitorar automaticamente a cada 15 minutos os produtos dentro de conjuntos especificos (agendados + manuais) para detectar perda de video, alertar via webhook (WhatsApp) e opcionalmente reparar automaticamente.
 
-### Bugs Criticos (Dados Incorretos)
+## Escopo -- O que NAO sera alterado
+- Nenhuma tabela existente sera modificada (catalog_schedules, campaign_jobs, campaign_job_items, etc.)
+- Nenhuma edge function existente sera modificada (process-campaign-jobs, process-catalog-schedules, queue-processor, etc.)
+- Nenhuma pagina existente sera modificada (CatalogSchedulingPage, CreateCampaignPage, etc.)
+- O fluxo de criacao de campanhas, agendamento de catalogo e processamento de fila continua 100% intacto
 
-1. **Contagens de Facebook Accounts e Ad Accounts falhando**: As queries para contar `facebook_profiles`, `facebook_ad_accounts` e `campaign_jobs` de outros usuarios falham porque as politicas RLS restringem acesso apenas ao dono dos dados. O admin ve 0 para todos os usuarios exceto ele mesmo.
+## Arquitetura
 
-2. **Ad Accounts e Gasto Total sem filtro por usuario**: As queries nas linhas 161 e 163 nao filtram por `user_id`, contando TODOS os registros do sistema ao inves de por usuario. O campo `facebook_ad_accounts` usa `profile_id` (nao `user_id`), entao precisa de um join via `facebook_profiles`.
+### 1. Nova tabela: `catalog_media_monitors`
 
-3. **Criar Usuario desloga o admin**: A mutation `createUserMutation` usa `supabase.auth.signUp()` que altera a sessao atual, deslogando o admin. Precisa usar uma Edge Function com `service_role` para criar usuarios sem afetar a sessao.
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid PK | Identificador |
+| user_id | uuid | Dono do monitoramento |
+| profile_id | uuid | Perfil Facebook usado |
+| catalog_id | uuid FK | Referencia ao catalogo interno |
+| product_set_id | uuid FK | Referencia ao product set interno |
+| product_set_name | text | Nome do conjunto (ex: BN928) |
+| creative_id | uuid | Criativo para auto-reparo (opcional) |
+| is_active | boolean | Toggle ativar/desativar monitoramento |
+| auto_repair | boolean | Toggle ativar/desativar reparo automatico |
+| webhook_url | text | URL do webhook para alertas (n8n/Make) |
+| source | text | 'manual' ou 'schedule' (origem do monitoramento) |
+| last_checked_at | timestamp | Ultima verificacao |
+| last_issue_at | timestamp | Ultima deteccao de problema |
+| issues_found | integer | Total de problemas encontrados |
+| created_at | timestamp | Criacao |
+| updated_at | timestamp | Atualizacao |
 
-### Funcionalidades Nao Implementadas (Botoes que Nao Fazem Nada)
+RLS: Todas as operacoes restritas a `user_id = auth.uid()`
 
-4. **"Exportar CSV"** - Sem onClick handler
-5. **"Alterar Senha"** - Sem onClick handler
-6. **"Resetar Senha"** - Sem onClick handler
-7. **"Login como Usuario" (Impersonate)** - Sem onClick handler
-8. **"Deletar Conta"** - Sem onClick handler
-9. **"Ver Detalhes"** - Link para rota `/ops-center/usuarios/:id` que provavelmente nao existe
+### 2. Nova tabela: `catalog_media_alerts`
 
-### Melhorias de Profissionalismo
+Historico de alertas detectados.
 
-10. **Busca por email nao funciona**: O campo de busca diz "Buscar por nome, email ou ID" mas `email` nao existe na tabela `user_profiles`
-11. **Loading state basico**: Apenas texto "Carregando..." ao inves de skeletons
-12. **Sem metricas resumidas no topo**: Cards com total de usuarios, ativos, novos no mes, etc.
-13. **IP de auditoria sempre "unknown"**: Nao captura IP real
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid PK | Identificador |
+| monitor_id | uuid FK | Referencia ao monitor |
+| user_id | uuid | Dono |
+| retailer_id | text | ID do produto afetado |
+| product_name | text | Nome do produto |
+| product_set_name | text | Nome do conjunto |
+| catalog_name | text | Nome do catalogo |
+| alert_type | text | 'video_missing' |
+| status | text | 'detected', 'repaired', 'notified', 'ignored' |
+| repaired_at | timestamp | Quando foi reparado (se auto-repair ativo) |
+| webhook_sent | boolean | Se o webhook foi disparado |
+| created_at | timestamp | Criacao |
 
----
+RLS: SELECT restrito a `user_id = auth.uid()`
 
-## Plano de Implementacao
+### 3. Nova Edge Function: `monitor-catalog-media`
 
-### Fase 1: Corrigir Dados (RLS + Queries)
+Responsabilidades:
+- Buscar todos os monitors com `is_active = true`
+- Para cada monitor, consultar `GET /{product_set_id}/products?fields=id,retailer_id,name,video,image_url` na API do Facebook
+- Comparar: se um produto tinha video (baseado no ultimo agendamento bem-sucedido) e agora so tem imagem, registrar alerta
+- Se `auto_repair = true`, usar a logica de `items_batch` (similar ao process-catalog-schedules) para reenviar o video usando o `creative_id` configurado
+- Se `webhook_url` configurada, enviar POST com payload do alerta:
 
-**Criar uma funcao database `get_admin_user_stats`** (security definer) que retorna as contagens de cada usuario sem restricao de RLS. Isso evita N+1 queries e resolve o problema de permissao.
-
-```sql
-CREATE OR REPLACE FUNCTION get_admin_user_stats(target_user_id uuid)
-RETURNS json
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE result json;
-BEGIN
-  IF NOT is_admin() THEN
-    RAISE EXCEPTION 'Not authorized';
-  END IF;
-  
-  SELECT json_build_object(
-    'fb_accounts_count', (SELECT count(*) FROM facebook_profiles WHERE user_id = target_user_id),
-    'ad_accounts_count', (SELECT count(*) FROM facebook_ad_accounts a JOIN facebook_profiles p ON p.id = a.profile_id WHERE p.user_id = target_user_id),
-    'campaigns_count', (SELECT count(*) FROM campaign_jobs WHERE user_id = target_user_id),
-    'total_spend', COALESCE((SELECT sum(a.amount_spent) FROM facebook_ad_accounts a JOIN facebook_profiles p ON p.id = a.profile_id WHERE p.user_id = target_user_id), 0)
-  ) INTO result;
-  
-  RETURN result;
-END;
-$$;
+```text
+Payload do webhook:
+{
+  "event": "video_missing",
+  "catalog": "Nome do Catalogo",
+  "product_set": "BN928",
+  "products": [
+    { "retailer_id": "ABC123", "name": "Produto X" }
+  ],
+  "auto_repair": true/false,
+  "repaired": true/false,
+  "timestamp": "2026-02-13T..."
+}
 ```
 
-Atualizar `AdminUsersPage.tsx` para usar essa funcao RPC no enriquecimento dos dados.
+Otimizacoes para rate limit:
+- Usa apenas endpoints GET (limite separado dos POST de campanhas)
+- Processa no maximo 5 monitors por execucao (rotacao)
+- Retry com backoff exponencial para 429/500
+- Busca credenciais de `facebook_credentials` (mesmo padrao das outras functions)
 
-### Fase 2: Edge Function para Criar Usuario
+### 4. Cron Job (pg_cron + pg_net)
 
-Criar `supabase/functions/admin-create-user/index.ts` que:
-- Valida que o chamador e admin (via JWT)
-- Usa `supabase.auth.admin.createUser()` com `service_role`
-- Atualiza o perfil com plano selecionado
-- Registra no log de auditoria
-- Retorna o usuario criado sem afetar a sessao do admin
+Agendar chamada a cada 15 minutos para a edge function `monitor-catalog-media`.
 
-### Fase 3: Implementar Botoes Faltantes
+### 5. Nova Pagina: `/monitor-catalogo`
 
-1. **Exportar CSV**: Gerar CSV client-side com os dados da tabela e fazer download
-2. **Alterar/Resetar Senha**: Criar edge function `admin-reset-password` que usa `supabase.auth.admin.updateUserById()`
-3. **Deletar Conta**: Dialog de confirmacao + edge function `admin-delete-user` que usa `supabase.auth.admin.deleteUser()`
-4. **Login como Usuario**: Implementar impersonate via edge function que gera token temporario (ja mencionado na arquitetura do sistema)
-5. **Ver Detalhes**: Criar a pagina de detalhes do usuario ou remover o link
+UI com as seguintes secoes:
 
-### Fase 4: Melhorias Visuais
+**Configuracao global:**
+- Campo de webhook URL (unico por usuario, usado como padrao)
 
-1. **Cards de metricas no topo**: Total usuarios, ativos hoje, novos este mes, usuarios suspensos/banidos
-2. **Skeleton loading**: Substituir texto por skeletons animados na tabela
-3. **Avatar/iniciais** do usuario na coluna de nome
-4. **Busca funcional**: Remover menção a "email" do placeholder ou adicionar busca via edge function que consulta `auth.users`
-5. **Debounce na busca**: Evitar queries a cada tecla digitada
+**Lista de conjuntos monitorados:**
+- Tabela com colunas: Conjunto | Catalogo | Origem | Auto-reparo | Status | Ultima verificacao | Acoes
+- Toggle de ativo/inativo por item
+- Toggle de auto-reparo por item (so aparece se um creative_id estiver vinculado)
+- Botao de remover
 
----
+**Adicionar conjunto manualmente:**
+- Fluxo cascata: Perfil -> BM -> Catalogo -> Conjunto (reutilizando a mesma logica da pagina de agendamento)
+- Campo para selecionar criativo (para auto-reparo)
+- Campo de webhook URL (override opcional)
+
+**Historico de alertas:**
+- Tabela com: Data | Conjunto | Catalogo | Produto | Status | Acao
+- Filtros por status e data
+
+**Populacao automatica:**
+- Ao criar um agendamento na pagina de Agendamento Catalogo, um monitor sera criado automaticamente (source='schedule') se nao existir para aquele product_set
+- O creative_id sera preenchido com o criativo usado no agendamento
+
+### 6. Integracao com Agendamento (minima e segura)
+
+A unica alteracao na pagina de agendamento sera: apos criar um schedule com sucesso, inserir um registro em `catalog_media_monitors` (se nao existir). Isso e um INSERT isolado que nao afeta o fluxo existente. Sera feito no `onSuccess` da mutation de criacao, completamente desacoplado.
+
+### 7. Novo item no menu lateral
+
+Adicionar "Monitor Catalogo" na secao "GESTAO DE ANUNCIOS" do sidebar, com icone de escudo/olho (Shield ou Eye).
 
 ## Detalhes Tecnicos
 
-### Arquivos a Criar
-- `supabase/functions/admin-create-user/index.ts`
-- `supabase/functions/admin-reset-password/index.ts`
+### Sequencia de implementacao
 
-### Arquivos a Modificar
-- `src/pages/admin/AdminUsersPage.tsx` - Refatoracao principal
+1. Migration SQL: criar tabelas `catalog_media_monitors` e `catalog_media_alerts` com RLS
+2. Edge function `monitor-catalog-media/index.ts`
+3. Registrar no `supabase/config.toml` com `verify_jwt = false`
+4. Cron job via pg_cron (INSERT via SQL tool, nao migration)
+5. Pagina `/monitor-catalogo` com UI completa
+6. Rota no App.tsx
+7. Item no sidebar
+8. Integracao minima no `onSuccess` do agendamento
 
-### Migracoes SQL
-- Funcao `get_admin_user_stats` (security definer)
+### Riscos mitigados
 
-### Sequencia de Implementacao
-1. Migracao SQL (funcao RPC)
-2. Edge Functions (create user, reset password)
-3. Refatorar AdminUsersPage (queries, botoes, UI)
+- **Nao quebra campanhas**: Nenhum arquivo de campanha e tocado
+- **Nao quebra agendamento**: Unica alteracao e um INSERT adicional no onSuccess (try/catch isolado)
+- **Nao estoura rate limit**: Usa GET (limite separado), maximo 5 monitors por execucao, retry com backoff
+- **Nao pesa o sistema**: Execucao a cada 15min, sem impacto na UI existente
 
