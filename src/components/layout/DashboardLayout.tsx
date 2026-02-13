@@ -4,10 +4,19 @@ import { DashboardHeader } from './DashboardHeader';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { useAuthStore } from '@/stores/authStore';
 import { useImpersonationStore } from '@/stores/impersonationStore';
+import { Loader2 } from 'lucide-react';
 
 export function DashboardLayout() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, isLoading } = useAuthStore();
   const isImpersonating = useImpersonationStore((s) => s.isImpersonating);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
