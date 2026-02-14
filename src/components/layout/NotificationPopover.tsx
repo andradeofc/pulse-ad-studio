@@ -40,16 +40,23 @@ type Notification = SystemNotification | AdminNotification;
 
 export function NotificationPopover() {
   const [open, setOpen] = useState(false);
-  const [dismissedSystemIds, setDismissedSystemIds] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem('dismissed-system-notifications');
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+
+  // Fetch dismissed system notification keys from DB
+  const { data: dismissedSystemIds = new Set<string>() } = useQuery({
+    queryKey: ['dismissed-system-notifications', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return new Set<string>();
+      const { data } = await supabase
+        .from('user_dismissed_notifications')
+        .select('notification_key')
+        .eq('user_id', user.id);
+      return new Set(data?.map((r) => r.notification_key) || []);
+    },
+    enabled: !!user?.id,
+    staleTime: 30000,
+  });
 
   // Fetch system notifications (tokens, jobs)
   const { data: systemNotifications = [] } = useQuery({
@@ -251,14 +258,21 @@ export function NotificationPopover() {
         });
       }
 
-      // Dismiss system notifications via localStorage
-      const systemIds = systemNotifications.map((n) => n.id);
-      const merged = new Set([...dismissedSystemIds, ...systemIds]);
-      localStorage.setItem('dismissed-system-notifications', JSON.stringify([...merged]));
-      setDismissedSystemIds(merged);
+      // Dismiss system notifications via DB
+      const undismissedSystem = systemNotifications.filter((n) => !dismissedSystemIds.has(n.id));
+      if (undismissedSystem.length > 0) {
+        const rows = undismissedSystem.map((n) => ({
+          user_id: user.id,
+          notification_key: n.id,
+        }));
+        await supabase.from('user_dismissed_notifications').upsert(rows, {
+          onConflict: 'user_id,notification_key',
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-broadcast-notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['dismissed-system-notifications'] });
     },
   });
 
