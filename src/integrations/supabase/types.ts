@@ -1202,6 +1202,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_dismissed_notifications: {
+        Row: {
+          dismissed_at: string
+          id: string
+          notification_key: string
+          user_id: string
+        }
+        Insert: {
+          dismissed_at?: string
+          id?: string
+          notification_key: string
+          user_id: string
+        }
+        Update: {
+          dismissed_at?: string
+          id?: string
+          notification_key?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_notification_reads: {
         Row: {
           id: string
