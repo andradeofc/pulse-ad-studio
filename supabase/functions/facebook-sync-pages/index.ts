@@ -325,9 +325,10 @@ Deno.serve(async (req) => {
                     // Aggregate ads across accounts (a page can have ads from multiple accounts)
                     const existing = pageAdsVolumeMap.get(actorId);
                     if (existing) {
-                      // Sum the ads running, keep the max limit
+                      // Both ads_running and ads_limit are global values per page,
+                      // so we use Math.max to avoid duplicating when the same page appears in multiple accounts
                       pageAdsVolumeMap.set(actorId, {
-                        ads_running: existing.ads_running + adsRunning,
+                        ads_running: Math.max(existing.ads_running, adsRunning),
                         ads_limit: Math.max(existing.ads_limit, adsLimit),
                       });
                     } else {
