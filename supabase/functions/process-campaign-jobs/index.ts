@@ -60,6 +60,48 @@ interface BatchResponseItem {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Enrich Facebook API error messages with user-friendly descriptions for known subcodes
+function enrichErrorMessage(parsedError: any, fallbackMsg: string): string {
+  if (!parsedError) return fallbackMsg;
+  
+  const subcode = parsedError.error_subcode;
+  const code = parsedError.code;
+  const originalMsg = parsedError.message || fallbackMsg;
+  
+  // Known error subcodes with user-friendly messages
+  const knownErrors: Record<number, string> = {
+    1885183: 'App do Facebook em Modo de Desenvolvimento. Altere para Modo Ao Vivo em developers.facebook.com > Seu App > Configurações Básicas > Modo do App.',
+    1487930: 'Catálogo não vinculado à Conta de Anúncios no Business Manager. Vincule o catálogo ao BM da conta.',
+    1772103: 'Erro de identidade do Instagram. A Página precisa ter uma conta do Instagram vinculada.',
+    2490266: 'Regra de Asset Feed ausente. É necessário incluir uma regra padrão (is_default: true).',
+    2446485: 'Erro de payload do anúncio. Possível conflito entre asset_feed_spec e is_dynamic_creative, ou parâmetros incompatíveis.',
+    3858258: 'Falha no download da imagem via URL. Tente fazer upload direto do arquivo.',
+    2490562: 'Posicionamento descontinuado (ex: video_feeds). Remova posicionamentos inválidos.',
+    1359133: 'Limite de 10.000 Ad Sets atingido nesta conta de anúncios.',
+  };
+  
+  // Known error codes
+  const knownCodeErrors: Record<number, string> = {
+    3: 'Recurso bloqueado por falta de Advanced Access. Verifique as permissões do App.',
+    31: 'Bloqueio de segurança do Facebook. Acesse o Facebook Security Center para desbloquear.',
+  };
+  
+  if (subcode && knownErrors[subcode]) {
+    return knownErrors[subcode];
+  }
+  
+  if (code && knownCodeErrors[code] && !subcode) {
+    return knownCodeErrors[code];
+  }
+  
+  // Use error_user_title + error_user_msg if available (Facebook's own user-friendly message)
+  if (parsedError.error_user_title) {
+    return `${parsedError.error_user_title}: ${parsedError.error_user_msg || originalMsg}`;
+  }
+  
+  return originalMsg;
+}
+
 // Cache per-request to avoid repeated Graph calls
 const igActorIdCache = new Map<string, string | null>();
 const pageTokenCache = new Map<string, string | null>();
@@ -893,7 +935,7 @@ async function createCampaignsBatch(
             .update({ status: 'completed', facebook_id: parsedBody.id, config: updatedConfig })
             .eq('id', item.id);
         } else {
-          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+          const errorMsg = enrichErrorMessage(parsedBody.error, `HTTP ${result.code}`);
           console.error(`[batch] Campaign failed:`, errorMsg);
           await supabase
             .from('campaign_job_items')
@@ -1032,7 +1074,7 @@ async function createAdsetsBatch(
             .update({ status: 'completed', facebook_id: parsedBody.id, config: updatedConfig })
             .eq('id', item.id);
         } else {
-          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+          const errorMsg = enrichErrorMessage(parsedBody.error, `HTTP ${result.code}`);
           console.error(`[batch] Adset failed:`, errorMsg);
           await supabase
             .from('campaign_job_items')
@@ -1169,7 +1211,7 @@ async function createCatalogCreativesBatch(
             .update({ config: updatedConfig })
             .eq('id', item.id);
         } else {
-          const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+          const errorMsg = enrichErrorMessage(parsedBody.error, `HTTP ${result.code}`);
           console.error(`[batch] Creative failed for ad ${item.id}:`, errorMsg);
           await supabase
             .from('campaign_job_items')
@@ -1326,10 +1368,7 @@ async function createAdsBatch(
             console.warn(`[batch] Ad ${item.id} failed with Instagram identity error, queuing for PBIA retry`);
             instagramRetryAds.push(item);
           } else {
-            const errorMsg = parsedBody.error?.message || `HTTP ${result.code}`;
-            const errorDetail = parsedBody.error?.error_user_title 
-              ? `${parsedBody.error.error_user_title}: ${parsedBody.error.error_user_msg || errorMsg}`
-              : errorMsg;
+            const errorDetail = enrichErrorMessage(parsedBody.error, `HTTP ${result.code}`);
             const fullError = JSON.stringify(parsedBody.error || parsedBody).substring(0, 500);
             console.error(`[batch] Ad failed for item ${item.id}:`, fullError);
             console.error(`[batch] Ad request body was:`, JSON.stringify(chunk[i].batchItem.body).substring(0, 500));
@@ -2899,7 +2938,7 @@ Deno.serve(async (req) => {
                     })
                     .eq('id', item.id);
                 } else {
-                  const errMsg = parsedBody.error?.message || `HTTP ${result.code}`;
+                  const errMsg = enrichErrorMessage(parsedBody.error, `HTTP ${result.code}`);
                   const blameFields = parsedBody.error?.error_data?.blame_field_specs 
                     ? JSON.stringify(parsedBody.error.error_data.blame_field_specs)
                     : 'none';
