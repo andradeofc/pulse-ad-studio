@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { User, Shield, Bell, Palette, CreditCard } from 'lucide-react';
+import { User, Shield, Bell, Palette, CreditCard, MessageSquare } from 'lucide-react';
 import { ProfileSettings } from '@/components/settings/ProfileSettings';
 import { SecuritySettings } from '@/components/settings/SecuritySettings';
 import { NotificationSettings } from '@/components/settings/NotificationSettings';
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings';
 import { BillingSettings } from '@/components/settings/BillingSettings';
+import { ZApiSettings } from '@/components/settings/ZApiSettings';
 
 const tabs = [
   { id: 'profile', label: 'Perfil', icon: User },
   { id: 'security', label: 'Segurança', icon: Shield },
   { id: 'notifications', label: 'Notificações', icon: Bell },
+  { id: 'zapi', label: 'WhatsApp (Z-API)', icon: MessageSquare },
   { id: 'appearance', label: 'Aparência', icon: Palette },
   { id: 'billing', label: 'Plano & Faturamento', icon: CreditCard },
 ];
@@ -58,6 +60,10 @@ export default function SettingsPage() {
 
           <TabsContent value="notifications" className="mt-0">
             <NotificationSettings />
+          </TabsContent>
+
+          <TabsContent value="zapi" className="mt-0">
+            <ZApiSettings />
           </TabsContent>
 
           <TabsContent value="appearance" className="mt-0">

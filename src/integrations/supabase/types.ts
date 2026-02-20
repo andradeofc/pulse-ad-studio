@@ -1324,6 +1324,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_zapi_settings: {
+        Row: {
+          client_token: string
+          created_at: string
+          id: string
+          instance_id: string
+          is_enabled: boolean
+          recipients: Json
+          token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_token?: string
+          created_at?: string
+          id?: string
+          instance_id?: string
+          is_enabled?: boolean
+          recipients?: Json
+          token?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_token?: string
+          created_at?: string
+          id?: string
+          instance_id?: string
+          is_enabled?: boolean
+          recipients?: Json
+          token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
