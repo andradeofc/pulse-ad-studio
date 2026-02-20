@@ -90,8 +90,7 @@ Deno.serve(async (req) => {
         const payload: Record<string, string> = { message };
 
         if (recipient.type === 'group') {
-          // For groups, use the group endpoint
-          payload.phone = recipient.value;
+          payload.chatId = recipient.value;
         } else {
           payload.phone = recipient.value;
         }
