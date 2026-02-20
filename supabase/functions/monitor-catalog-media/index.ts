@@ -307,6 +307,49 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Send Z-API notification if user has it configured
+        try {
+          const { data: zapiSettings } = await supabase
+            .from('user_zapi_settings')
+            .select('is_enabled')
+            .eq('user_id', monitor.user_id)
+            .eq('is_enabled', true)
+            .maybeSingle();
+
+          if (zapiSettings) {
+            console.log(`[monitor-catalog-media] Sending Z-API notification for user ${monitor.user_id}`);
+            const zapiPayload = {
+              user_id: monitor.user_id,
+              event: 'video_missing',
+              catalog: catalogName,
+              product_set: monitor.product_set_name,
+              products: productsWithIssues.slice(0, 50).map(p => ({
+                retailer_id: p.retailer_id,
+                name: p.name,
+              })),
+              total_affected: productsWithIssues.length,
+              auto_repair: monitor.auto_repair,
+              repaired,
+              timestamp: new Date().toISOString(),
+            };
+
+            const zapiRes = await fetch(
+              `${supabaseUrl}/functions/v1/zapi-webhook-proxy`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify(zapiPayload),
+              }
+            );
+            console.log(`[monitor-catalog-media] Z-API proxy response: ${zapiRes.status}`);
+          }
+        } catch (zapiErr) {
+          console.error(`[monitor-catalog-media] Z-API notification error:`, zapiErr);
+        }
+
         results.push({ monitor_id: monitor.id, issues: productsWithIssues.length, repaired });
       } catch (err) {
         console.error(`[monitor-catalog-media] Error processing monitor ${monitor.id}:`, err);

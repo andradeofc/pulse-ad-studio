@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.monitor-catalog-media]
 verify_jwt = false
+
+[functions.zapi-webhook-proxy]
+verify_jwt = false
