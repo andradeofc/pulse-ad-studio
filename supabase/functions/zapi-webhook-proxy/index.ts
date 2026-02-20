@@ -88,12 +88,7 @@ Deno.serve(async (req) => {
     for (const recipient of recipientList) {
       try {
         const payload: Record<string, string> = { message };
-
-        if (recipient.type === 'group') {
-          payload.chatId = recipient.value;
-        } else {
-          payload.phone = recipient.value;
-        }
+        payload.phone = recipient.value;
 
         const res = await fetch(`${baseUrl}/send-text`, {
           method: 'POST',
