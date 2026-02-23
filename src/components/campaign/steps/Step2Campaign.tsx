@@ -441,7 +441,8 @@ export function Step2Campaign() {
         )}
       </section>
 
-      {/* Budget Section */}
+      {/* Budget Section - Only visible in CBO mode (ABO budget is set at adset level in Step 3) */}
+      {config.useCBO && (
       <section className="space-y-4">
         <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
           Orçamento
@@ -582,6 +583,7 @@ export function Step2Campaign() {
           </>
         )}
       </section>
+      )}
 
       {/* Bid Strategy Section */}
       <section className="space-y-4">
