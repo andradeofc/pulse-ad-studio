@@ -335,8 +335,8 @@ export function Step2Campaign() {
           ))}
         </div>
 
-        {/* Ad Set Budget Sharing - Only for ABO with explicit bid strategy */}
-        {!config.useCBO && config.bidStrategy !== 'LOWEST_COST_WITHOUT_CAP' && (
+        {/* Ad Set Budget Sharing - Only for ABO */}
+        {!config.useCBO && (
           <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border">
             <div>
               <Label className="text-foreground">Compartilhar 20% entre conjuntos</Label>
@@ -582,15 +582,9 @@ export function Step2Campaign() {
                   ? "border-primary ring-2 ring-primary/20 bg-primary/5"
                   : "border-border hover:border-primary/50"
               )}
-              onClick={() => {
-                const newStrategy = strategy.value as 'LOWEST_COST_WITHOUT_CAP' | 'COST_CAP' | 'LOWEST_COST_WITH_BID_CAP' | 'LOWEST_COST_WITH_MIN_ROAS';
-                const updates: Partial<typeof config> = { bidStrategy: newStrategy };
-                // Reset budget sharing if switching to a strategy that doesn't support it
-                if (newStrategy === 'LOWEST_COST_WITHOUT_CAP') {
-                  updates.shareAdsetBudget = false;
-                }
-                updateConfig(updates);
-              }}
+              onClick={() => updateConfig({ 
+                bidStrategy: strategy.value as 'LOWEST_COST_WITHOUT_CAP' | 'COST_CAP' | 'LOWEST_COST_WITH_BID_CAP' | 'LOWEST_COST_WITH_MIN_ROAS' 
+              })}
             >
               <CardContent className="p-4">
                 <p className="font-medium text-foreground text-sm">{strategy.label}</p>
