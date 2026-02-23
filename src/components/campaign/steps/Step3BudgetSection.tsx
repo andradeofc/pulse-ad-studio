@@ -166,9 +166,16 @@ export function Step3BudgetSection() {
                 {currencyInfo.symbol}
               </span>
               <Input
-                type="number"
+                type="text"
+                inputMode="decimal"
                 value={config.adsetBudget}
-                onChange={(e) => updateConfig({ adsetBudget: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                    updateConfig({ adsetBudget: val === '' ? 0 : val.endsWith('.') || val.endsWith('.0') ? val as any : parseFloat(val) || 0 });
+                  }
+                }}
+                onBlur={() => updateConfig({ adsetBudget: parseFloat(String(config.adsetBudget)) || 0 })}
                 min={currencyInfo.minBudget}
                 className="bg-secondary/50 pl-10"
               />
