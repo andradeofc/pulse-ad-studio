@@ -481,19 +481,30 @@ export function Step2Campaign() {
                         {currInfo.symbol}
                       </span>
                       <Input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={budgetValue}
                         onChange={(e) => {
-                          const newValue = parseFloat(e.target.value) || 0;
-                          updateConfig({ 
+                          const val = e.target.value;
+                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                            const parsed = val === '' ? 0 : val.endsWith('.') || val.endsWith('.0') ? val : parseFloat(val) || 0;
+                            updateConfig({ 
+                              budgetByCurrency: {
+                                ...config.budgetByCurrency,
+                                [currency]: parsed as any
+                              }
+                            });
+                          }
+                        }}
+                        onBlur={() => {
+                          updateConfig({
                             budgetByCurrency: {
                               ...config.budgetByCurrency,
-                              [currency]: newValue
+                              [currency]: parseFloat(String(budgetValue)) || 0
                             }
                           });
                         }}
                         min={currInfo.minBudget}
-                        step={1}
                         className="bg-secondary/50 pl-10"
                       />
                     </div>
@@ -533,11 +544,17 @@ export function Step2Campaign() {
                     {currencyInfo.symbol}
                   </span>
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={config.budget}
-                    onChange={(e) => updateConfig({ budget: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                        updateConfig({ budget: val === '' ? 0 : val.endsWith('.') || val.endsWith('.0') ? val as any : parseFloat(val) || 0 });
+                      }
+                    }}
+                    onBlur={() => updateConfig({ budget: parseFloat(String(config.budget)) || 0 })}
                     min={currencyInfo.minBudget}
-                    step={1}
                     className="bg-secondary/50 pl-10"
                   />
                 </div>
