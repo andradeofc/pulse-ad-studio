@@ -587,10 +587,12 @@ function buildCampaignParams(config: Record<string, any>, name: string): Record<
     params.daily_budget = String(Math.round((config.budget || 50) * 100));
     params.bid_strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
   } else {
-    // ABO mode: when budget sharing is enabled, bid_strategy MUST be sent explicitly at campaign level
+    // ABO mode: Facebook requires is_adset_budget_sharing_enabled to be explicitly set
     if (config.shareAdsetBudget) {
       params.is_adset_budget_sharing_enabled = 'true';
       params.bid_strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
+    } else {
+      params.is_adset_budget_sharing_enabled = 'false';
     }
   }
 
