@@ -196,18 +196,7 @@ export function Step3BudgetSection() {
         </div>
       )}
 
-      <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border">
-        <div>
-          <Label className="text-foreground">Compartilhar 20% entre conjuntos</Label>
-          <p className="text-sm text-muted-foreground">
-            Distribui parte do orçamento entre os melhores performers
-          </p>
-        </div>
-        <Switch
-          checked={config.shareAdsetBudget}
-          onCheckedChange={(checked) => updateConfig({ shareAdsetBudget: checked })}
-        />
-      </div>
+      {/* Budget sharing toggle moved to Step 2 (Campaign level) */}
     </section>
   );
 }

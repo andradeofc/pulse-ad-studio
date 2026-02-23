@@ -587,7 +587,7 @@ function buildCampaignParams(config: Record<string, any>, name: string): Record<
     params.daily_budget = String(Math.round((config.budget || 50) * 100));
     params.bid_strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
   } else {
-    params.is_adset_budget_sharing_enabled = 'false';
+    params.is_adset_budget_sharing_enabled = config.shareAdsetBudget ? 'true' : 'false';
   }
 
   return params;

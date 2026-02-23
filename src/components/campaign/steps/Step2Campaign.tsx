@@ -335,6 +335,22 @@ export function Step2Campaign() {
           ))}
         </div>
 
+        {/* Ad Set Budget Sharing - Only for ABO */}
+        {!config.useCBO && (
+          <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border">
+            <div>
+              <Label className="text-foreground">Compartilhar 20% entre conjuntos</Label>
+              <p className="text-sm text-muted-foreground">
+                Permite que até 20% do orçamento de cada conjunto seja redistribuído para os melhores performers
+              </p>
+            </div>
+            <Switch
+              checked={config.shareAdsetBudget}
+              onCheckedChange={(checked) => updateConfig({ shareAdsetBudget: checked })}
+            />
+          </div>
+        )}
+
         {/* Dynamic Ads / Catalog Toggle */}
         <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border">
           <div className="flex items-center gap-3">
