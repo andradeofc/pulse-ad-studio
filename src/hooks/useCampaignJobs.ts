@@ -280,7 +280,7 @@ export function useProcessCampaignJob() {
       if (data?.success) {
         toast({
           title: 'Processamento concluído!',
-          description: `${data.processed} item(s) processado(s) com sucesso.`,
+          description: `${data.adsCreated ?? 0} item(s) processado(s) com sucesso.`,
         });
       } else {
         toast({
