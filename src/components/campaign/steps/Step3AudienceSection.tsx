@@ -48,7 +48,15 @@ export function Step3AudienceSection() {
         </div>
         <Switch
           checked={config.advantagePlus}
-          onCheckedChange={(checked) => updateConfig({ advantagePlus: checked })}
+          onCheckedChange={(checked) => {
+            const updates: Partial<typeof config> = { advantagePlus: checked };
+            if (checked) {
+              // Advantage+ only allows age_min 18-25 and forces age_max to 65
+              if (config.ageMin > 25) updates.ageMin = 25;
+              updates.ageMax = 65;
+            }
+            updateConfig(updates);
+          }}
         />
       </div>
 
@@ -75,17 +83,30 @@ export function Step3AudienceSection() {
           </Label>
           <Select
             value={config.ageMin.toString()}
-            onValueChange={(value) => updateConfig({ ageMin: parseInt(value) })}
+            onValueChange={(value) => {
+              const newAge = parseInt(value);
+              updateConfig({ ageMin: newAge });
+            }}
           >
             <SelectTrigger className="bg-secondary/50">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
-                <SelectItem key={age} value={age.toString()}>{age}</SelectItem>
-              ))}
+              {config.advantagePlus
+                ? Array.from({ length: 8 }, (_, i) => i + 18).map((age) => (
+                    <SelectItem key={age} value={age.toString()}>{age}</SelectItem>
+                  ))
+                : Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
+                    <SelectItem key={age} value={age.toString()}>{age}</SelectItem>
+                  ))
+              }
             </SelectContent>
           </Select>
+          {config.advantagePlus && (
+            <p className="text-xs text-warning">
+              Com Advantage+, a API aceita apenas idade mínima entre 18 e 25
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
@@ -107,7 +128,7 @@ export function Step3AudienceSection() {
             </SelectContent>
           </Select>
           {config.advantagePlus && (
-            <p className="text-xs text-muted-foreground">Apenas idade mínima com Advantage+</p>
+            <p className="text-xs text-muted-foreground">Fixado em 65 com Advantage+</p>
           )}
         </div>
       </div>
