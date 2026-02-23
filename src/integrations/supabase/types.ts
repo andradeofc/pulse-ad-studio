@@ -1386,6 +1386,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_admin_campaign_details: { Args: { p_job_id: string }; Returns: Json }
       get_admin_user_stats: { Args: { target_user_id: string }; Returns: Json }
       get_admin_users_summary: { Args: never; Returns: Json }
       get_current_ad_usage: {

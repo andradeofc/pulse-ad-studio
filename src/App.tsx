@@ -52,6 +52,7 @@ import AdminAuditLogsPage from "@/pages/admin/AdminAuditLogsPage";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 import AdminNotificationsPage from "@/pages/admin/AdminNotificationsPage";
 import AdminApiLogsPage from "@/pages/admin/AdminApiLogsPage";
+import AdminCampaignDetailsPage from "@/pages/admin/AdminCampaignDetailsPage";
 
 // Placeholder
 import { PlaceholderPage } from "@/components/PlaceholderPage";
@@ -118,6 +119,7 @@ const App = () => {
           <Route path="/ops-center/usuarios" element={<AdminUsersPage />} />
           <Route path="/ops-center/usuarios/:userId" element={<AdminUserDetailsPage />} />
           <Route path="/ops-center/campanhas" element={<AdminCampaignsPage />} />
+          <Route path="/ops-center/campanhas/:id" element={<AdminCampaignDetailsPage />} />
           <Route path="/ops-center/busca" element={<AdminSearchPage />} />
           <Route path="/ops-center/auditoria" element={<AdminAuditLogsPage />} />
           <Route path="/ops-center/notificacoes" element={<AdminNotificationsPage />} />
