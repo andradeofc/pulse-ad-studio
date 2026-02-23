@@ -587,7 +587,12 @@ function buildCampaignParams(config: Record<string, any>, name: string): Record<
     params.daily_budget = String(Math.round((config.budget || 50) * 100));
     params.bid_strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
   } else {
-    params.is_adset_budget_sharing_enabled = config.shareAdsetBudget ? 'true' : 'false';
+    // Budget sharing requires an explicit bid strategy (Cost Cap, Bid Cap, or Min ROAS)
+    // LOWEST_COST_WITHOUT_CAP is not compatible with budget sharing
+    const hasBidStrategy = config.bidStrategy && config.bidStrategy !== 'LOWEST_COST_WITHOUT_CAP';
+    if (config.shareAdsetBudget && hasBidStrategy) {
+      params.is_adset_budget_sharing_enabled = 'true';
+    }
   }
 
   return params;
