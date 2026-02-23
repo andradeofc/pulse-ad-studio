@@ -580,7 +580,7 @@ export function Step5Review() {
                 {/* Link Preview - API: name, description */}
                 <div className="p-3 bg-gray-100 border-t border-gray-200">
                   <p className="text-xs text-gray-500 uppercase mb-1">
-                    {config.destinationUrl ? new URL(config.destinationUrl).hostname : 'seusite.com'}
+                    {(() => { try { return config.destinationUrl ? new URL(config.destinationUrl).hostname : 'seusite.com'; } catch { return config.destinationUrl || 'seusite.com'; } })()}
                   </p>
                   <p className="text-sm font-semibold text-gray-900 line-clamp-1">
                     {config.headline || 'Seu título aparecerá aqui'}
