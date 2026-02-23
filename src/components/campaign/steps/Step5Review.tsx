@@ -418,7 +418,9 @@ export function Step5Review() {
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Idade</span>
                 <span className="text-sm text-foreground">
-                  {config.ageMin} - {config.ageMax}+
+                  {config.advantagePlus && config.ageRangeSuggestion 
+                    ? `${config.ageRangeSuggestion[0]} - ${config.ageRangeSuggestion[1]}+ (sugestão)`
+                    : `${config.ageMin} - ${config.ageMax}+`}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -751,6 +753,7 @@ export function Step5Review() {
   geo_locations: config.geoLocations,
   age_min: config.ageMin,
   age_max: config.advantagePlus ? undefined : config.ageMax,
+  age_range: config.advantagePlus && config.ageRangeSuggestion ? config.ageRangeSuggestion : undefined,
   genders: config.genders.length > 0 ? config.genders : undefined,
   locales: config.locales.length > 0 ? config.locales : undefined,
   targeting_optimization: config.advantagePlus ? 'expansion_all' : undefined,

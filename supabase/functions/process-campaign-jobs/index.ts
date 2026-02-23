@@ -609,6 +609,11 @@ function buildAdsetParams(
     },
   };
 
+  // Add age_range suggestion when Advantage+ is enabled
+  if (config.advantagePlus && config.ageRangeSuggestion && Array.isArray(config.ageRangeSuggestion)) {
+    targetingObj.age_range = config.ageRangeSuggestion;
+  }
+
   const params: Record<string, string> = {
     campaign_id: campaignId,
     name,

@@ -51,9 +51,22 @@ export function Step3AudienceSection() {
           onCheckedChange={(checked) => {
             const updates: Partial<typeof config> = { advantagePlus: checked };
             if (checked) {
-              // Advantage+ only allows age_min 18-25 and forces age_max to 65
-              if (config.ageMin > 25) updates.ageMin = 25;
+              // When enabling Advantage+, set age_range suggestion from current min/max
+              // and reset age_min/age_max to API defaults
+              const currentMin = config.ageMin;
+              const currentMax = config.ageMax;
+              if (currentMin !== 18 || currentMax !== 65) {
+                updates.ageRangeSuggestion = [currentMin, currentMax];
+              }
+              updates.ageMin = 18;
               updates.ageMax = 65;
+            } else {
+              // When disabling, restore age_min/age_max from suggestion if available
+              if (config.ageRangeSuggestion) {
+                updates.ageMin = config.ageRangeSuggestion[0];
+                updates.ageMax = config.ageRangeSuggestion[1];
+              }
+              updates.ageRangeSuggestion = null;
             }
             updateConfig(updates);
           }}
@@ -75,63 +88,102 @@ export function Step3AudienceSection() {
       </div>
 
       {/* Age Range */}
-      <div className="grid grid-cols-2 gap-4">
+      {config.advantagePlus ? (
+        /* Advantage+ mode: age_range suggestion (like Facebook Ads Manager) */
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
-            Idade Mínima
-            <Badge variant="outline" className="text-xs font-mono">age_min</Badge>
+            Faixa Etária Sugerida
+            <Badge variant="outline" className="text-xs font-mono">age_range</Badge>
           </Label>
-          <Select
-            value={config.ageMin.toString()}
-            onValueChange={(value) => {
-              const newAge = parseInt(value);
-              updateConfig({ ageMin: newAge });
-            }}
-          >
-            <SelectTrigger className="bg-secondary/50">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {config.advantagePlus
-                ? Array.from({ length: 8 }, (_, i) => i + 18).map((age) => (
+          <p className="text-xs text-muted-foreground">
+            Sugestão para a I.A. do Meta. A API usará age_min=18 e age_max=65 como padrão, mas priorizará esta faixa.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">De</Label>
+              <Select
+                value={(config.ageRangeSuggestion?.[0] ?? 18).toString()}
+                onValueChange={(value) => {
+                  const min = parseInt(value);
+                  const currentMax = config.ageRangeSuggestion?.[1] ?? 65;
+                  updateConfig({ ageRangeSuggestion: [min, Math.max(min, currentMax)] });
+                }}
+              >
+                <SelectTrigger className="bg-secondary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
                     <SelectItem key={age} value={age.toString()}>{age}</SelectItem>
-                  ))
-                : Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
-                    <SelectItem key={age} value={age.toString()}>{age}</SelectItem>
-                  ))
-              }
-            </SelectContent>
-          </Select>
-          {config.advantagePlus && (
-            <p className="text-xs text-warning">
-              Com Advantage+, a API aceita apenas idade mínima entre 18 e 25
-            </p>
-          )}
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Até</Label>
+              <Select
+                value={(config.ageRangeSuggestion?.[1] ?? 65).toString()}
+                onValueChange={(value) => {
+                  const max = parseInt(value);
+                  const currentMin = config.ageRangeSuggestion?.[0] ?? 18;
+                  updateConfig({ ageRangeSuggestion: [Math.min(currentMin, max), max] });
+                }}
+              >
+                <SelectTrigger className="bg-secondary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
+                    <SelectItem key={age} value={age.toString()}>{age}{age === 65 ? '+' : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            Idade Máxima
-            <Badge variant="outline" className="text-xs font-mono">age_max</Badge>
-          </Label>
-          <Select
-            value={config.ageMax.toString()}
-            onValueChange={(value) => updateConfig({ ageMax: parseInt(value) })}
-            disabled={config.advantagePlus}
-          >
-            <SelectTrigger className="bg-secondary/50">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
-                <SelectItem key={age} value={age.toString()}>{age}{age === 65 ? '+' : ''}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {config.advantagePlus && (
-            <p className="text-xs text-muted-foreground">Fixado em 65 com Advantage+</p>
-          )}
+      ) : (
+        /* Normal mode: standard age_min / age_max */
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              Idade Mínima
+              <Badge variant="outline" className="text-xs font-mono">age_min</Badge>
+            </Label>
+            <Select
+              value={config.ageMin.toString()}
+              onValueChange={(value) => updateConfig({ ageMin: parseInt(value) })}
+            >
+              <SelectTrigger className="bg-secondary/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
+                  <SelectItem key={age} value={age.toString()}>{age}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              Idade Máxima
+              <Badge variant="outline" className="text-xs font-mono">age_max</Badge>
+            </Label>
+            <Select
+              value={config.ageMax.toString()}
+              onValueChange={(value) => updateConfig({ ageMax: parseInt(value) })}
+            >
+              <SelectTrigger className="bg-secondary/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 48 }, (_, i) => i + 18).map((age) => (
+                  <SelectItem key={age} value={age.toString()}>{age}{age === 65 ? '+' : ''}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Gender - API compatible */}
       <div className="space-y-2">
@@ -177,7 +229,9 @@ export function Step3AudienceSection() {
       {/* Audience Summary */}
       <div className="p-3 bg-secondary/30 rounded-lg text-sm text-muted-foreground">
         📍 {config.geoLocations.countries.length} país(es) · 
-        👤 {config.ageMin}-{config.ageMax}+ · 
+        👤 {config.advantagePlus && config.ageRangeSuggestion 
+          ? `${config.ageRangeSuggestion[0]}-${config.ageRangeSuggestion[1]}+ (sugestão)` 
+          : `${config.ageMin}-${config.ageMax}+`} · 
         🔲 {getGenderDisplay()} · 
         🌐 {config.locales.length} idioma(s)
       </div>
@@ -190,6 +244,7 @@ export function Step3AudienceSection() {
   geo_locations: config.geoLocations,
   age_min: config.ageMin,
   age_max: config.advantagePlus ? undefined : config.ageMax,
+  age_range: config.advantagePlus && config.ageRangeSuggestion ? config.ageRangeSuggestion : undefined,
   genders: config.genders.length > 0 ? config.genders : undefined,
   locales: config.locales.length > 0 ? config.locales : undefined,
   targeting_optimization: config.advantagePlus ? 'expansion_all' : undefined,
