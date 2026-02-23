@@ -86,6 +86,7 @@ export interface CampaignConfig {
   locales: number[]; // Locale IDs from Facebook API (e.g., 24 = Portuguese (Brazil))
   ageMin: number;
   ageMax: number;
+  ageRangeSuggestion: [number, number] | null; // Advantage+ age_range suggestion (e.g., [25, 45])
   genders: number[]; // Facebook API: [] = all, [1] = male, [2] = female
   // Detailed targeting
   flexibleSpec: {
@@ -193,6 +194,7 @@ const defaultConfig: CampaignConfig = {
   locales: [24], // Portuguese (Brazil)
   ageMin: 18,
   ageMax: 65,
+  ageRangeSuggestion: null,
   genders: [], // All genders
   flexibleSpec: [],
   exclusions: {},

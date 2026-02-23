@@ -474,7 +474,9 @@ export default function CampaignDetailsPage() {
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">Idade</p>
                     <p className="font-medium text-foreground">
-                      {config.ageMin || 18} - {config.ageMax || 65}+ anos
+                      {config.advantagePlus && config.ageRangeSuggestion 
+                        ? `${config.ageRangeSuggestion[0]} - ${config.ageRangeSuggestion[1]}+ (sugestão)`
+                        : `${config.ageMin || 18} - ${config.ageMax || 65}+ anos`}
                     </p>
                   </div>
                   <div>
