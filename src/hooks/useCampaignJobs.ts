@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useEffectiveUserId } from '@/hooks/useEffectiveUserId';
 
 export interface CampaignJob {
   id: string;
@@ -120,6 +121,16 @@ export function useCreateCampaignJob() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
+      // Resolve effective user ID (owner's ID for collaborators)
+      const { data: teamMember } = await supabase
+        .from('team_members' as any)
+        .select('owner_id')
+        .eq('member_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      
+      const effectiveId = teamMember ? (teamMember as any).owner_id : user.id;
+
       const hash = generateHash();
       const expectedItemCount = params.items.length;
 
@@ -129,7 +140,7 @@ export function useCreateCampaignJob() {
       const { data: job, error: jobError } = await supabase
         .from('campaign_jobs')
         .insert({
-          user_id: user.id,
+          user_id: effectiveId,
           hash,
           name: params.name,
           status: 'queued',

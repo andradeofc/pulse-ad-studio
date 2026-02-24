@@ -1,8 +1,10 @@
 import { Settings, ChevronRight } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/stores/authStore';
 import { NotificationPopover } from './NotificationPopover';
+import { useEffectiveUserId } from '@/hooks/useEffectiveUserId';
 
 const routeTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -24,6 +26,7 @@ const routeTitles: Record<string, string> = {
 export function DashboardHeader() {
   const location = useLocation();
   const { user } = useAuthStore();
+  const { data: effectiveUser } = useEffectiveUserId();
   
   const currentTitle = routeTitles[location.pathname] || 'Dashboard';
   const pathParts = location.pathname.split('/').filter(Boolean);
@@ -56,6 +59,11 @@ export function DashboardHeader() {
 
       {/* Right - Actions */}
       <div className="flex items-center gap-4">
+        {effectiveUser?.isCollaborator && (
+          <Badge variant="secondary" className="hidden md:flex text-xs">
+            Colaborador de {effectiveUser.ownerName}
+          </Badge>
+        )}
         <span className="text-sm text-muted-foreground hidden md:block">
           Bem-vindo, <span className="text-foreground font-medium">{user?.name || 'Usuário'}</span>
         </span>

@@ -1172,6 +1172,39 @@ export type Database = {
         }
         Relationships: []
       }
+      team_members: {
+        Row: {
+          accepted_at: string | null
+          created_at: string
+          email: string
+          id: string
+          invited_at: string | null
+          member_id: string
+          owner_id: string
+          status: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          invited_at?: string | null
+          member_id: string
+          owner_id: string
+          status?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          invited_at?: string | null
+          member_id?: string
+          owner_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       user_ad_usage: {
         Row: {
           ads_created: number
@@ -1376,6 +1409,7 @@ export type Database = {
           remaining: number
         }[]
       }
+      effective_user_id: { Args: never; Returns: string }
       get_admin_all_user_stats: {
         Args: never
         Returns: {
@@ -1412,6 +1446,8 @@ export type Database = {
         Returns: undefined
       }
       is_admin: { Args: never; Returns: boolean }
+      is_collaborator: { Args: never; Returns: boolean }
+      is_team_member_of: { Args: { owner_uuid: string }; Returns: boolean }
       user_is_admin: { Args: { check_user_id: string }; Returns: boolean }
       user_owns_facebook_profile: {
         Args: { profile_id: string }
