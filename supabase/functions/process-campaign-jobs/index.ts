@@ -2097,10 +2097,17 @@ Deno.serve(async (req) => {
         }
       } else {
         // Regular user token
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+        const { data: { user: authUser }, error: userError } = await supabase.auth.getUser(token);
         
-        if (!userError && user) {
-          userId = user.id;
+        if (!userError && authUser) {
+          // Resolve effective user id for collaborators
+          const { data: teamMember } = await supabase
+            .from('team_members')
+            .select('owner_id')
+            .eq('member_id', authUser.id)
+            .eq('status', 'active')
+            .maybeSingle();
+          userId = (teamMember as any)?.owner_id || authUser.id;
         }
       }
     }

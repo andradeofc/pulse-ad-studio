@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthStore } from '@/stores/authStore';
+import { useEffectiveUserId } from '@/hooks/useEffectiveUserId';
 
 export interface AdUsageData {
   adsUsed: number;
@@ -36,24 +37,26 @@ const PLAN_LIMITS: Record<string, number> = {
 
 export function useAdUsage() {
   const { user } = useAuthStore();
+  const { data: effectiveUserData } = useEffectiveUserId();
+  const effectiveId = effectiveUserData?.effectiveUserId || user?.id;
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['ad-usage', user?.id],
+    queryKey: ['ad-usage', effectiveId],
     queryFn: async (): Promise<AdUsageData | null> => {
-      if (!user?.id) return null;
+      if (!effectiveId) return null;
 
-      // Get user's plan
+      // Get owner's plan (effective user for collaborators)
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('plan')
-        .eq('user_id', user.id)
+        .eq('user_id', effectiveId)
         .single();
 
       const plan = profile?.plan || 'starter';
 
-      // Call database function to get current usage
+      // Call database function with effective user id
       const { data: usageData, error: usageError } = await supabase
-        .rpc('get_current_ad_usage', { check_user_id: user.id });
+        .rpc('get_current_ad_usage', { check_user_id: effectiveId });
 
       if (usageError) {
         console.error('Error fetching ad usage:', usageError);
@@ -90,13 +93,13 @@ export function useAdUsage() {
         planName: isUnlimited ? 'Admin (Ilimitado)' : (PLAN_NAMES[plan] || 'Starter'),
       };
     },
-    enabled: !!user?.id,
+    enabled: !!effectiveId,
     staleTime: 30000, // 30 seconds
     refetchInterval: 60000, // 1 minute
   });
 
   const checkCanCreateAds = async (adsToCreate: number): Promise<CanCreateAdsResult> => {
-    if (!user?.id) {
+    if (!effectiveId) {
       return {
         allowed: false,
         currentUsage: 0,
@@ -109,7 +112,7 @@ export function useAdUsage() {
 
     const { data, error } = await supabase
       .rpc('can_create_ads', { 
-        check_user_id: user.id, 
+        check_user_id: effectiveId, 
         ads_to_create: adsToCreate 
       });
 

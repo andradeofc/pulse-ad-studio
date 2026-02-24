@@ -133,11 +133,20 @@ Deno.serve(async (req) => {
       `[sync-catalogs] user=${user.id} business_id=${businessId} ad_accounts=${adAccountDbIds.length}`,
     );
 
-    // Active profiles for this user (without access_token - it's now stored securely)
+    // Resolve effective user id (collaborator → owner)
+    const { data: teamMember } = await supabase
+      .from('team_members')
+      .select('owner_id')
+      .eq('member_id', user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    const effectiveUserId = (teamMember as any)?.owner_id || user.id;
+
+    // Active profiles for effective user
     const { data: profiles, error: profilesError } = await supabase
       .from('facebook_profiles')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .eq('status', 'active');
 
     if (profilesError || !profiles || profiles.length === 0) {
