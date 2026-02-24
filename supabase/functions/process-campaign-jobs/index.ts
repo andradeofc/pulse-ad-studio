@@ -3104,6 +3104,115 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ============= LAYER 2: RETRY TRANSIENT BATCH ERRORS =============
+    // After all accounts are processed, check for items that failed with
+    // transient errors (e.g. "Request aborted" inside Batch API responses).
+    // These are NOT network-level errors (handled by Layer 1), but errors
+    // returned by Facebook within the batch response body.
+    // Reset them to 'pending' (max 2 retries) so the next invocation retries them.
+    const LAYER2_MAX_RETRIES = 2;
+    const LAYER2_RETRIABLE_PATTERNS = [
+      'request aborted',
+      'an unknown error occurred',
+      'please reduce the amount of data',
+      'service temporarily unavailable',
+    ];
+
+    try {
+      // Fetch failed items for this job
+      const { data: failedItems } = await supabase
+        .from('campaign_job_items')
+        .select('id, error_message, config')
+        .eq('job_id', jobId)
+        .eq('status', 'failed');
+
+      if (failedItems && failedItems.length > 0) {
+        const eligibleForRetry: string[] = [];
+
+        for (const item of failedItems) {
+          const errorMsg = (item.error_message || '').toLowerCase();
+          const isTransient = LAYER2_RETRIABLE_PATTERNS.some(p => errorMsg.includes(p));
+
+          if (!isTransient) continue;
+
+          const itemConfig = (item.config || {}) as Record<string, any>;
+          const currentRetryCount = itemConfig.layer2_retry_count || 0;
+
+          if (currentRetryCount >= LAYER2_MAX_RETRIES) {
+            console.log(`[Layer2] Item ${item.id} exhausted retries (${currentRetryCount}/${LAYER2_MAX_RETRIES}), keeping failed`);
+            continue;
+          }
+
+          eligibleForRetry.push(item.id);
+
+          // Reset item to pending with incremented retry count
+          await supabase
+            .from('campaign_job_items')
+            .update({
+              status: 'pending',
+              error_message: null,
+              config: {
+                ...itemConfig,
+                layer2_retry_count: currentRetryCount + 1,
+                layer2_last_error: item.error_message,
+              },
+            })
+            .eq('id', item.id);
+        }
+
+        if (eligibleForRetry.length > 0) {
+          console.log(`[Layer2] Reset ${eligibleForRetry.length} transient-failed items to pending (retry)`);
+
+          // Also reset parent items that might have cascading "Parent X failed" errors
+          // so their children can be retried properly
+          const { data: cascadeItems } = await supabase
+            .from('campaign_job_items')
+            .select('id, error_message, config, parent_id')
+            .eq('job_id', jobId)
+            .eq('status', 'failed')
+            .or('error_message.ilike.%parent campaign failed%,error_message.ilike.%parent adset failed%');
+
+          if (cascadeItems && cascadeItems.length > 0) {
+            // Only reset cascade items whose parent was just reset
+            const resetParentIds = new Set(eligibleForRetry);
+            let cascadeCount = 0;
+
+            for (const ci of cascadeItems) {
+              if (ci.parent_id && resetParentIds.has(ci.parent_id)) {
+                const ciConfig = (ci.config || {}) as Record<string, any>;
+                const ciRetryCount = ciConfig.layer2_retry_count || 0;
+                if (ciRetryCount < LAYER2_MAX_RETRIES) {
+                  await supabase
+                    .from('campaign_job_items')
+                    .update({
+                      status: 'pending',
+                      error_message: null,
+                      config: {
+                        ...ciConfig,
+                        layer2_retry_count: ciRetryCount + 1,
+                        layer2_last_error: ci.error_message,
+                      },
+                    })
+                    .eq('id', ci.id);
+                  cascadeCount++;
+                }
+              }
+            }
+
+            if (cascadeCount > 0) {
+              console.log(`[Layer2] Also reset ${cascadeCount} cascade-failed children`);
+            }
+          }
+
+          // Yield the job so queue-processor picks it up for retry
+          return yieldChunk(`Layer 2: retrying ${eligibleForRetry.length} transient-failed items`);
+        }
+      }
+    } catch (layer2Error: any) {
+      // Layer 2 is non-critical — if it fails, we just complete the job normally
+      console.error(`[Layer2] Error during retry check (non-fatal):`, layer2Error.message);
+    }
+
     const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
     
     // ============= FINAL SUMMARY =============
