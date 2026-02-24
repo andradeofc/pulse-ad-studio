@@ -68,13 +68,23 @@ export function useCampaignTemplates() {
         return null;
       }
 
+      // Resolve effective user ID for collaborators
+      const { data: teamMember } = await supabase
+        .from('team_members' as any)
+        .select('owner_id')
+        .eq('member_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      
+      const effectiveId = teamMember ? (teamMember as any).owner_id : user.id;
+
       // Clean config before saving - remove non-serializable data
       const cleanConfig = cleanConfigForSave(config) as unknown as Record<string, never>;
 
       const { data, error } = await supabase
         .from('campaign_templates')
         .insert([{
-          user_id: user.id,
+          user_id: effectiveId,
           name,
           description: description || null,
           config: cleanConfig,

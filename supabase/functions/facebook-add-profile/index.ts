@@ -593,8 +593,24 @@ Deno.serve(async (req) => {
       );
     }
 
-    const userId = claimsData.claims.sub;
-    console.log("Authenticated user:", userId);
+    const authUserId = claimsData.claims.sub;
+    console.log("Authenticated user:", authUserId);
+
+    // Resolve effective user ID (for collaborators, use owner's ID)
+    const serviceRoleKeyForTeam = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const adminClientForTeam = createClient(supabaseUrl, serviceRoleKeyForTeam);
+    
+    const { data: teamMemberData } = await adminClientForTeam
+      .from("team_members")
+      .select("owner_id")
+      .eq("member_id", authUserId)
+      .eq("status", "active")
+      .maybeSingle();
+    
+    const userId = teamMemberData?.owner_id || authUserId;
+    if (teamMemberData) {
+      console.log(`Collaborator detected. Using owner ID: ${userId}`);
+    }
 
     const { accessToken } = await req.json();
 

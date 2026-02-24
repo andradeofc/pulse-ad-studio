@@ -126,10 +126,20 @@ export function useNamingPresets() {
         return null;
       }
 
+      // Resolve effective user ID for collaborators
+      const { data: teamMember } = await supabase
+        .from('team_members' as any)
+        .select('owner_id')
+        .eq('member_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      
+      const effectiveId = teamMember ? (teamMember as any).owner_id : user.id;
+
       const { data, error } = await supabase
         .from('naming_presets')
         .insert({
-          user_id: user.id,
+          user_id: effectiveId,
           name,
           template,
           context,
@@ -318,11 +328,21 @@ export function useNamingPresets() {
         setCustomVariables(prev => prev.map(v => v.key === key ? updatedVar : v));
         return updatedVar;
       } else {
-        // Insert new
+      // Resolve effective user ID for collaborators
+      const { data: teamMember } = await supabase
+        .from('team_members' as any)
+        .select('owner_id')
+        .eq('member_id', user.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      
+      const effectiveId = teamMember ? (teamMember as any).owner_id : user.id;
+
+      // Insert new
         const { data, error } = await supabase
           .from('naming_variables')
           .insert({
-            user_id: user.id,
+            user_id: effectiveId,
             key,
             label,
             value,
