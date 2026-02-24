@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -73,10 +73,24 @@ export default function AdminCampaignsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [userFilter, setUserFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Fetch all users for the filter
+  const { data: usersData } = useQuery({
+    queryKey: ['admin-campaign-users'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('user_id, full_name')
+        .order('full_name');
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   const { data: campaignsData, isLoading } = useQuery({
-    queryKey: ['admin-campaigns', searchQuery, statusFilter, typeFilter, currentPage],
+    queryKey: ['admin-campaigns', searchQuery, statusFilter, typeFilter, userFilter, currentPage],
     queryFn: async () => {
       let query = supabase
         .from('campaign_jobs')
@@ -85,6 +99,10 @@ export default function AdminCampaignsPage() {
 
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter);
+      }
+
+      if (userFilter !== 'all') {
+        query = query.eq('user_id', userFilter);
       }
 
       if (searchQuery) {
@@ -160,6 +178,19 @@ export default function AdminCampaignsPage() {
                   <SelectItem value="catalog">Catálogo</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={userFilter} onValueChange={(v) => { setUserFilter(v); setCurrentPage(1); }}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Usuário" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Usuários</SelectItem>
+                  {usersData?.map((user) => (
+                    <SelectItem key={user.user_id} value={user.user_id}>
+                      {user.full_name || user.user_id.slice(0, 8) + '...'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -203,9 +234,9 @@ export default function AdminCampaignsPage() {
                           <p className="font-medium text-foreground truncate" title={campaign.name}>
                             {campaign.name}
                           </p>
-                          <p className="text-xs text-muted-foreground font-mono">
-                            {campaign.user_id.slice(0, 8)}...
-                          </p>
+                          <Link to={`/ops-center/usuarios/${campaign.user_id}`} className="text-xs text-primary hover:underline">
+                            {usersData?.find(u => u.user_id === campaign.user_id)?.full_name || campaign.user_id.slice(0, 8) + '...'}
+                          </Link>
                         </div>
                       </TableCell>
                       <TableCell>
