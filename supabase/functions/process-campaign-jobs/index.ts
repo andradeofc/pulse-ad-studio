@@ -60,6 +60,23 @@ interface BatchResponseItem {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Determines if an error is transient and eligible for retry (network timeouts, aborts)
+function isRetriableNetworkError(message: string): boolean {
+  if (!message) return false;
+  const lowerMsg = message.toLowerCase();
+  return [
+    'request aborted',
+    'aborted',
+    'network error',
+    'fetch failed',
+    'connection reset',
+    'socket hang up',
+    'econnreset',
+    'timeout',
+    'network request failed',
+  ].some(pattern => lowerMsg.includes(pattern));
+}
+
 // Enrich Facebook API error messages with user-friendly descriptions for known subcodes
 function enrichErrorMessage(parsedError: any, fallbackMsg: string): string {
   if (!parsedError) return fallbackMsg;
@@ -397,52 +414,75 @@ async function executeBatchRequest(
 
   console.log(`[batch] Executing batch request with ${batch.length} operations`);
 
-  try {
-    const res = await fetch(`${GRAPH_BASE_URL}/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData.toString(),
-    });
+  // Retry loop: attempt once, retry once on transient network errors (e.g., "Request aborted")
+  const MAX_ATTEMPTS = 2;
+  const RETRY_DELAY_MS = 3000;
 
-    // Parse rate limit from response header
-    const rateLimitHeader = res.headers.get('x-ad-account-usage') || res.headers.get('X-Ad-Account-Usage');
-    const rateLimitPercent = parseRateLimitHeader(rateLimitHeader);
-    
-    if (rateLimitPercent > 0 && accountId) {
-      updateRateLimitInfo(accountId, rateLimitPercent);
-      if (rateLimitPercent > 50) {
-        console.log(`[batch] Account ${accountId} usage: ${rateLimitPercent.toFixed(1)}%`);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${GRAPH_BASE_URL}/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString(),
+      });
+
+      // Parse rate limit from response header
+      const rateLimitHeader = res.headers.get('x-ad-account-usage') || res.headers.get('X-Ad-Account-Usage');
+      const rateLimitPercent = parseRateLimitHeader(rateLimitHeader);
+      
+      if (rateLimitPercent > 0 && accountId) {
+        updateRateLimitInfo(accountId, rateLimitPercent);
+        if (rateLimitPercent > 50) {
+          console.log(`[batch] Account ${accountId} usage: ${rateLimitPercent.toFixed(1)}%`);
+        }
       }
-    }
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error(`[batch] Batch request failed with status ${res.status}:`, errorText);
-      throw new Error(`Batch request failed: ${res.status}`);
-    }
-
-    const results: BatchResponseItem[] = await res.json();
-    
-    // Log any errors in batch responses
-    let errorCount = 0;
-    for (let i = 0; i < results.length; i++) {
-      if (results[i].code >= 400) {
-        errorCount++;
-        let errDetail = '';
-        try { const b = JSON.parse(results[i].body); errDetail = JSON.stringify(b.error || b).substring(0, 500); } catch { errDetail = String(results[i].body).substring(0, 300); }
-        console.warn(`[batch] Item ${i} failed with code ${results[i].code}: ${errDetail}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`[batch] Batch request failed with status ${res.status}:`, errorText);
+        throw new Error(`Batch request failed: ${res.status}`);
       }
-    }
-    
-    if (errorCount > 0) {
-      console.log(`[batch] Batch completed: ${results.length - errorCount}/${results.length} succeeded`);
-    }
 
-    return { results, usagePercent: rateLimitPercent };
-  } catch (err: any) {
-    console.error(`[batch] Batch request error:`, err);
-    throw err;
+      const results: BatchResponseItem[] = await res.json();
+      
+      // Log any errors in batch responses
+      let errorCount = 0;
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].code >= 400) {
+          errorCount++;
+          let errDetail = '';
+          try { const b = JSON.parse(results[i].body); errDetail = JSON.stringify(b.error || b).substring(0, 500); } catch { errDetail = String(results[i].body).substring(0, 300); }
+          console.warn(`[batch] Item ${i} failed with code ${results[i].code}: ${errDetail}`);
+        }
+      }
+      
+      if (errorCount > 0) {
+        console.log(`[batch] Batch completed: ${results.length - errorCount}/${results.length} succeeded`);
+      }
+
+      if (attempt > 1) {
+        console.log(`[batch] ✅ Retry succeeded on attempt ${attempt}`);
+      }
+
+      return { results, usagePercent: rateLimitPercent };
+    } catch (err: any) {
+      const errMsg = err.message || String(err);
+
+      // Check if this is a retriable transient error
+      if (attempt < MAX_ATTEMPTS && isRetriableNetworkError(errMsg)) {
+        console.warn(`[batch] ⚠️ Retriable error on attempt ${attempt}/${MAX_ATTEMPTS}: "${errMsg}". Retrying in ${RETRY_DELAY_MS / 1000}s...`);
+        await sleep(RETRY_DELAY_MS);
+        continue; // Retry the same batch
+      }
+
+      // Non-retriable error or exhausted retries
+      console.error(`[batch] Batch request error (attempt ${attempt}/${MAX_ATTEMPTS}):`, errMsg);
+      throw err;
+    }
   }
+
+  // Should never reach here, but TypeScript safety
+  throw new Error('Unexpected: exhausted all batch retry attempts');
 }
 
 // Helper to get adaptive batch size based on current rate limit usage
