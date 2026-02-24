@@ -585,6 +585,19 @@ export default function AdminCampaignDetailsPage() {
                     </>
                   )}
 
+                  {/* UTM Parameters */}
+                  {config.urlParams && (
+                    <>
+                      <Separator />
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">Parâmetros UTM</p>
+                        <div className="p-3 rounded-lg bg-secondary/50 font-mono text-xs text-foreground break-all">
+                          {config.urlParams}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
                   {/* Ad texts */}
                   {(config.primaryText || config.headline || config.description) && (
                     <>
@@ -614,10 +627,10 @@ export default function AdminCampaignDetailsPage() {
                   )}
 
                   {/* CTA */}
-                  {config.callToAction && (
+                  {(config.ctaType || config.callToAction) && (
                     <div className="p-3 rounded-lg bg-secondary/50">
                       <p className="text-xs text-muted-foreground mb-1">Call to Action</p>
-                      <p className="font-medium text-foreground text-sm">{config.callToAction}</p>
+                      <p className="font-medium text-foreground text-sm">{config.ctaType || config.callToAction}</p>
                     </div>
                   )}
                 </CardContent>
