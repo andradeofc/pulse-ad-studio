@@ -105,15 +105,28 @@ async function generateVideoThumbnail(file: File): Promise<Blob | null> {
  */
 export async function uploadCreative(
   file: File,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  effectiveUserId?: string
 ): Promise<CreativeMetadata> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Usuário não autenticado');
 
+  // Resolve effective user id for collaborators
+  let ownerId = effectiveUserId;
+  if (!ownerId) {
+    const { data: teamMember } = await supabase
+      .from('team_members' as any)
+      .select('owner_id')
+      .eq('member_id', user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    ownerId = (teamMember as any)?.owner_id || user.id;
+  }
+
   const fileType = file.type.startsWith('video/') ? 'video' : 'image';
   const fileExt = file.name.split('.').pop();
   const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-  const filePath = `${user.id}/${fileName}`;
+  const filePath = `${ownerId}/${fileName}`;
 
   // Get media dimensions
   const dimensions = await getMediaDimensions(file);
@@ -144,7 +157,7 @@ export async function uploadCreative(
     onProgress?.(70);
     const thumbnail = await generateVideoThumbnail(file);
     if (thumbnail) {
-      const thumbPath = `${user.id}/thumbs/${fileName.replace(/\.[^.]+$/, '.jpg')}`;
+      const thumbPath = `${ownerId}/thumbs/${fileName.replace(/\.[^.]+$/, '.jpg')}`;
       const { error: thumbError } = await supabase.storage
         .from('creatives')
         .upload(thumbPath, thumbnail, {
@@ -170,7 +183,7 @@ export async function uploadCreative(
   const { data: creative, error: dbError } = await supabase
     .from('creatives')
     .insert({
-      user_id: user.id,
+      user_id: ownerId,
       name: file.name,
       type: fileType,
       file_path: filePath,

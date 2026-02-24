@@ -114,12 +114,11 @@ serve(async (req) => {
       );
     }
 
-    // 1. Get the profile and verify ownership
+    // 1. Get the profile and verify ownership (RLS handles team member access)
     const { data: profile, error: profileError } = await supabase
       .from("facebook_profiles")
       .select("id, name, status")
       .eq("id", profileId)
-      .eq("user_id", userId)
       .single();
 
     if (profileError || !profile) {

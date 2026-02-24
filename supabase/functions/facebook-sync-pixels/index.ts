@@ -56,11 +56,10 @@ Deno.serve(async (req) => {
 
     console.log(`Syncing pixels for user: ${user.id}`);
 
-    // Get all Facebook profiles for this user (without access_token - it's now stored securely)
+    // Get all Facebook profiles for this user (RLS handles team member access)
     const { data: profiles, error: profilesError } = await supabase
       .from("facebook_profiles")
       .select("id, proxy_host, proxy_port, proxy_username, proxy_password")
-      .eq("user_id", user.id)
       .eq("status", "active");
 
     if (profilesError) {

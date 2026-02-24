@@ -81,8 +81,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verify ownership
-    if (profile.user_id !== user.id) {
+    // Verify ownership (resolve effective user id for collaborators)
+    const { data: teamMember } = await supabase
+      .from('team_members')
+      .select('owner_id')
+      .eq('member_id', user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    const effectiveUserId = (teamMember as any)?.owner_id || user.id;
+
+    if (profile.user_id !== effectiveUserId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

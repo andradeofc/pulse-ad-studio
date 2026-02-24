@@ -51,15 +51,23 @@ Deno.serve(async (req) => {
       // No body or invalid JSON
     }
 
-    // If no profileId, sync all profiles for user
-    // Get profiles (without access_token - it's now stored securely)
+    // Resolve effective user id (collaborator → owner)
+    const { data: teamMember } = await supabase
+      .from('team_members')
+      .select('owner_id')
+      .eq('member_id', user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    const effectiveUserId = (teamMember as any)?.owner_id || user.id;
+
+    // If no profileId, sync all profiles for effective user
     let profiles;
     if (profileId) {
       const { data, error } = await supabase
         .from('facebook_profiles')
         .select('id')
         .eq('id', profileId)
-        .eq('user_id', user.id)
+        .eq('user_id', effectiveUserId)
         .eq('status', 'active');
       
       if (error) throw error;
@@ -68,7 +76,7 @@ Deno.serve(async (req) => {
       const { data, error } = await supabase
         .from('facebook_profiles')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', effectiveUserId)
         .eq('status', 'active');
       
       if (error) throw error;
