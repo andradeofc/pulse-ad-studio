@@ -678,6 +678,7 @@ export type Database = {
           currency: string | null
           id: string
           name: string
+          nickname: string | null
           profile_id: string
           spend_updated_at: string | null
           status: string | null
@@ -692,6 +693,7 @@ export type Database = {
           currency?: string | null
           id?: string
           name: string
+          nickname?: string | null
           profile_id: string
           spend_updated_at?: string | null
           status?: string | null
@@ -706,6 +708,7 @@ export type Database = {
           currency?: string | null
           id?: string
           name?: string
+          nickname?: string | null
           profile_id?: string
           spend_updated_at?: string | null
           status?: string | null

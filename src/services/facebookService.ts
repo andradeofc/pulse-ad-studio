@@ -25,6 +25,7 @@ export interface FacebookAdAccount {
   profile_id: string;
   account_id: string;
   name: string;
+  nickname: string | null;
   currency: string | null;
   timezone: string | null;
   status: string;

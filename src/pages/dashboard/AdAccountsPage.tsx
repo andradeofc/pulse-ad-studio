@@ -9,6 +9,9 @@ import {
   User,
   DollarSign,
   TrendingUp,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,6 +27,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { fetchFacebookProfiles, fetchAdAccounts, syncFacebookAdAccounts, type FacebookAdAccount, type FacebookProfile } from '@/services/facebookService';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -46,6 +50,10 @@ export default function AdAccountsPage() {
   const [currencyFilter, setCurrencyFilter] = useState('all');
   const [bmFilter, setBmFilter] = useState('all');
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  
+  // Nickname editing state
+  const [editingNicknameId, setEditingNicknameId] = useState<string | null>(null);
+  const [nicknameValue, setNicknameValue] = useState('');
 
   // Load profiles and their ad accounts
   useEffect(() => {
@@ -94,13 +102,45 @@ export default function AdAccountsPage() {
     }
   };
 
+  const startEditNickname = (account: FacebookAdAccount) => {
+    setEditingNicknameId(account.id);
+    setNicknameValue(account.nickname || '');
+  };
+
+  const cancelEditNickname = () => {
+    setEditingNicknameId(null);
+    setNicknameValue('');
+  };
+
+  const saveNickname = async (accountId: string) => {
+    const trimmed = nicknameValue.trim();
+    const newNickname = trimmed || null;
+    
+    const { error } = await supabase
+      .from('facebook_ad_accounts')
+      .update({ nickname: newNickname } as any)
+      .eq('id', accountId);
+
+    if (error) {
+      toast.error('Erro ao salvar apelido');
+      console.error(error);
+      return;
+    }
+
+    setAccounts(prev => prev.map(a => a.id === accountId ? { ...a, nickname: newNickname } : a));
+    setEditingNicknameId(null);
+    setNicknameValue('');
+    toast.success('Apelido salvo!');
+  };
+
   // Get unique BM names for filter
   const uniqueBMs = [...new Set(accounts.map(a => a.business_name || 'Pessoal'))];
 
   const filteredAccounts = accounts.filter((account) => {
     const matchesSearch =
       account.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      account.account_id.toLowerCase().includes(searchQuery.toLowerCase());
+      account.account_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (account.nickname || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || account.status === statusFilter;
     const matchesCurrency = currencyFilter === 'all' || account.currency === currencyFilter;
     const matchesBM = bmFilter === 'all' || (account.business_name || 'Pessoal') === bmFilter;
@@ -194,7 +234,7 @@ export default function AdAccountsPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nome ou ID..."
+                placeholder="Buscar por nome, apelido ou ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 bg-secondary/50"
@@ -296,6 +336,7 @@ export default function AdAccountsPage() {
                 <tbody>
                   {filteredAccounts.map((account) => {
                     const status = statusConfig[account.status] || statusConfig.unknown;
+                    const isEditing = editingNicknameId === account.id;
                     return (
                       <motion.tr
                         key={account.id}
@@ -304,9 +345,58 @@ export default function AdAccountsPage() {
                         className="border-b border-border/50 hover:bg-secondary/30 transition-colors"
                       >
                         <td className="py-4 px-4">
-                          <span className="text-sm font-medium text-foreground">
-                            {account.name}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-medium text-foreground">
+                              {account.name}
+                            </span>
+                            {/* Nickname row */}
+                            <div className="flex items-center gap-1.5 min-h-[24px]">
+                              {isEditing ? (
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    value={nicknameValue}
+                                    onChange={(e) => setNicknameValue(e.target.value)}
+                                    placeholder="Ex: PP, Conta Principal..."
+                                    className="h-6 text-xs w-40 bg-secondary/50 px-2 py-0"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveNickname(account.id);
+                                      if (e.key === 'Escape') cancelEditNickname();
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => saveNickname(account.id)}
+                                    className="p-0.5 rounded hover:bg-ads-success/20 text-ads-success transition-colors"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={cancelEditNickname}
+                                    className="p-0.5 rounded hover:bg-destructive/20 text-destructive transition-colors"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => startEditNickname(account)}
+                                  className="flex items-center gap-1 group text-xs text-muted-foreground hover:text-primary transition-colors"
+                                >
+                                  {account.nickname ? (
+                                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 font-normal gap-1">
+                                      {account.nickname}
+                                      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    </Badge>
+                                  ) : (
+                                    <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Pencil className="w-2.5 h-2.5" />
+                                      Adicionar apelido
+                                    </span>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </td>
                         <td className="py-4 px-4">
                           <code className="text-xs bg-secondary/50 px-2 py-1 rounded text-muted-foreground">
