@@ -25,6 +25,7 @@ interface AdAccount {
   id: string;
   account_id: string;
   name: string;
+  nickname: string | null;
   currency: string | null;
   timezone: string | null;
   status: string | null;
@@ -79,7 +80,8 @@ export function AdAccountSelector({
       (acc) =>
         acc.name.toLowerCase().includes(query) ||
         acc.account_id.toLowerCase().includes(query) ||
-        acc.business_name?.toLowerCase().includes(query)
+        acc.business_name?.toLowerCase().includes(query) ||
+        acc.nickname?.toLowerCase().includes(query)
     );
   }, [accounts, searchQuery]);
 
@@ -109,7 +111,8 @@ export function AdAccountSelector({
       return 'Selecione uma conta...';
     }
     if (!multiSelect && selectedAccountsData.length > 0) {
-      return selectedAccountsData[0].name;
+      const acc = selectedAccountsData[0];
+      return acc.nickname ? `${acc.nickname} — ${acc.name}` : acc.name;
     }
     return `${selectedAccounts.length} conta(s) selecionada(s)`;
   };
@@ -190,7 +193,7 @@ export function AdAccountSelector({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-foreground truncate">
-                              {account.name}
+                              {account.nickname ? `${account.nickname} — ${account.name}` : account.name}
                             </span>
                             <Badge variant="outline" className="text-xs flex-shrink-0">
                               {account.currency || 'N/A'}

@@ -2019,12 +2019,13 @@ async function buildDLOCreative(
 
 // Naming variable replacer
 function createNamingReplacer(
-  account: { name: string; account_id: string },
+  account: { name: string; account_id: string; nickname?: string | null },
   config: Record<string, any>,
   resolvedPages: Array<{ pageId: string }>,
   job: { total_campaigns: number },
 ) {
-  const accountNickname = account.name?.split(' - ')[0] || account.name || 'Conta';
+  // Use the persisted nickname if available, otherwise fall back to splitting the name
+  const accountNickname = account.nickname || account.name?.split(' - ')[0] || account.name || 'Conta';
   const accountId = account.account_id?.replace('act_', '') || '';
   const productSetName = config.productSetName || '';
   const firstPageName = resolvedPages.length > 0 ? (config.pageNames?.[0] || resolvedPages[0]?.pageId || '') : '';
@@ -2297,7 +2298,7 @@ Deno.serve(async (req) => {
     // Fetch ad accounts
     const { data: allAdAccounts, error: accError } = await supabase
       .from('facebook_ad_accounts')
-      .select('id, account_id, profile_id, name')
+      .select('id, account_id, profile_id, name, nickname')
       .in('id', selectedAccountIds);
 
     if (accError || !allAdAccounts || allAdAccounts.length === 0) {
