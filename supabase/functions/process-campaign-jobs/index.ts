@@ -850,13 +850,21 @@ function buildAdParams(
   adsetId: string,
   creativeId: string,
   name: string,
+  specialAdCategory?: string,
 ): Record<string, string> {
-  return {
+  const params: Record<string, string> = {
     name,
     adset_id: adsetId,
     creative: JSON.stringify({ creative_id: creativeId }),
     status: 'ACTIVE',
   };
+
+  // Political ads require authorization_category at the ad level
+  if (specialAdCategory === 'ISSUES_ELECTIONS_POLITICS') {
+    params.authorization_category = 'POLITICAL';
+  }
+
+  return params;
 }
 
 // Simple fetch with retry for non-batch operations
@@ -1321,6 +1329,7 @@ async function createAdsBatch(
     resolvedPages: PageWithCapacity[];
   },
   shouldYield?: () => boolean,
+  specialAdCategory?: string,
 ): Promise<number> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   let successCount = 0;
@@ -1378,7 +1387,7 @@ async function createAdsBatch(
     const ad = validAds[i];
     const parentFbId = adsetIdMap.get(ad.parent_id!)!;
     const creativeId = creativeIdMap.get(ad.id)!;
-    const params = buildAdParams(parentFbId, creativeId, ad.name);
+    const params = buildAdParams(parentFbId, creativeId, ad.name, specialAdCategory);
     
     const body = new URLSearchParams(params).toString();
     
@@ -1518,7 +1527,7 @@ async function createAdsBatch(
         const parentFbId = ad.parent_id ? adsetIdMap.get(ad.parent_id) : null;
         if (!parentFbId) continue;
         
-        const adParams = buildAdParams(parentFbId, newCreativeId, ad.name);
+        const adParams = buildAdParams(parentFbId, newCreativeId, ad.name, specialAdCategory);
         const adBody = new URLSearchParams(adParams).toString();
         
         try {
@@ -2877,6 +2886,7 @@ Deno.serve(async (req) => {
             resolvedPages,
           },
           shouldYield,
+          config.specialAdCategory,
         );
         totalAdsCreated += adsCreated;
         console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} new ads`);
