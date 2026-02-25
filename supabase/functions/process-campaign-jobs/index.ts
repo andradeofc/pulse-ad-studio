@@ -77,6 +77,26 @@ function isRetriableNetworkError(message: string): boolean {
   ].some(pattern => lowerMsg.includes(pattern));
 }
 
+// Fatal account-level error patterns — these mean the entire ad account is
+// permanently unable to create/edit ads. When detected, the processor skips
+// all remaining items for the account and marks them as failed immediately.
+// These are also excluded from Layer 2 retry logic.
+const FATAL_ACCOUNT_ERROR_PATTERNS = [
+  'disabled accounts can',       // "Disabled accounts can't create or edit ads"
+  'only active accounts can',    // "Only active accounts can create or edit ads"
+  'account has been disabled',
+  'ad account is disabled',
+  'account is in an unsettled',  // Unsettled account (payment issues)
+  'account has been flagged',
+];
+
+// Check if an error message indicates a fatal account-level issue (not item-specific)
+function isFatalAccountError(message: string): boolean {
+  if (!message) return false;
+  const lowerMsg = message.toLowerCase();
+  return FATAL_ACCOUNT_ERROR_PATTERNS.some(p => lowerMsg.includes(p));
+}
+
 // Enrich Facebook API error messages with user-friendly descriptions for known subcodes
 function enrichErrorMessage(parsedError: any, fallbackMsg: string): string {
   if (!parsedError) return fallbackMsg;
@@ -2658,6 +2678,49 @@ Deno.serve(async (req) => {
         console.log(`[process-jobs] No new campaigns to create (all already processed)`);
       }
 
+      // ============= FATAL ACCOUNT ERROR DETECTION =============
+      // If ALL campaigns for this account failed with a fatal account error
+      // (e.g. "Disabled accounts can't create or edit ads"), skip remaining
+      // items (adsets + ads) and mark them as failed immediately.
+      if (campaignsWithNames.length > 0 && campaignIdMap.size === 0) {
+        // Check if any campaign had a fatal account error
+        const { data: failedCampaignItems } = await supabase
+          .from('campaign_job_items')
+          .select('error_message')
+          .in('id', campaignsWithNames.map(c => c.id))
+          .eq('status', 'failed');
+
+        const fatalError = failedCampaignItems?.find((item: any) => isFatalAccountError(item.error_message));
+        
+        if (fatalError) {
+          const errorMsg = `Conta desativada: ${fatalError.error_message}`;
+          console.warn(`[process-jobs] ⚠️ FATAL ACCOUNT ERROR detected for ${currentAccount.name}: ${fatalError.error_message}`);
+          console.warn(`[process-jobs] Skipping remaining ${adsetsForAccount.length} adsets and ${adsForAccount.length} ads for this account`);
+
+          // Mark all remaining adsets and ads for this account as failed
+          const remainingItemIds = [
+            ...adsetsForAccount.map(a => a.id),
+            ...adsForAccount.map(a => a.id),
+          ];
+
+          if (remainingItemIds.length > 0) {
+            // Batch update in chunks of 100 (Supabase .in() limit)
+            for (let i = 0; i < remainingItemIds.length; i += 100) {
+              const chunk = remainingItemIds.slice(i, i + 100);
+              await supabase
+                .from('campaign_job_items')
+                .update({ status: 'failed', error_message: errorMsg })
+                .in('id', chunk);
+            }
+            console.log(`[process-jobs] Marked ${remainingItemIds.length} items as failed (disabled account)`);
+          }
+
+          hasError = true;
+          lastError = errorMsg;
+          continue; // Skip to next account
+        }
+      }
+
       // CHUNK CHECK: yield after campaigns if time is running out
       if (shouldYield()) {
         return yieldChunk(`Completed campaigns for account ${accountIndex + 1}/${allAdAccounts.length}`);
@@ -3131,6 +3194,10 @@ Deno.serve(async (req) => {
 
         for (const item of failedItems) {
           const errorMsg = (item.error_message || '').toLowerCase();
+
+          // Never retry fatal account errors (disabled accounts, etc.)
+          if (isFatalAccountError(errorMsg)) continue;
+
           const isTransient = LAYER2_RETRIABLE_PATTERNS.some(p => errorMsg.includes(p));
 
           if (!isTransient) continue;
