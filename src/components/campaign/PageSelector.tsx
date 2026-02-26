@@ -586,7 +586,7 @@ export function PageSelector({
                       return (
                         <CommandItem
                           key={page.id}
-                          value={page.page_id}
+                          value={`${page.name} ${page.business_name || ''} ${page.category || ''}`}
                           onSelect={() => handleTogglePage(page.page_id, page.name)}
                           className="flex items-center gap-3 py-3"
                         >
