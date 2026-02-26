@@ -259,10 +259,10 @@ export function Step4Ads() {
                 onChange={(e) => updateConfig({ primaryText: e.target.value })}
                 placeholder="Descubra o segredo para uma pele radiante! 🌟 Nosso sérum revolucionário..."
                 className="bg-secondary/50 min-h-[100px] resize-none"
-                maxLength={500}
+                maxLength={2200}
               />
               <p className="text-xs text-muted-foreground">
-                O texto principal aparece acima da mídia do anúncio (recomendado: até 125 caracteres)
+                O texto principal aparece acima da mídia do anúncio (recomendado: até 125 caracteres · máx: 2.200)
               </p>
             </div>
 
