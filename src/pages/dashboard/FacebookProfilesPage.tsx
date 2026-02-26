@@ -12,6 +12,10 @@ import {
   ExternalLink,
   Loader2,
   Key,
+  Wifi,
+  WifiOff,
+  Globe,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,6 +43,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/stores/authStore';
 import {
@@ -49,6 +60,7 @@ import {
   updateFacebookProfileProxy,
   validateFacebookToken,
   updateFacebookToken,
+  testProxyConnection,
   type FacebookProfile,
 } from '@/services/facebookService';
 
@@ -71,11 +83,20 @@ export default function FacebookProfilesPage() {
   const [isSyncing, setSyncing] = useState<string | null>(null);
   
   const [proxyForm, setProxyForm] = useState({
+    protocol: 'http',
     host: '',
     port: '',
     username: '',
     password: '',
   });
+  const [isTestingProxy, setIsTestingProxy] = useState(false);
+  const [proxyTestResult, setProxyTestResult] = useState<{
+    success: boolean;
+    externalIp?: string;
+    message?: string;
+    error?: string;
+  } | null>(null);
+  const [proxyTestPassed, setProxyTestPassed] = useState(false);
 
   const loadProfiles = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -238,6 +259,7 @@ export default function FacebookProfilesPage() {
     
     try {
       await updateFacebookProfileProxy(selectedProfileId, {
+        proxyProtocol: proxyForm.protocol || 'http',
         proxyHost: proxyForm.host || undefined,
         proxyPort: proxyForm.port ? parseInt(proxyForm.port) : undefined,
         proxyUsername: proxyForm.username || undefined,
@@ -250,7 +272,9 @@ export default function FacebookProfilesPage() {
       });
       
       setIsProxyOpen(false);
-      setProxyForm({ host: '', port: '', username: '', password: '' });
+      setProxyForm({ protocol: 'http', host: '', port: '', username: '', password: '' });
+      setProxyTestResult(null);
+      setProxyTestPassed(false);
       await loadProfiles();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -401,12 +425,52 @@ export default function FacebookProfilesPage() {
   const openProxyModal = (profile: FacebookProfile) => {
     setSelectedProfileId(profile.id);
     setProxyForm({
+      protocol: profile.proxy_protocol || 'http',
       host: profile.proxy_host || '',
       port: profile.proxy_port?.toString() || '',
       username: profile.proxy_username || '',
       password: '',
     });
+    setProxyTestResult(null);
+    setProxyTestPassed(false);
     setIsProxyOpen(true);
+  };
+
+  const handleTestProxy = async () => {
+    if (!proxyForm.host || !proxyForm.port) {
+      toast({
+        title: 'Preencha os campos',
+        description: 'Host e Porta são obrigatórios para testar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsTestingProxy(true);
+    setProxyTestResult(null);
+    setProxyTestPassed(false);
+
+    try {
+      const result = await testProxyConnection({
+        protocol: proxyForm.protocol,
+        host: proxyForm.host,
+        port: parseInt(proxyForm.port),
+        username: proxyForm.username || undefined,
+        password: proxyForm.password || undefined,
+      });
+
+      setProxyTestResult(result);
+      setProxyTestPassed(result.success === true);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      setProxyTestResult({
+        success: false,
+        error: errorMessage,
+      });
+      setProxyTestPassed(false);
+    } finally {
+      setIsTestingProxy(false);
+    }
   };
 
   const formatDate = (dateString: string | null) => {
@@ -614,7 +678,9 @@ export default function FacebookProfilesPage() {
                       <Settings className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">Proxy</span>
                       {profile.proxy_host && (
-                        <Badge variant="outline" className="text-xs">Configurado</Badge>
+                        <Badge variant="outline" className="text-xs text-ads-success border-ads-success/30">
+                          {(profile.proxy_protocol || 'http').toUpperCase()} · Configurado
+                        </Badge>
                       )}
                     </div>
                     <Button 
@@ -684,23 +750,59 @@ export default function FacebookProfilesPage() {
       )}
 
       {/* Proxy Configuration Modal */}
-      <Dialog open={isProxyOpen} onOpenChange={setIsProxyOpen}>
-        <DialogContent>
+      <Dialog open={isProxyOpen} onOpenChange={(open) => {
+        setIsProxyOpen(open);
+        if (!open) {
+          setProxyTestResult(null);
+          setProxyTestPassed(false);
+        }
+      }}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Configurar Proxy</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-primary" />
+              Configurar Proxy
+            </DialogTitle>
             <DialogDescription>
-              Configure um proxy para as requisições deste perfil.
+              Configure um proxy para rotear as requisições da API do Facebook através de um IP diferente. Isso pode evitar bloqueios ao subir muitos anúncios.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="proxyHost">Host</Label>
+            {/* Protocol */}
+            <div className="space-y-2">
+              <Label htmlFor="proxyProtocol">Protocolo</Label>
+              <Select
+                value={proxyForm.protocol}
+                onValueChange={(value) => {
+                  setProxyForm(prev => ({ ...prev, protocol: value }));
+                  setProxyTestResult(null);
+                  setProxyTestPassed(false);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o protocolo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="http">HTTP</SelectItem>
+                  <SelectItem value="https">HTTPS</SelectItem>
+                  <SelectItem value="socks5">SOCKS5</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Host + Port */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="proxyHost">Host / IP</Label>
                 <Input
                   id="proxyHost"
                   placeholder="proxy.example.com"
                   value={proxyForm.host}
-                  onChange={(e) => setProxyForm(prev => ({ ...prev, host: e.target.value }))}
+                  onChange={(e) => {
+                    setProxyForm(prev => ({ ...prev, host: e.target.value }));
+                    setProxyTestResult(null);
+                    setProxyTestPassed(false);
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -710,35 +812,120 @@ export default function FacebookProfilesPage() {
                   type="number"
                   placeholder="8080"
                   value={proxyForm.port}
-                  onChange={(e) => setProxyForm(prev => ({ ...prev, port: e.target.value }))}
+                  onChange={(e) => {
+                    setProxyForm(prev => ({ ...prev, port: e.target.value }));
+                    setProxyTestResult(null);
+                    setProxyTestPassed(false);
+                  }}
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="proxyUsername">Usuário (opcional)</Label>
-              <Input
-                id="proxyUsername"
-                placeholder="username"
-                value={proxyForm.username}
-                onChange={(e) => setProxyForm(prev => ({ ...prev, username: e.target.value }))}
-              />
+
+            {/* Username + Password */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="proxyUsername">Usuário (opcional)</Label>
+                <Input
+                  id="proxyUsername"
+                  placeholder="username"
+                  value={proxyForm.username}
+                  onChange={(e) => {
+                    setProxyForm(prev => ({ ...prev, username: e.target.value }));
+                    setProxyTestResult(null);
+                    setProxyTestPassed(false);
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="proxyPassword">Senha (opcional)</Label>
+                <Input
+                  id="proxyPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={proxyForm.password}
+                  onChange={(e) => {
+                    setProxyForm(prev => ({ ...prev, password: e.target.value }));
+                    setProxyTestResult(null);
+                    setProxyTestPassed(false);
+                  }}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="proxyPassword">Senha (opcional)</Label>
-              <Input
-                id="proxyPassword"
-                type="password"
-                placeholder="••••••••"
-                value={proxyForm.password}
-                onChange={(e) => setProxyForm(prev => ({ ...prev, password: e.target.value }))}
-              />
-            </div>
+
+            {/* Test Connection Button */}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleTestProxy}
+              disabled={!proxyForm.host || !proxyForm.port || isTestingProxy}
+            >
+              {isTestingProxy ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Testando conexão...
+                </>
+              ) : (
+                <>
+                  <Wifi className="w-4 h-4 mr-2" />
+                  Testar Conexão
+                </>
+              )}
+            </Button>
+
+            {/* Test Result */}
+            {proxyTestResult && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`p-4 rounded-lg border ${
+                  proxyTestResult.success 
+                    ? 'bg-ads-success/10 border-ads-success/30' 
+                    : 'bg-destructive/10 border-destructive/30'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  {proxyTestResult.success ? (
+                    <CheckCircle className="w-5 h-5 text-ads-success" />
+                  ) : (
+                    <WifiOff className="w-5 h-5 text-destructive" />
+                  )}
+                  <span className={`font-medium text-sm ${
+                    proxyTestResult.success ? 'text-ads-success' : 'text-destructive'
+                  }`}>
+                    {proxyTestResult.success 
+                      ? 'Proxy está funcionando corretamente' 
+                      : 'Falha na conexão com o proxy'}
+                  </span>
+                </div>
+                {proxyTestResult.success && proxyTestResult.externalIp && (
+                  <div className="flex items-center gap-2 mt-2 ml-7">
+                    <Globe className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">
+                      IP externo: <span className="font-mono font-medium text-foreground">{proxyTestResult.externalIp}</span>
+                    </span>
+                  </div>
+                )}
+                {!proxyTestResult.success && proxyTestResult.error && (
+                  <p className="text-xs text-destructive/80 mt-1 ml-7">
+                    {proxyTestResult.error}
+                  </p>
+                )}
+              </motion.div>
+            )}
+
+            {/* Info about clearing proxy */}
+            <p className="text-xs text-muted-foreground">
+              Para remover o proxy, limpe os campos de Host e Porta e salve.
+            </p>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsProxyOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleUpdateProxy}>
+            <Button 
+              onClick={handleUpdateProxy}
+              disabled={proxyForm.host && proxyForm.port ? !proxyTestPassed : false}
+            >
               Salvar Configuração
             </Button>
           </DialogFooter>

@@ -60,6 +60,93 @@ interface BatchResponseItem {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ============= PROXY SUPPORT =============
+// Creates a Deno.HttpClient configured with the user's proxy settings.
+// Returns null if no proxy is configured, meaning standard fetch should be used.
+interface ProxyConfig {
+  protocol: string;
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+}
+
+function buildProxyUrl(config: ProxyConfig): string {
+  const proto = (config.protocol || 'http').toLowerCase();
+  const { host, port, username, password } = config;
+  
+  if (username && password) {
+    return `${proto}://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`;
+  } else if (username) {
+    return `${proto}://${encodeURIComponent(username)}@${host}:${port}`;
+  }
+  return `${proto}://${host}:${port}`;
+}
+
+function createProxyClient(config: ProxyConfig | null): Deno.HttpClient | null {
+  if (!config || !config.host || !config.port) return null;
+  
+  try {
+    const proxyUrl = buildProxyUrl(config);
+    console.log(`[proxy] Creating HTTP client with proxy: ${config.protocol}://${config.host}:${config.port} (auth: ${!!config.username})`);
+    return Deno.createHttpClient({ proxy: { url: proxyUrl } });
+  } catch (err) {
+    console.error('[proxy] Failed to create proxy client, falling back to direct:', err);
+    return null;
+  }
+}
+
+// Proxy-aware fetch wrapper. Uses the active proxy client if set, otherwise standard fetch.
+// The activeProxyClient is set per-account in the main processing loop.
+let activeProxyClient: Deno.HttpClient | null = null;
+
+async function proxyFetch(
+  url: string | URL | Request,
+  init?: RequestInit & { client?: Deno.HttpClient | null },
+): Promise<Response> {
+  const { client: explicitClient, ...fetchInit } = init || {};
+  const clientToUse = explicitClient !== undefined ? explicitClient : activeProxyClient;
+  if (clientToUse) {
+    // @ts-ignore - Deno.HttpClient client option
+    return fetch(url, { ...fetchInit, client: clientToUse });
+  }
+  return fetch(url, fetchInit);
+}
+
+// Cache for proxy clients per profile_id to avoid creating multiple clients
+const proxyClientCache = new Map<string, Deno.HttpClient | null>();
+
+async function getProxyClientForProfile(
+  supabase: any,
+  profileId: string,
+): Promise<Deno.HttpClient | null> {
+  if (proxyClientCache.has(profileId)) {
+    return proxyClientCache.get(profileId) ?? null;
+  }
+  
+  const { data: profile } = await supabase
+    .from('facebook_profiles')
+    .select('proxy_protocol, proxy_host, proxy_port, proxy_username, proxy_password')
+    .eq('id', profileId)
+    .single();
+  
+  if (!profile?.proxy_host || !profile?.proxy_port) {
+    proxyClientCache.set(profileId, null);
+    return null;
+  }
+  
+  const client = createProxyClient({
+    protocol: profile.proxy_protocol || 'http',
+    host: profile.proxy_host,
+    port: profile.proxy_port,
+    username: profile.proxy_username,
+    password: profile.proxy_password,
+  });
+  
+  proxyClientCache.set(profileId, client);
+  return client;
+}
+
 // Determines if an error is transient and eligible for retry (network timeouts, aborts)
 function isRetriableNetworkError(message: string): boolean {
   if (!message) return false;
@@ -252,6 +339,7 @@ function shouldPauseForRateLimit(accountId: string): {
 async function getPageAccessTokenFromUserToken(
   userAccessToken: string,
   pageId: string,
+  httpClient?: Deno.HttpClient | null,
 ): Promise<string | null> {
   if (pageTokenCache.has(pageId)) return pageTokenCache.get(pageId) ?? null;
 
@@ -259,7 +347,7 @@ async function getPageAccessTokenFromUserToken(
     let url: string | null = `${GRAPH_BASE_URL}/me/accounts?fields=id,access_token&limit=500&access_token=${userAccessToken}`;
 
     for (let i = 0; i < 5 && url; i++) {
-      const res = await fetch(url);
+      const res = await proxyFetch(url, { client: httpClient });
       const json = await res.json();
 
       if (!res.ok || json?.error) {
@@ -293,14 +381,15 @@ async function resolveInstagramActorIdForPage(params: {
   userAccessToken: string;
   pageId: string;
   pageAccessTokenFromDb?: string | null;
+  httpClient?: Deno.HttpClient | null;
 }): Promise<string | null> {
-  const { userAccessToken, pageId, pageAccessTokenFromDb } = params;
+  const { userAccessToken, pageId, pageAccessTokenFromDb, httpClient } = params;
 
   if (igActorIdCache.has(pageId)) return igActorIdCache.get(pageId) ?? null;
 
   try {
     // Collect all available tokens to try
-    const pageAccessToken = pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId));
+    const pageAccessToken = pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId, httpClient));
     const tokensToTry = [pageAccessToken, userAccessToken].filter(Boolean) as string[];
 
     // Step 1: Check for existing Instagram accounts (PBIA, linked IG, business IG)
@@ -308,7 +397,7 @@ async function resolveInstagramActorIdForPage(params: {
       // Try page_backed_instagram_accounts
       try {
         const pbiaUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?fields=id,username&access_token=${token}`;
-        const pbiaRes = await fetch(pbiaUrl);
+        const pbiaRes = await proxyFetch(pbiaUrl, { client: httpClient });
         const pbiaJson = await pbiaRes.json();
         if (pbiaRes.ok && !pbiaJson?.error && Array.isArray(pbiaJson?.data) && pbiaJson.data.length > 0) {
           const igId = pbiaJson.data[0].id as string;
@@ -321,7 +410,7 @@ async function resolveInstagramActorIdForPage(params: {
       // Try instagram_accounts (linked via page settings)
       try {
         const iaUrl = `${GRAPH_BASE_URL}/${pageId}/instagram_accounts?fields=id,username&access_token=${token}`;
-        const iaRes = await fetch(iaUrl);
+        const iaRes = await proxyFetch(iaUrl, { client: httpClient });
         const iaJson = await iaRes.json();
         if (iaRes.ok && !iaJson?.error && Array.isArray(iaJson?.data) && iaJson.data.length > 0) {
           const igId = iaJson.data[0].id as string;
@@ -335,7 +424,7 @@ async function resolveInstagramActorIdForPage(params: {
     // Step 2: Try instagram_business_account via page fields
     try {
       const ibaUrl = `${GRAPH_BASE_URL}/${pageId}?fields=instagram_business_account&access_token=${userAccessToken}`;
-      const ibaRes = await fetch(ibaUrl);
+      const ibaRes = await proxyFetch(ibaUrl, { client: httpClient });
       const ibaJson = await ibaRes.json();
       if (ibaRes.ok && !ibaJson?.error && ibaJson?.instagram_business_account?.id) {
         const igId = ibaJson.instagram_business_account.id as string;
@@ -350,7 +439,7 @@ async function resolveInstagramActorIdForPage(params: {
       try {
         console.log(`[process-jobs] Creating PBIA for page ${pageId}...`);
         const createUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${token}`;
-        const createRes = await fetch(createUrl, { method: 'POST' });
+        const createRes = await proxyFetch(createUrl, { method: 'POST', client: httpClient });
         const createJson = await createRes.json();
 
         if (createRes.ok && !createJson?.error && createJson?.id) {
@@ -378,7 +467,7 @@ async function resolveInstagramActorIdForPage(params: {
     if (pageAccessToken) {
       try {
         const recheckUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?fields=id&access_token=${pageAccessToken}`;
-        const recheckRes = await fetch(recheckUrl);
+        const recheckRes = await proxyFetch(recheckUrl, { client: httpClient });
         const recheckJson = await recheckRes.json();
         if (recheckRes.ok && Array.isArray(recheckJson?.data) && recheckJson.data.length > 0) {
           const igId = recheckJson.data[0].id as string;
@@ -404,6 +493,7 @@ async function executeBatchRequest(
   accessToken: string,
   batch: BatchRequestItem[],
   accountId?: string,
+  httpClient?: Deno.HttpClient | null,
 ): Promise<{ results: BatchResponseItem[]; usagePercent: number }> {
   if (batch.length === 0) return { results: [], usagePercent: 0 };
   
@@ -440,10 +530,11 @@ async function executeBatchRequest(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch(`${GRAPH_BASE_URL}/`, {
+      const res = await proxyFetch(`${GRAPH_BASE_URL}/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString(),
+        client: httpClient,
       });
 
       // Parse rate limit from response header
@@ -2565,6 +2656,14 @@ Deno.serve(async (req) => {
         hasError = true;
         lastError = `No access token for ${currentAccount.name}`;
         continue;
+      }
+
+      // ============= PROXY SETUP PER ACCOUNT =============
+      // Set the active proxy client for this account's profile.
+      // All proxyFetch() calls will automatically use it.
+      activeProxyClient = await getProxyClientForProfile(supabase, currentAccount.profile_id);
+      if (activeProxyClient) {
+        console.log(`[process-jobs] 🔒 Proxy ACTIVE for account ${currentAccount.name}`);
       }
 
       // Create naming replacer
