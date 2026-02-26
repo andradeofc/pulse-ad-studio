@@ -39,11 +39,20 @@ serve(async (req) => {
     }
 
     const userId = claimsData.claims.sub;
-    const { profileId, proxyHost, proxyPort, proxyUsername, proxyPassword } = await req.json();
+    const { profileId, proxyProtocol, proxyHost, proxyPort, proxyUsername, proxyPassword } = await req.json();
 
     if (!profileId) {
       return new Response(
         JSON.stringify({ error: "Profile ID is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate protocol if provided
+    const validProtocols = ['http', 'https', 'socks5'];
+    if (proxyProtocol && !validProtocols.includes(proxyProtocol)) {
+      return new Response(
+        JSON.stringify({ error: `Invalid protocol. Use: ${validProtocols.join(', ')}` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -53,6 +62,7 @@ serve(async (req) => {
     const { data, error } = await supabase
       .from("facebook_profiles")
       .update({
+        proxy_protocol: proxyProtocol || 'http',
         proxy_host: proxyHost || null,
         proxy_port: proxyPort || null,
         proxy_username: proxyUsername || null,

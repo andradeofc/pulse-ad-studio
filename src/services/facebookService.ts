@@ -11,6 +11,7 @@ export interface FacebookProfile {
   permissions: string[];
   token_expires_at: string | null;
   page_token_valid: boolean;
+  proxy_protocol: string | null;
   proxy_host: string | null;
   proxy_port: number | null;
   proxy_username: string | null;
@@ -127,6 +128,7 @@ export async function deleteFacebookProfile(profileId: string) {
 export async function updateFacebookProfileProxy(
   profileId: string,
   proxy: {
+    proxyProtocol?: string;
     proxyHost?: string;
     proxyPort?: number;
     proxyUsername?: string;
@@ -139,6 +141,26 @@ export async function updateFacebookProfileProxy(
 
   if (error) {
     console.error('Error updating proxy:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+// Test proxy connection
+export async function testProxyConnection(proxy: {
+  protocol: string;
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+}) {
+  const { data, error } = await supabase.functions.invoke('test-proxy-connection', {
+    body: proxy,
+  });
+
+  if (error) {
+    console.error('Error testing proxy:', error);
     throw error;
   }
 

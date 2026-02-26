@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.manage-team-members]
 verify_jwt = false
+
+[functions.test-proxy-connection]
+verify_jwt = false

@@ -1001,6 +1001,7 @@ export type Database = {
           proxy_host: string | null
           proxy_password: string | null
           proxy_port: number | null
+          proxy_protocol: string | null
           proxy_username: string | null
           status: string
           sync_status: string | null
@@ -1022,6 +1023,7 @@ export type Database = {
           proxy_host?: string | null
           proxy_password?: string | null
           proxy_port?: number | null
+          proxy_protocol?: string | null
           proxy_username?: string | null
           status?: string
           sync_status?: string | null
@@ -1043,6 +1045,7 @@ export type Database = {
           proxy_host?: string | null
           proxy_password?: string | null
           proxy_port?: number | null
+          proxy_protocol?: string | null
           proxy_username?: string | null
           status?: string
           sync_status?: string | null
