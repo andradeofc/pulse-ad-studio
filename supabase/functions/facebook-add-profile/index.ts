@@ -686,7 +686,7 @@ Deno.serve(async (req) => {
     const supabaseService = createClient(supabaseUrl, serviceRoleKey);
 
     if (existingProfile) {
-      // Update existing profile
+      // Update existing profile (may be reconnecting a disconnected profile)
       console.log("Updating existing profile:", existingProfile.id);
       const { data, error } = await supabase
         .from("facebook_profiles")
@@ -694,7 +694,7 @@ Deno.serve(async (req) => {
           name: userData.name,
           email: userData.email || null,
           avatar_url: userData.picture?.data?.url || null,
-          access_token: accessToken, // Keep for backward compatibility during migration
+          access_token: accessToken,
           status: "active",
           permissions,
           token_expires_at: expiresAt,
@@ -721,9 +721,32 @@ Deno.serve(async (req) => {
 
       if (credError) {
         console.error("Error storing secure credentials:", credError);
-        // Don't throw - backward compatible via facebook_profiles.access_token
       } else {
         console.log("Secure credentials stored successfully");
+      }
+
+      // Reactivate paused monitors and schedules (reconnecting same facebook_id)
+      try {
+        const { count: reactivatedMonitors } = await supabaseService
+          .from("catalog_media_monitors")
+          .update({ is_active: true })
+          .eq("profile_id", existingProfile.id)
+          .eq("is_active", false)
+          .select("id", { count: "exact", head: true });
+
+        const { count: reactivatedSchedules } = await supabaseService
+          .from("catalog_schedules")
+          .update({ status: "pending" })
+          .eq("profile_id", existingProfile.id)
+          .eq("status", "paused")
+          .select("id", { count: "exact", head: true });
+
+        if ((reactivatedMonitors || 0) > 0 || (reactivatedSchedules || 0) > 0) {
+          console.log(`Reactivated ${reactivatedMonitors || 0} monitors and ${reactivatedSchedules || 0} schedules for reconnected profile`);
+        }
+      } catch (reactivateErr) {
+        console.error("Error reactivating monitors/schedules:", reactivateErr);
+        // Non-fatal: profile is reconnected, user can manually reactivate
       }
     } else {
       // Create new profile

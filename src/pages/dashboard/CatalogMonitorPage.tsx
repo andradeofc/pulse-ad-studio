@@ -67,6 +67,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { PausedItemsBanner } from '@/components/catalog/PausedItemsBanner';
 
 interface Monitor {
   id: string;
@@ -385,6 +386,9 @@ export default function CatalogMonitorPage() {
 
   return (
     <div className="space-y-6">
+      {/* Paused items banner */}
+      <PausedItemsBanner type="monitors" />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

@@ -65,6 +65,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+import { PausedItemsBanner } from '@/components/catalog/PausedItemsBanner';
 
 interface Schedule {
   id: string;
@@ -545,6 +546,9 @@ export default function CatalogSchedulingPage() {
 
   return (
     <div className="space-y-6">
+      {/* Paused items banner */}
+      <PausedItemsBanner type="schedules" />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
