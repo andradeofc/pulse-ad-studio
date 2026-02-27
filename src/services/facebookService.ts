@@ -42,6 +42,7 @@ export async function fetchFacebookProfiles(): Promise<FacebookProfile[]> {
   const { data, error } = await supabase
     .from('facebook_profiles')
     .select('*')
+    .neq('status', 'disconnected')
     .order('created_at', { ascending: false });
 
   if (error) {

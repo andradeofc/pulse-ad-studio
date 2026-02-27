@@ -236,16 +236,22 @@ export default function FacebookProfilesPage() {
     if (!deleteProfileId) return;
     
     try {
-      await deleteFacebookProfile(deleteProfileId);
+      const result = await deleteFacebookProfile(deleteProfileId);
+      
+      const pausedMonitors = result?.paused_monitors || 0;
+      const pausedSchedules = result?.paused_schedules || 0;
+      
       toast({
-        title: 'Perfil removido',
-        description: 'O perfil e suas contas de anúncio foram removidos.',
+        title: 'Perfil desconectado',
+        description: pausedMonitors > 0 || pausedSchedules > 0
+          ? `${pausedMonitors} monitores e ${pausedSchedules} agendamentos foram pausados. Reconecte o perfil para reativá-los.`
+          : 'O perfil foi desconectado com sucesso.',
       });
       await loadProfiles();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       toast({
-        title: 'Erro ao remover',
+        title: 'Erro ao desconectar',
         description: errorMessage,
         variant: 'destructive',
       });
@@ -996,15 +1002,15 @@ export default function FacebookProfilesPage() {
       <AlertDialog open={!!deleteProfileId} onOpenChange={() => setDeleteProfileId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover perfil?</AlertDialogTitle>
+            <AlertDialogTitle>Desconectar perfil?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O perfil e todas as contas de anúncio associadas serão removidos.
+              O perfil será desconectado e o token removido. Monitores e agendamentos de catálogo vinculados serão pausados automaticamente. Ao reconectar o mesmo perfil, eles serão reativados.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
-              Remover
+              Desconectar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
