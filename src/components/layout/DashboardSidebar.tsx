@@ -103,7 +103,7 @@ export function DashboardSidebar() {
         {!isCollapsed && (
           <div className="flex flex-col">
             <span className="font-bold text-foreground">AdStorm</span>
-            <span className="text-xs text-muted-foreground">v1.0.0</span>
+            <span className="text-xs text-muted-foreground">v2.4.0</span>
           </div>
         )}
       </div>
