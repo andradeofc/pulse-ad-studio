@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Save, Trash2, Copy, Plus, X, Pencil, MoreVertical, Loader2, FilePlus, RefreshCw, Star } from 'lucide-react';
 import {
   Dialog,
@@ -37,6 +37,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { useNamingPresets, type Preset, type CustomVariable } from '@/hooks/useNamingPresets';
+import { useCampaignStore } from '@/stores/campaignStore';
+import { supabase } from '@/integrations/supabase/client';
 
 type NamingContext = 'campaign' | 'adset' | 'ad';
 
@@ -56,7 +58,8 @@ interface Variable {
   category: 'data' | 'date' | 'custom';
 }
 
-const dataVariables: Variable[] = [
+// Static base data variables (account-related ones will be overridden dynamically)
+const baseDataVariables: Variable[] = [
   { key: 'conta_nome', label: 'Conta (Nome)', example: '#1164 - Silv...', category: 'data' },
   { key: 'conta_codigo', label: 'Conta (Código)', example: 'SC2-133', category: 'data' },
   { key: 'conta_apelido', label: 'Conta (Apelido)', example: 'PP', category: 'data' },
@@ -97,6 +100,55 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
   const [newVarName, setNewVarName] = useState('');
   const [showNewVarInput, setShowNewVarInput] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [accountsData, setAccountsData] = useState<{ name: string; nickname: string | null; account_id: string }[]>([]);
+
+  const { config } = useCampaignStore();
+
+  // Fetch selected accounts for dynamic preview
+  useEffect(() => {
+    if (!open || config.selectedAccounts.length === 0) {
+      setAccountsData([]);
+      return;
+    }
+    const fetchAccounts = async () => {
+      const { data } = await supabase
+        .from('facebook_ad_accounts')
+        .select('name, nickname, account_id')
+        .in('id', config.selectedAccounts);
+      setAccountsData(data || []);
+    };
+    fetchAccounts();
+  }, [open, config.selectedAccounts]);
+
+  // Compute dynamic account preview values
+  const accountPreview = useMemo(() => {
+    if (accountsData.length === 1) {
+      const acc = accountsData[0];
+      return {
+        name: acc.name,
+        nickname: acc.nickname || acc.name.split(' - ')[0]?.trim() || acc.name,
+        code: acc.name.trim().slice(0, 7),
+        id: acc.account_id.replace('act_', ''),
+      };
+    }
+    if (accountsData.length > 1) {
+      return { name: '(múltiplas contas)', nickname: '(apelido)', code: '(código)', id: '(id)' };
+    }
+    return { name: '#1164 - Silv...', nickname: 'PP', code: 'SC2-133', id: '544627' };
+  }, [accountsData]);
+
+  // Build dynamic dataVariables with real account data
+  const dataVariables = useMemo<Variable[]>(() => {
+    return baseDataVariables.map(v => {
+      switch (v.key) {
+        case 'conta_nome': return { ...v, example: accountPreview.name.length > 15 ? accountPreview.name.slice(0, 15) + '...' : accountPreview.name };
+        case 'conta_codigo': return { ...v, example: accountPreview.code };
+        case 'conta_apelido': return { ...v, example: accountPreview.nickname };
+        case 'conta_id': return { ...v, example: accountPreview.id };
+        default: return v;
+      }
+    });
+  }, [accountPreview]);
   
   // Save dialog state
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -192,14 +244,14 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
     const now = new Date();
     
     const replacements: Record<string, string> = {
-      conta_nome: '#1164 - Silva Ads',
-      conta_codigo: 'SC2-133', // Primeiros 7 caracteres do nome da conta
-      conta_apelido: 'PP',
-      conta_id: '544627',
+      conta_nome: accountPreview.name,
+      conta_codigo: accountPreview.code,
+      conta_apelido: accountPreview.nickname,
+      conta_id: accountPreview.id,
       criativo: '990_AD005_V01',
-      pagina_nome: 'Alana Martins Santos',
-      pagina_nome1: 'Alana', // Primeiro nome da página
-      budget: 'CBO',
+      pagina_nome: config.pageNames?.[0] || 'Alana Martins Santos',
+      pagina_nome1: (config.pageNames?.[0] || 'Alana Martins Santos').split(/\s+/)[0],
+      budget: config.useCBO ? 'CBO' : 'ABO',
       estrutura: '1-4-1',
       ano: now.getFullYear().toString(),
       ano2: now.getFullYear().toString().slice(-2),
