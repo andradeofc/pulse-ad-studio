@@ -1,19 +1,64 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { Eye, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { resolveTemplate } from '@/lib/namingResolver';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface NamingPreviewProps {
   className?: string;
   compact?: boolean;
 }
 
+interface AccountPreviewData {
+  name: string;
+  nickname: string | null;
+  account_id: string;
+}
+
 export function NamingPreview({ className, compact = false }: NamingPreviewProps) {
   const [isExpanded, setIsExpanded] = useState(!compact);
+  const [selectedAccountsData, setSelectedAccountsData] = useState<AccountPreviewData[]>([]);
   const { config, getTotalCampaigns, getTotalAdsets, getTotalAds } = useCampaignStore();
+
+  // Fetch selected accounts data for real nickname/name
+  useEffect(() => {
+    if (config.selectedAccounts.length === 0) {
+      setSelectedAccountsData([]);
+      return;
+    }
+
+    const fetchAccounts = async () => {
+      const { data } = await supabase
+        .from('facebook_ad_accounts')
+        .select('name, nickname, account_id')
+        .in('id', config.selectedAccounts);
+      
+      setSelectedAccountsData(data || []);
+    };
+
+    fetchAccounts();
+  }, [config.selectedAccounts]);
+
+  // Derive account name and nickname for preview
+  const accountPreview = useMemo(() => {
+    if (selectedAccountsData.length === 1) {
+      const acc = selectedAccountsData[0];
+      return {
+        accountName: acc.name,
+        // For conta_apelido: use real nickname, fallback to prefix before " - "
+        accountNickname: acc.nickname || acc.name.split(' - ')[0]?.trim() || acc.name,
+        accountId: acc.account_id,
+      };
+    }
+    // Multiple or none: use placeholders
+    return {
+      accountName: selectedAccountsData.length > 1 ? '(múltiplas contas)' : 'Minha Conta Ads',
+      accountNickname: selectedAccountsData.length > 1 ? '(apelido)' : 'PP',
+      accountId: selectedAccountsData.length > 1 ? '(id)' : '544627',
+    };
+  }, [selectedAccountsData]);
 
   const previews = useMemo(() => {
     const totalCampaigns = getTotalCampaigns();
@@ -27,8 +72,12 @@ export function NamingPreview({ className, compact = false }: NamingPreviewProps
       catalogName: config.catalogName,
       pageNames: config.pageNames,
       pageName: config.pageNames?.[0] || 'Minha Página',
-      accountName: 'Minha Conta Ads',
-      customVariables: config.customNamingVariables,
+      accountName: accountPreview.accountName,
+      accountId: accountPreview.accountId,
+      customVariables: {
+        ...config.customNamingVariables,
+        conta_apelido: config.customNamingVariables?.conta_apelido || accountPreview.accountNickname,
+      },
     };
 
     // Generate sample names for preview
@@ -91,6 +140,7 @@ export function NamingPreview({ className, compact = false }: NamingPreviewProps
     config.catalogName,
     config.pageNames,
     config.customNamingVariables,
+    accountPreview,
     getTotalCampaigns,
     getTotalAdsets,
     getTotalAds,
