@@ -114,6 +114,13 @@ export function resolveTemplate(template: string, context: ResolverContext): str
     dia: String(now.getDate()).padStart(2, '0'),
     hora: String(now.getHours()).padStart(2, '0'),
     minuto: String(now.getMinutes()).padStart(2, '0'),
+    
+    // Date arithmetic variables
+    'dia+1': (() => {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return String(tomorrow.getDate()).padStart(2, '0');
+    })(),
   };
   
   // Add custom variables
@@ -157,7 +164,9 @@ export function resolveTemplate(template: string, context: ResolverContext): str
   
   // Replace all other variables
   Object.entries(replacements).forEach(([key, val]) => {
-    resolved = resolved.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val);
+    // Escape special regex characters in key (e.g., "dia+1" has "+")
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    resolved = resolved.replace(new RegExp(`\\{\\{${escapedKey}\\}\\}`, 'g'), val);
   });
   
   return resolved;
