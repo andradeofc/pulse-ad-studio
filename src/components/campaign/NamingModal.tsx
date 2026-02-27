@@ -75,6 +75,7 @@ const dateVariables: Variable[] = [
   { key: 'ano2', label: 'Ano 2dig', example: '26', category: 'date' },
   { key: 'mes', label: 'Mês', example: '01', category: 'date' },
   { key: 'dia', label: 'Dia', example: '22', category: 'date' },
+  { key: 'dia+1', label: 'Dia+1', example: (() => { const t = new Date(); t.setDate(t.getDate() + 1); return String(t.getDate()).padStart(2, '0'); })(), category: 'date' },
   { key: 'hora', label: 'Hora', example: '17', category: 'date' },
   { key: 'minuto', label: 'Minuto', example: '43', category: 'date' },
 ];
@@ -204,6 +205,7 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
       ano2: now.getFullYear().toString().slice(-2),
       mes: String(now.getMonth() + 1).padStart(2, '0'),
       dia: String(now.getDate()).padStart(2, '0'),
+      'dia+1': (() => { const t = new Date(now); t.setDate(t.getDate() + 1); return String(t.getDate()).padStart(2, '0'); })(),
       hora: String(now.getHours()).padStart(2, '0'),
       minuto: String(now.getMinutes()).padStart(2, '0'),
     };
@@ -220,7 +222,8 @@ export function NamingModal({ open, onOpenChange, context, value, onApply, initi
 
     // Replace all other variables
     Object.entries(replacements).forEach(([key, val]) => {
-      resolved = resolved.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), val);
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      resolved = resolved.replace(new RegExp(`\\{\\{${escapedKey}\\}\\}`, 'g'), val);
     });
 
     return resolved;
