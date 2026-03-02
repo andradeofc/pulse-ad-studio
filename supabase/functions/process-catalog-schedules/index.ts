@@ -684,6 +684,63 @@ Deno.serve(async (req) => {
 
         console.log(`[process-catalog-schedules] Schedule ${schedule.id} completed: ${productsUpdated}/${uniqueProducts.length} products updated`);
 
+        // Auto-create monitor with auto-repair after successful schedule
+        if (finalStatus === 'completed' && productsUpdated > 0) {
+          try {
+            // Check if a monitor already exists for this product set + user
+            const { data: existingMonitor } = await supabase
+              .from('catalog_media_monitors')
+              .select('id, is_active, auto_repair')
+              .eq('user_id', schedule.user_id)
+              .eq('product_set_id', schedule.product_set_id)
+              .maybeSingle();
+
+            if (!existingMonitor) {
+              // Create new monitor with auto-repair enabled
+              const { error: monitorError } = await supabase
+                .from('catalog_media_monitors')
+                .insert({
+                  user_id: schedule.user_id,
+                  profile_id: schedule.profile_id,
+                  catalog_id: schedule.catalog_id,
+                  product_set_id: schedule.product_set_id,
+                  product_set_name: (typedProductSet as any).name || 'Unknown',
+                  creative_id: schedule.creative_id,
+                  auto_repair: true,
+                  is_active: true,
+                  source: 'schedule',
+                });
+
+              if (monitorError) {
+                console.error(`[process-catalog-schedules] Failed to create auto-monitor:`, monitorError);
+              } else {
+                console.log(`[process-catalog-schedules] Auto-monitor created for product set ${schedule.product_set_id} with auto-repair enabled`);
+              }
+            } else if (!existingMonitor.is_active || !existingMonitor.auto_repair) {
+              // Reactivate existing monitor and ensure auto-repair is on
+              const { error: updateError } = await supabase
+                .from('catalog_media_monitors')
+                .update({
+                  is_active: true,
+                  auto_repair: true,
+                  creative_id: schedule.creative_id,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', existingMonitor.id);
+
+              if (updateError) {
+                console.error(`[process-catalog-schedules] Failed to reactivate monitor:`, updateError);
+              } else {
+                console.log(`[process-catalog-schedules] Existing monitor ${existingMonitor.id} reactivated with auto-repair`);
+              }
+            } else {
+              console.log(`[process-catalog-schedules] Monitor already active with auto-repair for product set ${schedule.product_set_id}`);
+            }
+          } catch (monitorErr) {
+            console.error(`[process-catalog-schedules] Auto-monitor creation error:`, monitorErr);
+          }
+        }
+
       } catch (error) {
         console.error(`[process-catalog-schedules] Error processing schedule ${schedule.id}:`, error);
 
