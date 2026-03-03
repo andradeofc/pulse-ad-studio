@@ -16,6 +16,7 @@ import {
   WifiOff,
   Globe,
   Shield,
+  Star,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,6 +53,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/integrations/supabase/client';
 import {
   fetchFacebookProfiles,
   addFacebookProfile,
@@ -479,6 +481,33 @@ export default function FacebookProfilesPage() {
     }
   };
 
+  const handleSetPrimary = async (profileId: string, currentlyPrimary: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('facebook_profiles')
+        .update({ is_primary: !currentlyPrimary } as any)
+        .eq('id', profileId);
+
+      if (error) throw error;
+
+      toast({
+        title: !currentlyPrimary ? 'Perfil principal definido!' : 'Perfil principal removido',
+        description: !currentlyPrimary 
+          ? 'Este perfil será usado como padrão para subir campanhas.'
+          : 'Nenhum perfil principal definido.',
+      });
+
+      await loadProfiles();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      toast({
+        title: 'Erro ao definir perfil principal',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -616,13 +645,32 @@ export default function FacebookProfilesPage() {
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <CardTitle className="text-lg text-foreground">{profile.name}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-lg text-foreground">{profile.name}</CardTitle>
+                          {(profile as any).is_primary && (
+                            <Badge className="bg-amber-500/20 text-amber-500 border-amber-500/30 text-xs">
+                              <Star className="w-3 h-3 mr-1 fill-amber-500" />
+                              Principal
+                            </Badge>
+                          )}
+                        </div>
                         <CardDescription>{profile.email || profile.facebook_id}</CardDescription>
                       </div>
                     </div>
-                    <Badge className={profile.status === 'active' ? 'badge-active' : 'badge-danger'}>
-                      {profile.status === 'active' ? 'Ativa' : profile.status === 'expired' ? 'Expirada' : 'Inativa'}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-8 w-8 ${(profile as any).is_primary ? 'text-amber-500 hover:text-amber-600' : 'text-muted-foreground hover:text-amber-500'}`}
+                        onClick={() => handleSetPrimary(profile.id, (profile as any).is_primary)}
+                        title={(profile as any).is_primary ? 'Remover perfil principal' : 'Definir como perfil principal'}
+                      >
+                        <Star className={`w-4 h-4 ${(profile as any).is_primary ? 'fill-amber-500' : ''}`} />
+                      </Button>
+                      <Badge className={profile.status === 'active' ? 'badge-active' : 'badge-danger'}>
+                        {profile.status === 'active' ? 'Ativa' : profile.status === 'expired' ? 'Expirada' : 'Inativa'}
+                      </Badge>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
