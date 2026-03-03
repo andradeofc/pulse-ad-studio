@@ -994,6 +994,7 @@ export type Database = {
           email: string | null
           facebook_id: string
           id: string
+          is_primary: boolean
           last_synced_at: string | null
           name: string
           page_token_valid: boolean | null
@@ -1016,6 +1017,7 @@ export type Database = {
           email?: string | null
           facebook_id: string
           id?: string
+          is_primary?: boolean
           last_synced_at?: string | null
           name: string
           page_token_valid?: boolean | null
@@ -1038,6 +1040,7 @@ export type Database = {
           email?: string | null
           facebook_id?: string
           id?: string
+          is_primary?: boolean
           last_synced_at?: string | null
           name?: string
           page_token_valid?: boolean | null
