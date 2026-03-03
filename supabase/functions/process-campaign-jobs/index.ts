@@ -2438,20 +2438,34 @@ Deno.serve(async (req) => {
           // It's a UUID - query by id (database primary key)
           const { data } = await supabase
             .from('facebook_pages')
-            .select('page_id, access_token, ads_running, ads_limit')
+            .select('page_id, access_token, ads_running, ads_limit, profile_id')
             .eq('id', selectedPageValue)
-            .single();
+            .maybeSingle();
           page = data;
         }
         
         // If not found by UUID or value is not a UUID, try by Facebook page_id
+        // Use profile_id filter to avoid ambiguity when the same page exists in multiple profiles
         if (!page) {
           const { data: pageByFbId } = await supabase
             .from('facebook_pages')
-            .select('page_id, access_token, ads_running, ads_limit')
+            .select('page_id, access_token, ads_running, ads_limit, profile_id')
             .eq('page_id', selectedPageValue)
-            .single();
-          page = pageByFbId;
+            .eq('profile_id', firstAccountProfileId)
+            .maybeSingle();
+          
+          // Fallback: if not found with profile filter, try without it (pick any)
+          if (!pageByFbId) {
+            const { data: pageByFbIdFallback } = await supabase
+              .from('facebook_pages')
+              .select('page_id, access_token, ads_running, ads_limit, profile_id')
+              .eq('page_id', selectedPageValue)
+              .limit(1)
+              .maybeSingle();
+            page = pageByFbIdFallback;
+          } else {
+            page = pageByFbId;
+          }
         }
 
         if (page?.page_id) {
