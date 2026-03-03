@@ -11,7 +11,6 @@ export interface FacebookProfile {
   permissions: string[];
   token_expires_at: string | null;
   page_token_valid: boolean;
-  is_primary: boolean;
   proxy_protocol: string | null;
   proxy_host: string | null;
   proxy_port: number | null;
