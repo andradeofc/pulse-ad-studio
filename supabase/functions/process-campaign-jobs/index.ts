@@ -2398,67 +2398,38 @@ Deno.serve(async (req) => {
 
     console.log(`[process-jobs] Found ${allAdAccounts.length} ad accounts`);
 
-    // Get first account's token for page resolution
-    const firstAccountProfileId = allAdAccounts[0].profile_id;
-    
-    const { data: credentials } = await supabase
-      .from('facebook_credentials')
-      .select('access_token')
-      .eq('profile_id', firstAccountProfileId)
-      .single();
+    // Helper: resolve pages for a specific profile
+    async function resolvePagesForProfile(
+      profileId: string,
+      accessToken: string,
+      selectedPages: string[],
+    ): Promise<Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null; adsRunning: number; adsLimit: number; availableSlots: number }>> {
+      const result: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null; adsRunning: number; adsLimit: number; availableSlots: number }> = [];
 
-    let firstAccessToken: string | null = credentials?.access_token || null;
-    if (!firstAccessToken) {
-      const { data: fallbackProfile } = await supabase
-        .from('facebook_profiles')
-        .select('access_token')
-        .eq('id', firstAccountProfileId)
-        .single();
-      firstAccessToken = fallbackProfile?.access_token || null;
-    }
-
-// Resolve pages with capacity info
-    const resolvedPages: Array<{ 
-      pageId: string; 
-      accessToken: string | null; 
-      instagramActorId: string | null;
-      adsRunning: number;
-      adsLimit: number;
-      availableSlots: number;
-    }> = [];
-
-    if (config.selectedPages && config.selectedPages.length > 0 && firstAccessToken) {
-      for (const selectedPageValue of config.selectedPages) {
-        // Check if the value is a valid UUID format before querying
+      for (const selectedPageValue of selectedPages) {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(selectedPageValue);
-        
         let page = null;
-        
+
         if (isUuid) {
-          // It's a UUID - query by id (database primary key)
           const { data } = await supabase
             .from('facebook_pages')
             .select('page_id, access_token, ads_running, ads_limit')
             .eq('id', selectedPageValue)
-            .single();
+            .maybeSingle();
           page = data;
         }
-        
-        // If not found by UUID or value is not a UUID, try by Facebook page_id
-        // Use profile_id filter first to get the correct page for this account,
-        // then fallback to any matching page. Use .maybeSingle() to avoid errors
-        // when the same page_id exists across multiple profiles.
+
+        // Try by page_id, prioritizing the profile that owns this ad account
         if (!page) {
-          // Try to find the page linked to the same profile as the first ad account
           const { data: pageByProfile } = await supabase
             .from('facebook_pages')
             .select('page_id, access_token, ads_running, ads_limit')
             .eq('page_id', selectedPageValue)
-            .eq('profile_id', firstAccountProfileId)
+            .eq('profile_id', profileId)
             .maybeSingle();
           page = pageByProfile;
-          
-          // Fallback: if not found for this profile, get any matching page
+
+          // Fallback: any profile that has this page
           if (!page) {
             const { data: pageByFbId } = await supabase
               .from('facebook_pages')
@@ -2471,16 +2442,16 @@ Deno.serve(async (req) => {
 
         if (page?.page_id) {
           const instagramActorId = await resolveInstagramActorIdForPage({
-            userAccessToken: firstAccessToken,
+            userAccessToken: accessToken,
             pageId: page.page_id,
             pageAccessTokenFromDb: page.access_token || null,
           });
-          
+
           const adsRunning = page.ads_running || 0;
           const adsLimit = page.ads_limit || 250;
           const availableSlots = Math.max(0, adsLimit - adsRunning);
-          
-          resolvedPages.push({
+
+          result.push({
             pageId: page.page_id,
             accessToken: page.access_token || null,
             instagramActorId,
@@ -2490,18 +2461,14 @@ Deno.serve(async (req) => {
           });
         }
       }
+
+      return result;
     }
 
-    // Log page capacity info for debugging
-    if (config.antiSpyEnabled && resolvedPages.length > 1) {
-      console.log(`[process-jobs] Anti-spy enabled with ${resolvedPages.length} pages:`);
-      resolvedPages.forEach(p => {
-        console.log(`  - Page ${p.pageId}: ${p.availableSlots} slots available (${p.adsRunning}/${p.adsLimit})`);
-      });
-    }
-
-    const defaultPageId = resolvedPages.length > 0 ? resolvedPages[0].pageId : '';
-    const defaultInstagramUserId = resolvedPages.length > 0 ? resolvedPages[0].instagramActorId : null;
+    // These will be set per-account inside the loop
+    let resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null; adsRunning: number; adsLimit: number; availableSlots: number }> = [];
+    let defaultPageId = '';
+    let defaultInstagramUserId: string | null = null;
 
     // Separate items by type - ONLY process pending items to prevent duplicates on re-execution
     // This is critical: if a job times out and is re-triggered, we must not re-create items that already have facebook_id
@@ -2679,6 +2646,27 @@ Deno.serve(async (req) => {
       activeProxyClient = await getProxyClientForProfile(supabase, currentAccount.profile_id);
       if (activeProxyClient) {
         console.log(`[process-jobs] 🔒 Proxy ACTIVE for account ${currentAccount.name}`);
+      }
+
+      // ============= RESOLVE PAGES PER ACCOUNT =============
+      // Each account may be linked to a different profile, so resolve pages
+      // using this account's profile_id to get the correct page access tokens.
+      const selectedPages = config.selectedPages || [];
+      if (selectedPages.length > 0) {
+        resolvedPages = await resolvePagesForProfile(
+          currentAccount.profile_id,
+          accessToken,
+          selectedPages,
+        );
+        defaultPageId = resolvedPages.length > 0 ? resolvedPages[0].pageId : '';
+        defaultInstagramUserId = resolvedPages.length > 0 ? resolvedPages[0].instagramActorId : null;
+
+        console.log(`[process-jobs] Resolved ${resolvedPages.length} page(s) for account ${currentAccount.name} (profile: ${currentAccount.profile_id})`);
+        if (config.antiSpyEnabled && resolvedPages.length > 1) {
+          resolvedPages.forEach(p => {
+            console.log(`  - Page ${p.pageId}: ${p.availableSlots} slots available (${p.adsRunning}/${p.adsLimit})`);
+          });
+        }
       }
 
       // Create naming replacer
