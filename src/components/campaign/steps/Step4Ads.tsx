@@ -262,7 +262,7 @@ export function Step4Ads() {
                 maxLength={5000}
               />
               <p className="text-xs text-muted-foreground">
-                O texto principal aparece acima da mídia do anúncio (recomendado: até 125 caracteres · máx: 2.200)
+                O texto principal aparece acima da mídia do anúncio (recomendado: até 125 caracteres · máx: 5.000)
               </p>
             </div>
 
