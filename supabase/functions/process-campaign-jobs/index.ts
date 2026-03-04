@@ -2445,13 +2445,28 @@ Deno.serve(async (req) => {
         }
         
         // If not found by UUID or value is not a UUID, try by Facebook page_id
+        // Use profile_id filter first to get the correct page for this account,
+        // then fallback to any matching page. Use .maybeSingle() to avoid errors
+        // when the same page_id exists across multiple profiles.
         if (!page) {
-          const { data: pageByFbId } = await supabase
+          // Try to find the page linked to the same profile as the first ad account
+          const { data: pageByProfile } = await supabase
             .from('facebook_pages')
             .select('page_id, access_token, ads_running, ads_limit')
             .eq('page_id', selectedPageValue)
-            .single();
-          page = pageByFbId;
+            .eq('profile_id', firstAccountProfileId)
+            .maybeSingle();
+          page = pageByProfile;
+          
+          // Fallback: if not found for this profile, get any matching page
+          if (!page) {
+            const { data: pageByFbId } = await supabase
+              .from('facebook_pages')
+              .select('page_id, access_token, ads_running, ads_limit')
+              .eq('page_id', selectedPageValue)
+              .limit(1);
+            page = pageByFbId?.[0] || null;
+          }
         }
 
         if (page?.page_id) {
