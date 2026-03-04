@@ -42,6 +42,7 @@ export interface CampaignConfig {
   campaignName: string;
   objective: 'OUTCOME_SALES' | 'OUTCOME_LEADS' | 'OUTCOME_TRAFFIC' | 'OUTCOME_ENGAGEMENT' | 'OUTCOME_AWARENESS' | 'OUTCOME_APP_PROMOTION';
   specialAdCategory: 'NONE' | 'HOUSING' | 'EMPLOYMENT' | 'FINANCIAL_PRODUCTS_SERVICES' | 'ISSUES_ELECTIONS_POLITICS';
+  specialAdCategoryCountry: string[]; // ISO country codes for political ad authorization
   useCBO: boolean; // true = Campaign Budget Optimization, false = Ad Set Budget
   useCatalog: boolean; // true = Dynamic Ads with product catalog
   budget: number;
@@ -157,6 +158,7 @@ const defaultConfig: CampaignConfig = {
   campaignName: '[CP{{sequencial:01}}][{{budget}}][{{estrutura}}][{{conta_apelido}}]',
   objective: 'OUTCOME_SALES',
   specialAdCategory: 'NONE',
+  specialAdCategoryCountry: [],
   useCBO: true,
   useCatalog: false,
   budget: 50,

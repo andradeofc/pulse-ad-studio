@@ -21,6 +21,7 @@ import { NamingModal } from '../NamingModal';
 import { AdAccountSelector } from '../AdAccountSelector';
 import { CatalogSelector } from '../CatalogSelector';
 import { BusinessManagerSelector } from '../BusinessManagerSelector';
+import { GeoLocationSelector } from '../GeoLocationSelector';
 
 const objectives = [
   { value: 'OUTCOME_SALES', label: 'Vendas', description: 'Conversões e compras no site' },
@@ -267,7 +268,13 @@ export function Step2Campaign() {
           <Label>Categoria Especial de Anúncio</Label>
           <Select
             value={config.specialAdCategory}
-            onValueChange={(value) => updateConfig({ specialAdCategory: value as 'NONE' | 'HOUSING' | 'EMPLOYMENT' | 'FINANCIAL_PRODUCTS_SERVICES' | 'ISSUES_ELECTIONS_POLITICS' })}
+            onValueChange={(value) => {
+              updateConfig({ specialAdCategory: value as 'NONE' | 'HOUSING' | 'EMPLOYMENT' | 'FINANCIAL_PRODUCTS_SERVICES' | 'ISSUES_ELECTIONS_POLITICS' });
+              // Clear political country when switching away from politics
+              if (value !== 'ISSUES_ELECTIONS_POLITICS') {
+                updateConfig({ specialAdCategoryCountry: [] });
+              }
+            }}
           >
             <SelectTrigger className="bg-secondary/50">
               <SelectValue placeholder="Selecione a categoria" />
@@ -287,6 +294,23 @@ export function Step2Campaign() {
             Obrigatório pela API do Facebook. Anúncios em categorias especiais têm restrições de segmentação.
           </p>
         </div>
+
+        {/* Political Ad Country - Only shown when ISSUES_ELECTIONS_POLITICS is selected */}
+        {config.specialAdCategory === 'ISSUES_ELECTIONS_POLITICS' && (
+          <div className="space-y-2 p-4 bg-amber-500/10 rounded-lg border border-amber-500/30">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="w-4 h-4 text-amber-500" />
+              <Label className="text-foreground font-medium">País de Autorização Política</Label>
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">
+              Selecione o(s) país(es) onde o anunciante está autorizado a veicular anúncios políticos na Meta.
+            </p>
+            <GeoLocationSelector
+              value={config.specialAdCategoryCountry}
+              onChange={(countries) => updateConfig({ specialAdCategoryCountry: countries })}
+            />
+          </div>
+        )}
       </section>
 
       {/* Budget Optimization Section (CBO vs ABO) */}

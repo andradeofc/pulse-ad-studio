@@ -728,6 +728,14 @@ function buildCampaignParams(config: Record<string, any>, name: string): Record<
     special_ad_categories: JSON.stringify(specialAdCategories),
   };
 
+  // Add special_ad_category_country for political ads
+  if (specialAdCategory === 'ISSUES_ELECTIONS_POLITICS') {
+    const categoryCountry = config.specialAdCategoryCountry as string[] | undefined;
+    if (categoryCountry && categoryCountry.length > 0) {
+      params.special_ad_category_country = JSON.stringify(categoryCountry);
+    }
+  }
+
   if (config.useCatalog && config.catalogId) {
     params.promoted_object = JSON.stringify({
       product_catalog_id: config.catalogId,
