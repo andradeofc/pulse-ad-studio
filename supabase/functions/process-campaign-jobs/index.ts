@@ -1762,6 +1762,10 @@ async function createNonCatalogAd(
       contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
     });
     if (urlParams) creativeParams.append('url_tags', urlParams.trim());
+    // Political campaigns require authorization_category on the creative
+    if (config.specialAdCategory === 'ISSUES_ELECTIONS_POLITICS') {
+      creativeParams.append('authorization_category', 'POLITICAL');
+    }
 
     const creativeResult = await fetchWithRetry(
       `${GRAPH_BASE_URL}/${actId}/adcreatives`,
@@ -1775,7 +1779,9 @@ async function createNonCatalogAd(
     );
 
     if (!creativeResult.ok || creativeResult.json.error) {
-      return { success: false, error: creativeResult.json?.error?.message || 'Video creative failed' };
+      const errDetail = creativeResult.json?.error;
+      console.error(`[createNonCatalogAd] Video creative FAILED: ${errDetail?.message} | code: ${errDetail?.code} | subcode: ${errDetail?.error_subcode} | full: ${JSON.stringify(errDetail).substring(0, 500)}`);
+      return { success: false, error: enrichErrorMessage(errDetail, 'Video creative failed') };
     }
 
     adCreativeId = creativeResult.json.id;
@@ -1800,6 +1806,10 @@ async function createNonCatalogAd(
       contextual_multi_ads: JSON.stringify({ enroll_status: config.multiAdvertiser ? 'OPT_IN' : 'OPT_OUT' }),
     });
     if (urlParams) creativeParams.append('url_tags', urlParams.trim());
+    // Political campaigns require authorization_category on the creative
+    if (config.specialAdCategory === 'ISSUES_ELECTIONS_POLITICS') {
+      creativeParams.append('authorization_category', 'POLITICAL');
+    }
 
     const creativeResult = await fetchWithRetry(
       `${GRAPH_BASE_URL}/${actId}/adcreatives`,
@@ -1813,7 +1823,9 @@ async function createNonCatalogAd(
     );
 
     if (!creativeResult.ok || creativeResult.json.error) {
-      return { success: false, error: creativeResult.json?.error?.message || 'Image creative failed' };
+      const errDetail = creativeResult.json?.error;
+      console.error(`[createNonCatalogAd] Image creative FAILED: ${errDetail?.message} | code: ${errDetail?.code} | subcode: ${errDetail?.error_subcode} | blame: ${JSON.stringify(errDetail?.error_data?.blame_field_specs)} | full: ${JSON.stringify(errDetail).substring(0, 500)}`);
+      return { success: false, error: enrichErrorMessage(errDetail, 'Image creative failed') };
     }
 
     adCreativeId = creativeResult.json.id;
@@ -1828,6 +1840,12 @@ async function createNonCatalogAd(
     status: 'ACTIVE',
   });
 
+  // Political ads require authorization_category at the ad level
+  const specialAdCategory = config.specialAdCategory;
+  if (specialAdCategory === 'ISSUES_ELECTIONS_POLITICS') {
+    adParams.append('authorization_category', 'POLITICAL');
+  }
+
   const adResult = await fetchWithRetry(
     `${GRAPH_BASE_URL}/${actId}/ads`,
     {
@@ -1840,7 +1858,9 @@ async function createNonCatalogAd(
   );
 
   if (!adResult.ok || adResult.json.error) {
-    return { success: false, error: adResult.json?.error?.message || 'Ad creation failed' };
+    const errDetail = adResult.json?.error;
+    console.error(`[createNonCatalogAd] Ad creation FAILED: ${errDetail?.message} | code: ${errDetail?.code} | subcode: ${errDetail?.error_subcode} | blame: ${JSON.stringify(errDetail?.error_data?.blame_field_specs)} | full: ${JSON.stringify(errDetail).substring(0, 500)}`);
+    return { success: false, error: enrichErrorMessage(errDetail, 'Ad creation failed') };
   }
 
   return { success: true, id: adResult.json.id };
