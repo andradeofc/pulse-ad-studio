@@ -886,7 +886,8 @@ function buildAdsetParams(
       ],
       audience_network_positions: ['classic', 'instream_video'],
     };
-    // Keep age_range if present — it works as a suggestion even with advantage_audience disabled
+    // Remove age_range — it requires targeting_automation.advantage_audience to be enabled
+    delete dloTargeting.age_range;
     params.targeting = JSON.stringify(dloTargeting);
     console.log(`[DLO] Adset params: destination_type=${params.destination_type || 'REMOVED'}, is_dynamic_creative=${params.is_dynamic_creative}, targeting_automation=${JSON.stringify(dloTargeting.targeting_automation)}`);
     console.log(`[DLO] Adset full params keys: ${Object.keys(params).join(', ')}`);
