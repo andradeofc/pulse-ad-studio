@@ -859,9 +859,11 @@ function buildAdsetParams(
   //    and DLO ads are rejected with error 2446485 "Invalid parameter"
   if (config.languageConfig?.enabled && !config.useCatalog) {
     // DLO with asset_customization_rules:
-    // - Do NOT set is_dynamic_creative (omit entirely — Meta docs say "do not set to true", omitting is safest)
-    // - Disable Advantage+ Audience (targeting_automation) — incompatible with locale-based asset_customization_rules
+    // - Remove destination_type (incompatible with asset_customization_rules per Meta docs)
+    // - Do NOT set is_dynamic_creative (omit entirely)
+    // - Disable Advantage+ Audience (targeting_automation) — incompatible with locale-based rules
     // - Set explicit placements to exclude incompatible ones
+    delete params.destination_type;
     const dloTargeting: Record<string, any> = {
       ...targetingObj,
       targeting_automation: { advantage_audience: 0 }, // Override: disable for DLO
