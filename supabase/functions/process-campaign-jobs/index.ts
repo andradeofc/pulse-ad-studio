@@ -860,10 +860,11 @@ function buildAdsetParams(
   if (config.languageConfig?.enabled && !config.useCatalog) {
     // DLO with asset_customization_rules:
     // - Remove destination_type (incompatible with asset_customization_rules per Meta docs)
-    // - Do NOT set is_dynamic_creative (omit entirely)
+    // - MUST set is_dynamic_creative=false (Meta requires this for asset_customization_rules)
     // - Disable Advantage+ Audience (targeting_automation) — incompatible with locale-based rules
     // - Set explicit placements to exclude incompatible ones
     delete params.destination_type;
+    params.is_dynamic_creative = 'false';
     const dloTargeting: Record<string, any> = {
       ...targetingObj,
       targeting_automation: { advantage_audience: 0 }, // Override: disable for DLO
@@ -888,6 +889,8 @@ function buildAdsetParams(
     // Remove age_range — it requires targeting_automation.advantage_audience to be enabled
     delete dloTargeting.age_range;
     params.targeting = JSON.stringify(dloTargeting);
+    console.log(`[DLO] Adset params: destination_type=${params.destination_type || 'REMOVED'}, is_dynamic_creative=${params.is_dynamic_creative}, targeting_automation=${JSON.stringify(dloTargeting.targeting_automation)}`);
+    console.log(`[DLO] Adset full params keys: ${Object.keys(params).join(', ')}`);
   }
 
   return params;
@@ -3222,7 +3225,7 @@ Deno.serve(async (req) => {
 
               // NOTE: contextual_multi_ads and multi_advertiser are NOT supported for DLO ads
 
-              console.log(`[DLO] Ad direct POST for ${ad.name}: adset=${parentFbId}, creative_id=${dloCreativeId}`);
+              console.log(`[DLO] Ad direct POST for ${ad.name}: adset=${parentFbId}, creative_id=${dloCreativeId}, full_payload=${adParams.toString().substring(0, 500)}`);
 
               try {
                 const adResult = await fetchWithRetry(
@@ -3252,7 +3255,7 @@ Deno.serve(async (req) => {
                   const blameFields = errDetail?.error_data?.blame_field_specs 
                     ? JSON.stringify(errDetail.error_data.blame_field_specs)
                     : 'none';
-                  console.error(`[DLO] Ad creation failed: ${errMsg} | subcode: ${errDetail?.error_subcode} | blame_fields: ${blameFields} | full_error: ${JSON.stringify(errDetail).substring(0, 800)}`);
+                  console.error(`[DLO] Ad creation failed: ${errMsg} | subcode: ${errDetail?.error_subcode} | blame_fields: ${blameFields} | full_error: ${JSON.stringify(errDetail).substring(0, 1500)}`);
                   hasError = true;
                   lastError = errMsg;
                   await supabase.from('campaign_job_items')
