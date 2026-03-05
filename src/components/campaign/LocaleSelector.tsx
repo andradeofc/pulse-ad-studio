@@ -16,7 +16,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { useAdLocales, type FacebookLocale } from '@/hooks/useAdLocales';
+import { FACEBOOK_LOCALES, getLocaleNameById, type FacebookLocale } from '@/lib/facebookLocales';
 
 interface LocaleSelectorProps {
   value: number[];
@@ -27,19 +27,18 @@ interface LocaleSelectorProps {
 export function LocaleSelector({ value, onChange, disabled }: LocaleSelectorProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const { locales: LOCALES, loading } = useAdLocales();
 
   const filteredLocales = useMemo(() => {
-    if (!searchQuery) return LOCALES;
+    if (!searchQuery) return FACEBOOK_LOCALES;
     const query = searchQuery.toLowerCase();
-    return LOCALES.filter(locale =>
+    return FACEBOOK_LOCALES.filter(locale =>
       locale.name.toLowerCase().includes(query)
     );
-  }, [searchQuery, LOCALES]);
+  }, [searchQuery]);
 
   const selectedLocales = useMemo(() => {
-    return LOCALES.filter(l => value.includes(l.id));
-  }, [value, LOCALES]);
+    return FACEBOOK_LOCALES.filter(l => value.includes(l.id));
+  }, [value]);
 
   const toggleLocale = (id: number) => {
     if (value.includes(id)) {
@@ -77,16 +76,14 @@ export function LocaleSelector({ value, onChange, disabled }: LocaleSelectorProp
             role="combobox"
             aria-expanded={open}
             className="w-full justify-between"
-            disabled={disabled || loading}
+            disabled={disabled}
           >
             <div className="flex items-center gap-2">
               <Globe className="w-4 h-4 text-muted-foreground" />
               <span>
-                {loading
-                  ? 'Carregando idiomas...'
-                  : value.length === 0
-                    ? 'Selecionar idiomas...'
-                    : `${value.length} idioma(s) selecionado(s)`}
+                {value.length === 0
+                  ? 'Selecionar idiomas...'
+                  : `${value.length} idioma(s) selecionado(s)`}
               </span>
             </div>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -105,7 +102,7 @@ export function LocaleSelector({ value, onChange, disabled }: LocaleSelectorProp
                 {filteredLocales.map(locale => (
                   <CommandItem
                     key={locale.id}
-                    value={`${locale.name}`}
+                    value={locale.name}
                     onSelect={() => toggleLocale(locale.id)}
                   >
                     <div className="flex items-center gap-2 flex-1">
@@ -128,12 +125,11 @@ export function LocaleSelector({ value, onChange, disabled }: LocaleSelectorProp
         </PopoverContent>
       </Popover>
       <p className="text-xs text-muted-foreground">
-        IDs de locale são buscados da API do Facebook (targeting.locales)
+        IDs de locale do Facebook (targeting.locales)
       </p>
     </div>
   );
 }
 
 // Re-export for backward compatibility
-export { useAdLocales, type FacebookLocale };
-export { getLocaleNameById } from '@/hooks/useAdLocales';
+export { FACEBOOK_LOCALES, getLocaleNameById, type FacebookLocale };

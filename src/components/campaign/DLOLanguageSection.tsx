@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useCampaignStore, type DLOLanguage } from '@/stores/campaignStore';
-import { useAdLocales, type FacebookLocale } from '@/hooks/useAdLocales';
+import { FACEBOOK_LOCALES, type FacebookLocale } from '@/lib/facebookLocales';
 import { fetchCreatives, type CreativeMetadata } from '@/services/creativesService';
 
 const MAX_LANGUAGES = 48;
@@ -48,19 +48,18 @@ interface LanguageCardProps {
   index: number;
   usedLocales: number[];
   allCreatives: MediaOption[];
-  allLocales: FacebookLocale[];
   onUpdate: (lang: DLOLanguage) => void;
   onRemove?: () => void;
 }
 
-function LanguageCard({ language, isDefault, index, usedLocales, allCreatives, allLocales, onUpdate, onRemove }: LanguageCardProps) {
+function LanguageCard({ language, isDefault, index, usedLocales, allCreatives, onUpdate, onRemove }: LanguageCardProps) {
   const [expanded, setExpanded] = useState(isDefault || index === 0);
 
-  const availableLocales = allLocales.filter(
+  const availableLocales = FACEBOOK_LOCALES.filter(
     l => l.id === language.locale || !usedLocales.includes(l.id)
   );
 
-  const localeName = allLocales.find(l => l.id === language.locale)?.name || 'Selecionar idioma';
+  const localeName = FACEBOOK_LOCALES.find(l => l.id === language.locale)?.name || 'Selecionar idioma';
 
   return (
     <Card className={`border ${isDefault ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
@@ -97,7 +96,7 @@ function LanguageCard({ language, isDefault, index, usedLocales, allCreatives, a
             <Select
               value={language.locale > 0 ? String(language.locale) : ''}
               onValueChange={(v) => {
-                const loc = allLocales.find(l => l.id === Number(v));
+                const loc = FACEBOOK_LOCALES.find(l => l.id === Number(v));
                 onUpdate({ ...language, locale: Number(v), label: loc?.name || '' });
               }}
             >
@@ -216,7 +215,6 @@ export function DLOLanguageSection() {
   const { config, updateConfig } = useCampaignStore();
   const languageConfig = config.languageConfig;
   const [allCreatives, setAllCreatives] = useState<MediaOption[]>([]);
-  const { locales: allLocales } = useAdLocales();
 
   // Fetch all creatives from the library (not just Step 1 selection)
   useEffect(() => {
@@ -329,7 +327,6 @@ export function DLOLanguageSection() {
             index={0}
             usedLocales={usedLocales}
             allCreatives={allCreatives}
-            allLocales={allLocales}
             onUpdate={updateDefaultLanguage}
           />
 
@@ -342,7 +339,6 @@ export function DLOLanguageSection() {
               index={i + 1}
               usedLocales={usedLocales}
               allCreatives={allCreatives}
-              allLocales={allLocales}
               onUpdate={(l) => updateSecondaryLanguage(i, l)}
               onRemove={() => removeSecondaryLanguage(i)}
             />

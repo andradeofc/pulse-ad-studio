@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { getCountryByCode } from '../GeoLocationSelector';
-import { getLocaleNameById } from '@/hooks/useAdLocales';
+import { getLocaleNameById } from '@/lib/facebookLocales';
 import { AdLimitWarning } from '../AdLimitWarning';
 import { SaveTemplateModal } from '../SaveTemplateModal';
 import { 
