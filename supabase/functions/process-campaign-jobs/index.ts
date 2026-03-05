@@ -3497,27 +3497,126 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Final status
-    const finalStatus = hasError ? 'failed' : 'completed';
+    // ============= SMART FINALIZATION =============
+    // Instead of relying only on the local `hasError` variable (which resets each invocation),
+    // query the database for the actual state of all items to determine the correct final status.
+    const { count: pendingCount } = await supabase
+      .from('campaign_job_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('job_id', jobId)
+      .eq('status', 'pending');
+
+    const { count: failedCount } = await supabase
+      .from('campaign_job_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('job_id', jobId)
+      .eq('status', 'failed');
+
+    const hasPendingItems = (pendingCount || 0) > 0;
+    const hasFailedItems = (failedCount || 0) > 0;
+
+    // Anti-loop protection: track how many times we re-queue without progress
+    // If items remain pending after MAX_REQUEUE_ATTEMPTS, force-fail them
+    const MAX_REQUEUE_ATTEMPTS = 3;
+    const jobConfig = (job.config || {}) as Record<string, any>;
+    const currentRequeueCount = jobConfig._requeue_count || 0;
+    const lastProcessedItems = jobConfig._last_processed_items || 0;
+    const currentTotalProcessed = (job.processed_items || 0) + totalAdsCreated;
+    const madeProgress = currentTotalProcessed > lastProcessedItems;
+
+    let finalStatus: string;
+    let finalErrorMessage: string | null = hasError ? lastError : null;
+
+    if (hasPendingItems) {
+      // There are still pending items — decide whether to re-queue or force-fail
+      const effectiveRequeueCount = madeProgress ? 0 : currentRequeueCount + 1;
+
+      if (effectiveRequeueCount >= MAX_REQUEUE_ATTEMPTS) {
+        // No progress after MAX attempts — force-fail remaining pending items
+        console.warn(`[process-jobs] ⚠️ No progress after ${MAX_REQUEUE_ATTEMPTS} attempts, force-failing ${pendingCount} pending items`);
+        
+        await supabase
+          .from('campaign_job_items')
+          .update({ status: 'failed', error_message: 'Item não processado após múltiplas tentativas' })
+          .eq('job_id', jobId)
+          .eq('status', 'pending');
+
+        finalStatus = 'failed';
+        finalErrorMessage = `${pendingCount} item(s) não processado(s) após ${MAX_REQUEUE_ATTEMPTS} tentativas sem progresso`;
+      } else {
+        // Re-queue the job so queue-processor picks it up
+        console.log(`[process-jobs] ${pendingCount} pending items remain, re-queueing (attempt ${effectiveRequeueCount + 1}/${MAX_REQUEUE_ATTEMPTS})`);
+
+        const { count: completedAndFailedCount } = await supabase
+          .from('campaign_job_items')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', jobId)
+          .in('status', ['completed', 'failed']);
+
+        const totalItems = (completedAndFailedCount || 0) + (pendingCount || 0);
+        const progress = totalItems > 0 ? Math.round(((completedAndFailedCount || 0) / totalItems) * 100) : 0;
+
+        const updatedConfig = {
+          ...jobConfig,
+          _requeue_count: effectiveRequeueCount,
+          _last_processed_items: currentTotalProcessed,
+        };
+
+        await supabase
+          .from('campaign_jobs')
+          .update({
+            status: 'queued',
+            progress,
+            processed_items: currentTotalProcessed,
+            config: updatedConfig,
+          })
+          .eq('id', jobId);
+
+        console.log(`[process-jobs] Job ${jobId} re-queued at ${progress}% progress, will resume automatically`);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: 'requeued',
+            message: `${pendingCount} pending items remain, re-queued for processing`,
+            adsCreated: totalAdsCreated,
+            progress,
+            elapsedSeconds,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    } else if (hasFailedItems || hasError) {
+      finalStatus = 'failed';
+    } else {
+      finalStatus = 'completed';
+    }
+
+    // Clean up internal tracking fields from config before final save
+    const cleanedFinalConfig = { ...jobConfig };
+    delete cleanedFinalConfig._requeue_count;
+    delete cleanedFinalConfig._last_processed_items;
+
     await supabase
       .from('campaign_jobs')
       .update({
         status: finalStatus,
         progress: 100,
         completed_at: new Date().toISOString(),
-        error_message: hasError ? lastError : null,
+        error_message: finalErrorMessage,
+        config: cleanedFinalConfig,
       })
       .eq('id', jobId);
 
-    console.log(`[process-jobs] Job ${jobId} finished with status: ${finalStatus}`);
+    console.log(`[process-jobs] Job ${jobId} finished with status: ${finalStatus} (pending: ${pendingCount}, failed: ${failedCount})`);
 
     return new Response(
       JSON.stringify({
-        success: !hasError,
+        success: finalStatus === 'completed',
         status: finalStatus,
         adsCreated: totalAdsCreated,
         elapsedSeconds,
-        error: hasError ? lastError : null,
+        error: finalErrorMessage,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
