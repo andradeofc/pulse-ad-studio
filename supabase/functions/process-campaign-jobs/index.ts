@@ -2070,11 +2070,10 @@ async function buildDLOCreative(
     if (url) rule.link_url_label = { name: `${prefix}_url` };
     rule[mediaType === 'video' ? 'video_label' : 'image_label'] = { name: `${prefix}_media` };
 
-    // Meta docs: the default rule IS one of the language rules with is_default=true added
-    // Do NOT create a separate rule with empty customization_spec
-    if (lang === defaultLang) {
-      rule.is_default = true;
-    }
+    // Meta docs: every rule MUST have is_default explicitly set
+    // The default language rule gets is_default=true, all others get is_default=false
+    // Without explicit is_default=false, Meta may silently ignore secondary language rules
+    rule.is_default = (lang === defaultLang);
 
     customizationRules.push(rule);
   }
