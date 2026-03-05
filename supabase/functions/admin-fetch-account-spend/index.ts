@@ -201,25 +201,29 @@ Deno.serve(async (req) => {
             }
 
             // Helper to extract purchase count from actions array
+            // IMPORTANT: use only 'omni_purchase' (Meta's grouped metric that consolidates all purchase types)
+            // Do NOT sum individual types like offsite_conversion.fb_pixel_purchase alongside omni_purchase — that causes duplicates
             const getPurchaseCount = (actions: any[] | undefined): number => {
               if (!actions) return 0
-              const purchaseTypes = [
-                'purchase',
-                'omni_purchase', 
-                'offsite_conversion.fb_pixel_purchase',
-                'onsite_web_purchase',
-                'onsite_conversion.purchase',
-              ]
-              let total = 0
-              for (const action of actions) {
-                if (purchaseTypes.includes(action.action_type)) {
-                  total += parseInt(action.value || '0', 10)
+              // Prefer omni_purchase (grouped/consolidated metric)
+              const omni = actions.find((a: any) => a.action_type === 'omni_purchase')
+              if (omni) {
+                const count = parseInt(omni.value || '0', 10)
+                if (count > 0) {
+                  console.log(`Found ${count} purchases (omni_purchase) for account ${account.account_id}`)
                 }
+                return count
               }
-              if (total > 0) {
-                console.log(`Found ${total} purchases for account ${account.account_id}`)
+              // Fallback: use offsite_conversion.fb_pixel_purchase (individual pixel purchase)
+              const pixel = actions.find((a: any) => a.action_type === 'offsite_conversion.fb_pixel_purchase')
+              if (pixel) {
+                const count = parseInt(pixel.value || '0', 10)
+                if (count > 0) {
+                  console.log(`Found ${count} purchases (pixel_purchase fallback) for account ${account.account_id}`)
+                }
+                return count
               }
-              return total
+              return 0
             }
 
             // Prepare upsert data
