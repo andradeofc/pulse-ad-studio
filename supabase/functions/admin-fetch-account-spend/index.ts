@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey)
 
-    const { target_user_id, date_from, date_to } = await req.json()
+    const { target_user_id, date_from, date_to, force_refresh } = await req.json()
 
     if (!target_user_id || !date_from || !date_to) {
       return new Response(JSON.stringify({ error: 'target_user_id, date_from, date_to required' }), {
@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log(`Fetching spend for user ${target_user_id} from ${date_from} to ${date_to}`)
+    console.log(`Fetching spend for user ${target_user_id} from ${date_from} to ${date_to}${force_refresh ? ' (FORCE REFRESH)' : ''}`)
 
     // 1. Get all facebook profiles for target user
     const { data: profiles, error: profilesError } = await adminClient
@@ -84,14 +84,28 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${adAccounts.length} ad accounts across ${profiles.length} profiles`)
 
-    // 3. Check which data we already have cached
+    // 3. Check which data we already have cached (skip if force refresh)
     const accountIds = adAccounts.map(a => a.account_id)
-    const { data: cachedData } = await adminClient
-      .from('ad_account_daily_spend')
-      .select('ad_account_id, date, spend, currency')
-      .in('ad_account_id', accountIds)
-      .gte('date', date_from)
-      .lte('date', date_to)
+
+    if (force_refresh) {
+      // Delete existing cache for this period
+      console.log('Force refresh: deleting cached data for selected period')
+      await adminClient
+        .from('ad_account_daily_spend')
+        .delete()
+        .in('ad_account_id', accountIds)
+        .gte('date', date_from)
+        .lte('date', date_to)
+    }
+
+    const { data: cachedData } = force_refresh
+      ? { data: [] }
+      : await adminClient
+          .from('ad_account_daily_spend')
+          .select('ad_account_id, date, spend, currency')
+          .in('ad_account_id', accountIds)
+          .gte('date', date_from)
+          .lte('date', date_to)
 
     // Determine today's date (UTC) — never use cache for today
     const todayStr = new Date().toISOString().split('T')[0]
@@ -111,14 +125,19 @@ Deno.serve(async (req) => {
       allDates.push(d.toISOString().split('T')[0])
     }
 
-    // Find which accounts need fetching (any date missing or today included)
-    const accountsToFetch: typeof adAccounts = []
-    for (const account of adAccounts) {
-      const hasMissingDates = allDates.some(date => !cachedSet.has(`${account.account_id}__${date}`))
-      if (hasMissingDates) {
-        accountsToFetch.push(account)
-      }
-    }
+    // Find which accounts need fetching
+    const accountsToFetch: typeof adAccounts = force_refresh
+      ? [...adAccounts]
+      : (() => {
+          const result: typeof adAccounts = []
+          for (const account of adAccounts) {
+            const hasMissingDates = allDates.some(date => !cachedSet.has(`${account.account_id}__${date}`))
+            if (hasMissingDates) {
+              result.push(account)
+            }
+          }
+          return result
+        })()
 
     console.log(`${accountsToFetch.length} accounts need fresh data from Facebook`)
 

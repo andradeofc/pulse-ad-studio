@@ -78,6 +78,7 @@ export default function AdminSpendPage() {
           target_user_id: selectedUserId,
           date_from: format(dateFrom!, 'yyyy-MM-dd'),
           date_to: format(dateTo!, 'yyyy-MM-dd'),
+          force_refresh: forceRefresh,
         },
       });
 
@@ -248,6 +249,13 @@ export default function AdminSpendPage() {
                 {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
                 Buscar Gastos
               </Button>
+
+              {spendData && (
+                <Button variant="outline" onClick={() => fetchSpend(true)} disabled={!canSearch || isLoading}>
+                  {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                  Force Refresh
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
