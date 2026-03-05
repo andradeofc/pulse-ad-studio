@@ -2070,26 +2070,14 @@ async function buildDLOCreative(
     if (url) rule.link_url_label = { name: `${prefix}_url` };
     rule[mediaType === 'video' ? 'video_label' : 'image_label'] = { name: `${prefix}_media` };
 
+    // Meta docs: the default rule IS one of the language rules with is_default=true added
+    // Do NOT create a separate rule with empty customization_spec
+    if (lang === defaultLang) {
+      rule.is_default = true;
+    }
+
     customizationRules.push(rule);
   }
-
-  // CRITICAL: Facebook requires a default rule (without locales filter) as fallback
-  // Use the default language assets for this rule
-  const defaultPrefix = `locale_${String(defaultLang.locale)}`;
-  const defaultRule: any = {
-    customization_spec: {},
-  };
-  const defaultBody = defaultLang.primaryText || '';
-  const defaultTitle = defaultLang.headline || '';
-  const defaultDesc = defaultLang.description || '';
-  const defaultUrl = defaultLang.websiteUrl || config.destinationUrl || '';
-  if (defaultBody) defaultRule.body_label = { name: `${defaultPrefix}_body` };
-  if (defaultTitle) defaultRule.title_label = { name: `${defaultPrefix}_title` };
-  if (defaultDesc) defaultRule.description_label = { name: `${defaultPrefix}_desc` };
-  if (defaultUrl) defaultRule.link_url_label = { name: `${defaultPrefix}_url` };
-  defaultRule[mediaType === 'video' ? 'video_label' : 'image_label'] = { name: `${defaultPrefix}_media` };
-  defaultRule.is_default = true;
-  customizationRules.push(defaultRule);
 
   const assetFeedSpec: any = {
     optimization_type: 'LANGUAGE',
@@ -2105,11 +2093,12 @@ async function buildDLOCreative(
   else if (mediaAssets.length > 0) assetFeedSpec.images = mediaAssets;
   if (descriptions.length > 0) assetFeedSpec.descriptions = descriptions;
 
-  // DLO creatives with asset_customization_rules: Meta docs show object_story_spec
-  // should ONLY contain page_id. instagram_user_id causes error 2446485 at ad creation
-  // when combined with asset_customization_rules. Instagram delivery works via the
-  // Page's linked Instagram account automatically.
+  // DLO creatives: Meta docs explicitly show instagram_user_id in object_story_spec
+  // alongside asset_customization_rules — this IS compatible
   const objectStorySpec: any = { page_id: pageId };
+  if (instagramUserId) {
+    objectStorySpec.instagram_user_id = instagramUserId;
+  }
 
   // DLO creatives with asset_customization_rules: follow Meta docs exactly
   // Do NOT include use_page_actor_override or contextual_multi_ads — they cause
