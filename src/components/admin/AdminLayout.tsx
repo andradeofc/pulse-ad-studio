@@ -14,6 +14,7 @@ import {
   Bell,
   Settings,
   ScrollText,
+  DollarSign,
   ArrowLeft,
   Shield,
   Loader2,
@@ -51,6 +52,7 @@ const adminNavItems = [
       { title: 'Fila de Processamento', href: '/ops-center/fila', icon: Settings2 },
       { title: 'Busca por Hash/ID', href: '/ops-center/busca', icon: Search },
       { title: 'Logs de API', href: '/ops-center/logs-api', icon: FileText },
+      { title: 'Gastos por Conta', href: '/ops-center/gastos', icon: DollarSign },
     ],
   },
   {

@@ -53,6 +53,7 @@ import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 import AdminNotificationsPage from "@/pages/admin/AdminNotificationsPage";
 import AdminApiLogsPage from "@/pages/admin/AdminApiLogsPage";
 import AdminCampaignDetailsPage from "@/pages/admin/AdminCampaignDetailsPage";
+import AdminSpendPage from "@/pages/admin/AdminSpendPage";
 
 // Placeholder
 import { PlaceholderPage } from "@/components/PlaceholderPage";
@@ -125,6 +126,7 @@ const App = () => {
           <Route path="/ops-center/notificacoes" element={<AdminNotificationsPage />} />
           <Route path="/ops-center/logs-api" element={<AdminApiLogsPage />} />
           <Route path="/ops-center/configuracoes" element={<AdminSettingsPage />} />
+          <Route path="/ops-center/gastos" element={<AdminSpendPage />} />
 
           {/* 404 */}
           <Route path="*" element={<NotFound />} />
