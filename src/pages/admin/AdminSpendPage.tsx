@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CalendarIcon, DollarSign, TrendingUp, Search, RefreshCw } from 'lucide-react';
+import { Loader2, CalendarIcon, DollarSign, TrendingUp, Search, RefreshCw, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, subDays, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -29,6 +29,7 @@ interface SpendRow {
   currency: string;
   date: string;
   spend: number;
+  purchases: number;
   fetched_at: string;
 }
 
@@ -99,17 +100,19 @@ export default function AdminSpendPage() {
   // Aggregate spend per account
   const accountSummary = (() => {
     if (!spendData?.data) return [];
-    const map = new Map<string, { account_id: string; name: string; currency: string; total: number }>();
+    const map = new Map<string, { account_id: string; name: string; currency: string; total: number; purchases: number }>();
     for (const row of spendData.data) {
       const existing = map.get(row.ad_account_id);
       if (existing) {
         existing.total += row.spend;
+        existing.purchases += (row.purchases || 0);
       } else {
         map.set(row.ad_account_id, {
           account_id: row.ad_account_id,
           name: row.account_name || row.ad_account_id,
           currency: row.currency || 'BRL',
           total: row.spend,
+          purchases: row.purchases || 0,
         });
       }
     }
@@ -117,31 +120,37 @@ export default function AdminSpendPage() {
   })();
 
   const totalSpend = accountSummary.reduce((sum, a) => sum + a.total, 0);
+  const totalPurchases = accountSummary.reduce((sum, a) => sum + a.purchases, 0);
   const mainCurrency = accountSummary[0]?.currency || 'BRL';
 
-  // Chart data: daily aggregated spend
+  // Chart data: daily aggregated spend + purchases
   const chartData = (() => {
     if (!spendData?.data) return [];
     const daysToShow = parseInt(chartRange);
     const cutoffDate = format(subDays(dateTo || new Date(), daysToShow - 1), 'yyyy-MM-dd');
 
-    const dailyMap = new Map<string, number>();
+    const dailyMap = new Map<string, { spend: number; purchases: number }>();
     for (const row of spendData.data) {
       if (row.date >= cutoffDate) {
-        dailyMap.set(row.date, (dailyMap.get(row.date) || 0) + row.spend);
+        const existing = dailyMap.get(row.date) || { spend: 0, purchases: 0 };
+        existing.spend += row.spend;
+        existing.purchases += (row.purchases || 0);
+        dailyMap.set(row.date, existing);
       }
     }
     return Array.from(dailyMap.entries())
-      .map(([date, spend]) => ({
+      .map(([date, vals]) => ({
         date,
         label: format(new Date(date + 'T12:00:00'), 'dd/MM', { locale: ptBR }),
-        spend: Number(spend.toFixed(2)),
+        spend: Number(vals.spend.toFixed(2)),
+        purchases: vals.purchases,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
   })();
 
   const chartConfig = {
     spend: { label: 'Gasto', color: 'hsl(var(--primary))' },
+    purchases: { label: 'Vendas', color: 'hsl(var(--chart-2))' },
   };
 
   const formatCurrency = (value: number, currency: string) => {
@@ -247,7 +256,7 @@ export default function AdminSpendPage() {
         {spendData && (
           <>
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">Gasto Total</CardTitle>
@@ -256,6 +265,20 @@ export default function AdminSpendPage() {
                   <div className="text-2xl font-bold">{formatCurrency(totalSpend, mainCurrency)}</div>
                   <p className="text-xs text-muted-foreground mt-1">
                     {selectedUser?.full_name || 'Usuário'}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total de Vendas</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold flex items-center gap-2">
+                    <ShoppingCart className="w-5 h-5 text-muted-foreground" />
+                    {totalPurchases}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    no período selecionado
                   </p>
                 </CardContent>
               </Card>
@@ -291,7 +314,7 @@ export default function AdminSpendPage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Gasto Diário</CardTitle>
+                    <CardTitle className="text-base">Gasto Diário & Vendas</CardTitle>
                     <div className="flex gap-1">
                       {(['7', '15', '30'] as const).map(range => (
                         <Button
@@ -311,15 +334,20 @@ export default function AdminSpendPage() {
                     <BarChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                      <YAxis tickLine={false} axisLine={false} fontSize={12} tickFormatter={(v) => `R$${v}`} />
+                      <YAxis yAxisId="spend" tickLine={false} axisLine={false} fontSize={12} tickFormatter={(v) => `R$${v}`} />
+                      <YAxis yAxisId="purchases" orientation="right" tickLine={false} axisLine={false} fontSize={12} />
                       <ChartTooltip
                         content={
                           <ChartTooltipContent
-                            formatter={(value) => formatCurrency(Number(value), mainCurrency)}
+                            formatter={(value, name) => {
+                              if (name === 'purchases') return `${value} vendas`;
+                              return formatCurrency(Number(value), mainCurrency);
+                            }}
                           />
                         }
                       />
-                      <Bar dataKey="spend" fill="var(--color-spend)" radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="spend" dataKey="spend" fill="var(--color-spend)" radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="purchases" dataKey="purchases" fill="var(--color-purchases)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ChartContainer>
                 </CardContent>
@@ -338,13 +366,14 @@ export default function AdminSpendPage() {
                       <TableHead>Conta</TableHead>
                       <TableHead>ID da Conta</TableHead>
                       <TableHead>Moeda</TableHead>
+                      <TableHead className="text-right">Vendas</TableHead>
                       <TableHead className="text-right">Gasto no Período</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {accountSummary.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                           Nenhum dado encontrado para o período selecionado
                         </TableCell>
                       </TableRow>
@@ -358,6 +387,13 @@ export default function AdminSpendPage() {
                           <TableCell>
                             <Badge variant="outline">{account.currency}</Badge>
                           </TableCell>
+                          <TableCell className="text-right">
+                            {account.purchases > 0 ? (
+                              <Badge variant="secondary">{account.purchases}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">0</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-semibold">
                             {formatCurrency(account.total, account.currency)}
                           </TableCell>
@@ -367,6 +403,7 @@ export default function AdminSpendPage() {
                     {accountSummary.length > 0 && (
                       <TableRow className="border-t-2">
                         <TableCell colSpan={3} className="font-bold">Total</TableCell>
+                        <TableCell className="text-right font-bold">{totalPurchases}</TableCell>
                         <TableCell className="text-right font-bold text-lg">
                           {formatCurrency(totalSpend, mainCurrency)}
                         </TableCell>
