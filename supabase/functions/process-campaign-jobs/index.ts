@@ -858,9 +858,13 @@ function buildAdsetParams(
   //    Without explicit placements, Advantage+ includes ALL placements,
   //    and DLO ads are rejected with error 2446485 "Invalid parameter"
   if (config.languageConfig?.enabled && !config.useCatalog) {
-    params.is_dynamic_creative = 'false';
+    // DLO with asset_customization_rules:
+    // - Do NOT set is_dynamic_creative (omit entirely — Meta docs say "do not set to true", omitting is safest)
+    // - Disable Advantage+ Audience (targeting_automation) — incompatible with locale-based asset_customization_rules
+    // - Set explicit placements to exclude incompatible ones
     const dloTargeting: Record<string, any> = {
       ...targetingObj,
+      targeting_automation: { advantage_audience: 0 }, // Override: disable for DLO
       publisher_platforms: ['facebook', 'instagram', 'audience_network'],
       facebook_positions: [
         'feed',
@@ -879,6 +883,8 @@ function buildAdsetParams(
       ],
       audience_network_positions: ['classic', 'instream_video'],
     };
+    // Remove age_range — it requires targeting_automation.advantage_audience to be enabled
+    delete dloTargeting.age_range;
     params.targeting = JSON.stringify(dloTargeting);
   }
 
@@ -3174,18 +3180,18 @@ Deno.serve(async (req) => {
               console.log(`[DLO] Reusing existing creative ${dloCreativeId}`);
             }
 
-            // Phase 3: Create all ads via BATCH API (reusing the SAME creative_id)
+            // Phase 3: Create all ads via DIRECT POST (not Batch API)
+            // Using direct POST to isolate DLO-specific issues from batch encoding
             const actId = currentAccount.account_id.startsWith('act_')
               ? currentAccount.account_id : `act_${currentAccount.account_id}`;
 
-            const adBatchItems: Array<{ item: typeof adsWithNames[0]; batchItem: BatchRequestItem }> = [];
+            console.log(`[DLO] Creating ${adsWithNames.length} ads via direct POST using creative ${dloCreativeId}`);
 
             for (let i = 0; i < adsWithNames.length; i++) {
               const ad = adsWithNames[i];
 
               // Idempotency: already created?
               if (ad.facebook_id || (ad.config as any)?.savedAdId) {
-                // Only count as created if the item actually succeeded
                 if (ad.status === 'completed') {
                   totalAdsCreated++;
                 }
@@ -3200,69 +3206,68 @@ Deno.serve(async (req) => {
                 continue;
               }
 
-              const adParams: Record<string, string> = {
-                name: ad.name,
-                adset_id: parentFbId,
-                creative: JSON.stringify({ creative_id: dloCreativeId }),
-                status: 'ACTIVE',
-              };
-
-              // NOTE: contextual_multi_ads is NOT supported for DLO ads (causes error 2446485)
-
-              console.log(`[DLO] Ad payload for ${ad.name}:`, JSON.stringify(adParams));
-
-              const body = new URLSearchParams(adParams).toString();
-
-              adBatchItems.push({
-                item: ad,
-                batchItem: { method: 'POST', relative_url: `${actId}/ads`, body, name: `dlo_ad_${i}` },
-              });
-            }
-
-            // Execute in batches
-            const batchSize = getAdaptiveBatchSize(BATCH_CONFIG.AD_BATCH_SIZE, currentAccount.account_id);
-            const chunks = chunkArray(adBatchItems, batchSize);
-            console.log(`[DLO] Creating ${adBatchItems.length} ads in ${chunks.length} batches of ~${batchSize}`);
-
-            for (const chunk of chunks) {
               if (shouldYield()) {
                 return yieldChunk(`DLO partial ads for account ${accountIndex + 1}`);
               }
 
-              const { results } = await executeBatchRequest(
-                accessToken, chunk.map(c => c.batchItem), currentAccount.account_id,
-              );
+              const adParams = new URLSearchParams({
+                access_token: accessToken,
+                name: ad.name,
+                adset_id: parentFbId,
+                creative: JSON.stringify({ creative_id: dloCreativeId }),
+                status: 'ACTIVE',
+              });
 
-              for (let i = 0; i < results.length; i++) {
-                const result = results[i];
-                const item = chunk[i].item;
-                let parsedBody: any;
-                try { parsedBody = JSON.parse(result.body); } catch { parsedBody = {}; }
+              // NOTE: contextual_multi_ads and multi_advertiser are NOT supported for DLO ads
 
-                if (result.code === 200 && parsedBody.id) {
+              console.log(`[DLO] Ad direct POST for ${ad.name}: adset=${parentFbId}, creative_id=${dloCreativeId}`);
+
+              try {
+                const adResult = await fetchWithRetry(
+                  `${GRAPH_BASE_URL}/${actId}/ads`,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: adParams.toString(),
+                  },
+                  3,
+                  currentAccount.account_id,
+                );
+
+                if (adResult.ok && adResult.json.id) {
                   totalAdsCreated++;
                   await supabase.from('campaign_job_items')
                     .update({
                       status: 'completed',
-                      facebook_id: parsedBody.id,
-                      config: { ...(item.config as any), savedAdId: parsedBody.id },
+                      facebook_id: adResult.json.id,
+                      config: { ...(ad.config as any), savedAdId: adResult.json.id },
                     })
-                    .eq('id', item.id);
+                    .eq('id', ad.id);
+                  console.log(`[DLO] Ad created: ${adResult.json.id}`);
                 } else {
-                  const errMsg = enrichErrorMessage(parsedBody.error, `HTTP ${result.code}`);
-                  const blameFields = parsedBody.error?.error_data?.blame_field_specs 
-                    ? JSON.stringify(parsedBody.error.error_data.blame_field_specs)
+                  const errDetail = adResult.json?.error;
+                  const errMsg = enrichErrorMessage(errDetail, `HTTP ${adResult.status}`);
+                  const blameFields = errDetail?.error_data?.blame_field_specs 
+                    ? JSON.stringify(errDetail.error_data.blame_field_specs)
                     : 'none';
-                  console.error(`[DLO] Ad creation failed: ${errMsg} | subcode: ${parsedBody.error?.error_subcode} | blame_fields: ${blameFields} | full_error: ${JSON.stringify(parsedBody.error).substring(0, 800)}`);
+                  console.error(`[DLO] Ad creation failed: ${errMsg} | subcode: ${errDetail?.error_subcode} | blame_fields: ${blameFields} | full_error: ${JSON.stringify(errDetail).substring(0, 800)}`);
                   hasError = true;
                   lastError = errMsg;
                   await supabase.from('campaign_job_items')
                     .update({ status: 'failed', error_message: errMsg })
-                    .eq('id', item.id);
+                    .eq('id', ad.id);
                 }
+              } catch (adErr: any) {
+                console.error(`[DLO] Ad creation exception for ${ad.name}:`, adErr.message);
+                hasError = true;
+                lastError = adErr.message;
+                await supabase.from('campaign_job_items')
+                  .update({ status: 'failed', error_message: adErr.message })
+                  .eq('id', ad.id);
               }
 
-              await sleep(BATCH_CONFIG.BATCH_DELAY_MS);
+              // Small delay between ads
+              await sleep(500);
             }
 
             console.log(`[DLO] Created ${totalAdsCreated} ads using shared creative ${dloCreativeId}`);
