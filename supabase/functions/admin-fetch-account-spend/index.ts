@@ -93,9 +93,14 @@ Deno.serve(async (req) => {
       .gte('date', date_from)
       .lte('date', date_to)
 
-    // Build a set of cached (account_id, date) combos
+    // Determine today's date (UTC) — never use cache for today
+    const todayStr = new Date().toISOString().split('T')[0]
+
+    // Build a set of cached (account_id, date) combos, excluding today
     const cachedSet = new Set(
-      (cachedData || []).map(d => `${d.ad_account_id}__${d.date}`)
+      (cachedData || [])
+        .filter(d => d.date !== todayStr)
+        .map(d => `${d.ad_account_id}__${d.date}`)
     )
 
     // Generate all dates in range
@@ -106,7 +111,7 @@ Deno.serve(async (req) => {
       allDates.push(d.toISOString().split('T')[0])
     }
 
-    // Find which accounts need fetching (any date missing)
+    // Find which accounts need fetching (any date missing or today included)
     const accountsToFetch: typeof adAccounts = []
     for (const account of adAccounts) {
       const hasMissingDates = allDates.some(date => !cachedSet.has(`${account.account_id}__${date}`))
