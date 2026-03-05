@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { getCountryByCode } from '../GeoLocationSelector';
-import { getLocaleById, LOCALES } from '../LocaleSelector';
+import { getLocaleNameById } from '@/hooks/useAdLocales';
 import { AdLimitWarning } from '../AdLimitWarning';
 import { SaveTemplateModal } from '../SaveTemplateModal';
 import { 
@@ -150,7 +150,7 @@ export function Step5Review() {
   // Get locale names from IDs
   const getLocaleNames = () => {
     return config.locales
-      .map(id => getLocaleById(id)?.name || `ID: ${id}`)
+      .map(id => getLocaleNameById(id))
       .join(', ');
   };
 
@@ -667,7 +667,7 @@ export function Step5Review() {
                   <div className="flex items-center gap-2 mb-2">
                     <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">Padrão</Badge>
                     <span className="text-sm font-medium text-foreground">
-                      {LOCALES.find(l => l.id === config.languageConfig.defaultLanguage.locale)?.name || 'Não selecionado'}
+                      {getLocaleNameById(config.languageConfig.defaultLanguage.locale)}
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground space-y-1">
@@ -682,7 +682,7 @@ export function Step5Review() {
                   <div key={i} className="p-3 bg-secondary/30 rounded-lg border border-border">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium text-foreground">
-                        {LOCALES.find(l => l.id === lang.locale)?.name || `Idioma ${i + 2}`}
+                        {getLocaleNameById(lang.locale)}
                       </span>
                       {lang.useDefaultMedia && (
                         <Badge variant="outline" className="text-[10px]">Mídia do padrão</Badge>
