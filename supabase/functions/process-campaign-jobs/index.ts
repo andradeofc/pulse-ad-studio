@@ -848,7 +848,7 @@ function buildAdsetParams(
   }
 
   // DLO (Multi-Language Ads) with asset_customization_rules:
-  // 1. Do NOT set is_dynamic_creative (incompatible with asset_customization_rules)
+  // 1. MUST set is_dynamic_creative=false (required by Meta for asset_customization_rules)
   // 2. MUST explicitly set placements to exclude incompatible ones:
   //    - Facebook Business Explore
   //    - Facebook Notifications  
@@ -858,6 +858,7 @@ function buildAdsetParams(
   //    Without explicit placements, Advantage+ includes ALL placements,
   //    and DLO ads are rejected with error 2446485 "Invalid parameter"
   if (config.languageConfig?.enabled && !config.useCatalog) {
+    params.is_dynamic_creative = 'false';
     const dloTargeting: Record<string, any> = {
       ...targetingObj,
       publisher_platforms: ['facebook', 'instagram', 'audience_network'],
@@ -2364,22 +2365,50 @@ Deno.serve(async (req) => {
 
     // If job was previously failed, reset all failed items to pending for retry
     if (job.status === 'failed') {
-      console.log(`[process-jobs] Job was previously failed, resetting failed items to pending...`);
-      const { error: resetError } = await supabase
-        .from('campaign_job_items')
-        .update({ status: 'pending', error_message: null })
-        .eq('job_id', jobId)
-        .eq('status', 'failed');
+      const isDLOJob = (job.config as any)?.languageConfig?.enabled === true && !(job.config as any)?.useCatalog;
       
-      if (resetError) {
-        console.error(`[process-jobs] Failed to reset items:`, resetError);
+      if (isDLOJob) {
+        // DLO jobs: full reset — clear ALL items (including completed) to recreate
+        // everything cleanly with corrected parameters (e.g., is_dynamic_creative=false)
+        console.log(`[process-jobs] DLO job was previously failed, performing FULL RESET of all items...`);
+        const { error: resetError } = await supabase
+          .from('campaign_job_items')
+          .update({ status: 'pending', error_message: null, facebook_id: null, config: {} })
+          .eq('job_id', jobId);
+        
+        if (resetError) {
+          console.error(`[process-jobs] Failed to reset DLO items:`, resetError);
+        }
+
+        // Clear saved DLO creative/media caches to force fresh creation
+        const cleanedConfig = { ...(job.config as any) };
+        delete cleanedConfig.savedDLOCreativeIds;
+        delete cleanedConfig.savedDLOMedia;
+        delete cleanedConfig.savedDLOMediaType;
+        await supabase
+          .from('campaign_jobs')
+          .update({ error_message: null, progress: 0, processed_items: 0, config: cleanedConfig })
+          .eq('id', jobId);
+        (job as any).config = cleanedConfig;
+      } else {
+        // Non-DLO jobs: only reset failed items (preserve completed items)
+        console.log(`[process-jobs] Job was previously failed, resetting failed items to pending...`);
+        const { error: resetError } = await supabase
+          .from('campaign_job_items')
+          .update({ status: 'pending', error_message: null })
+          .eq('job_id', jobId)
+          .eq('status', 'failed');
+        
+        if (resetError) {
+          console.error(`[process-jobs] Failed to reset items:`, resetError);
+        }
+        
+        // Also reset job error message and progress
+        await supabase
+          .from('campaign_jobs')
+          .update({ error_message: null, progress: 0, processed_items: 0 })
+          .eq('id', jobId);
       }
-      
-      // Also reset job error message and progress
-      await supabase
-        .from('campaign_jobs')
-        .update({ error_message: null, progress: 0, processed_items: 0 })
-        .eq('id', jobId);
     }
 
     // Get job items
