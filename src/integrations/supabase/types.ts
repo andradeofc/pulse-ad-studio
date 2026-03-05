@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_account_daily_spend: {
+        Row: {
+          account_name: string | null
+          ad_account_id: string
+          created_at: string
+          currency: string | null
+          date: string
+          fetched_at: string
+          id: string
+          spend: number
+          user_id: string
+        }
+        Insert: {
+          account_name?: string | null
+          ad_account_id: string
+          created_at?: string
+          currency?: string | null
+          date: string
+          fetched_at?: string
+          id?: string
+          spend?: number
+          user_id: string
+        }
+        Update: {
+          account_name?: string | null
+          ad_account_id?: string
+          created_at?: string
+          currency?: string | null
+          date?: string
+          fetched_at?: string
+          id?: string
+          spend?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       admin_audit_logs: {
         Row: {
           action: string
