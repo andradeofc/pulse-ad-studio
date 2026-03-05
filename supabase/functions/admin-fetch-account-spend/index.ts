@@ -175,11 +175,32 @@ Deno.serve(async (req) => {
             const insightsData = await response.json()
             const insights = insightsData.data || []
 
+            // Debug: log action_types from first insight to understand data shape
+            if (insights.length > 0 && insights[0].actions) {
+              const actionTypes = insights[0].actions.map((a: any) => a.action_type)
+              console.log(`Account ${account.account_id} action_types: ${actionTypes.join(', ')}`)
+            }
+
             // Helper to extract purchase count from actions array
             const getPurchaseCount = (actions: any[] | undefined): number => {
               if (!actions) return 0
-              const purchase = actions.find((a: any) => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase')
-              return purchase ? parseInt(purchase.value || '0', 10) : 0
+              const purchaseTypes = [
+                'purchase',
+                'omni_purchase', 
+                'offsite_conversion.fb_pixel_purchase',
+                'onsite_web_purchase',
+                'onsite_conversion.purchase',
+              ]
+              let total = 0
+              for (const action of actions) {
+                if (purchaseTypes.includes(action.action_type)) {
+                  total += parseInt(action.value || '0', 10)
+                }
+              }
+              if (total > 0) {
+                console.log(`Found ${total} purchases for account ${account.account_id}`)
+              }
+              return total
             }
 
             // Prepare upsert data
