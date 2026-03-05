@@ -1,0 +1,1 @@
+ALTER TABLE public.ad_account_daily_spend ADD COLUMN purchases integer NOT NULL DEFAULT 0;

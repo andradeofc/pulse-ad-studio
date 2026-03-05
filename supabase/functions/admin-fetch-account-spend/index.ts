@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
         // Fetch insights for each account - 1 request per account covers full range
         for (const account of accounts) {
           try {
-            const url = `${FACEBOOK_GRAPH_API}/act_${account.account_id}/insights?fields=spend&time_range={"since":"${date_from}","until":"${date_to}"}&time_increment=1&access_token=${accessToken}`
+            const url = `${FACEBOOK_GRAPH_API}/act_${account.account_id}/insights?fields=spend,actions&time_range={"since":"${date_from}","until":"${date_to}"}&time_increment=1&access_token=${accessToken}`
 
             console.log(`Fetching insights for account ${account.account_id} (${account.name})`)
             const response = await fetch(url)
@@ -175,6 +175,13 @@ Deno.serve(async (req) => {
             const insightsData = await response.json()
             const insights = insightsData.data || []
 
+            // Helper to extract purchase count from actions array
+            const getPurchaseCount = (actions: any[] | undefined): number => {
+              if (!actions) return 0
+              const purchase = actions.find((a: any) => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase')
+              return purchase ? parseInt(purchase.value || '0', 10) : 0
+            }
+
             // Prepare upsert data
             const spendRows = insights.map((insight: any) => ({
               user_id: target_user_id,
@@ -183,6 +190,7 @@ Deno.serve(async (req) => {
               currency: account.currency,
               date: insight.date_start,
               spend: parseFloat(insight.spend || '0'),
+              purchases: getPurchaseCount(insight.actions),
               fetched_at: new Date().toISOString(),
             }))
 
@@ -197,6 +205,7 @@ Deno.serve(async (req) => {
                   currency: account.currency,
                   date,
                   spend: 0,
+                  purchases: 0,
                   fetched_at: new Date().toISOString(),
                 })
               }

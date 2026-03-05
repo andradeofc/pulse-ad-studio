@@ -23,6 +23,7 @@ export type Database = {
           date: string
           fetched_at: string
           id: string
+          purchases: number
           spend: number
           user_id: string
         }
@@ -34,6 +35,7 @@ export type Database = {
           date: string
           fetched_at?: string
           id?: string
+          purchases?: number
           spend?: number
           user_id: string
         }
@@ -45,6 +47,7 @@ export type Database = {
           date?: string
           fetched_at?: string
           id?: string
+          purchases?: number
           spend?: number
           user_id?: string
         }
