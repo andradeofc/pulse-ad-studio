@@ -2344,7 +2344,7 @@ Deno.serve(async (req) => {
       .from('campaign_jobs')
       .update({ status: 'processing', started_at: new Date().toISOString() })
       .eq('id', jobId)
-      .in('status', ['queued', 'paused'])
+      .in('status', ['queued', 'paused', 'failed'])
       .select('id');
 
     if (lockError || !lockResult || lockResult.length === 0) {
@@ -2361,6 +2361,26 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[process-jobs] Successfully acquired lock for job ${jobId}`);
+
+    // If job was previously failed, reset all failed items to pending for retry
+    if (job.status === 'failed') {
+      console.log(`[process-jobs] Job was previously failed, resetting failed items to pending...`);
+      const { error: resetError } = await supabase
+        .from('campaign_job_items')
+        .update({ status: 'pending', error_message: null })
+        .eq('job_id', jobId)
+        .eq('status', 'failed');
+      
+      if (resetError) {
+        console.error(`[process-jobs] Failed to reset items:`, resetError);
+      }
+      
+      // Also reset job error message and progress
+      await supabase
+        .from('campaign_jobs')
+        .update({ error_message: null, progress: 0, processed_items: 0 })
+        .eq('id', jobId);
+    }
 
     // Get job items
     const { data: items, error: itemsError } = await supabase
