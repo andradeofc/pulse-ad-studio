@@ -2105,11 +2105,11 @@ async function buildDLOCreative(
   else if (mediaAssets.length > 0) assetFeedSpec.images = mediaAssets;
   if (descriptions.length > 0) assetFeedSpec.descriptions = descriptions;
 
-  // DLO creatives: include instagram_user_id (same pattern as catalog creatives)
+  // DLO creatives with asset_customization_rules: Meta docs show object_story_spec
+  // should ONLY contain page_id. instagram_user_id causes error 2446485 at ad creation
+  // when combined with asset_customization_rules. Instagram delivery works via the
+  // Page's linked Instagram account automatically.
   const objectStorySpec: any = { page_id: pageId };
-  if (instagramUserId) {
-    objectStorySpec.instagram_user_id = instagramUserId;
-  }
 
   // DLO creatives with asset_customization_rules: follow Meta docs exactly
   // Do NOT include use_page_actor_override or contextual_multi_ads — they cause

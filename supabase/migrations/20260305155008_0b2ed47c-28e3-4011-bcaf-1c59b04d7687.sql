@@ -1,0 +1,2 @@
+UPDATE campaign_jobs SET status = 'failed', error_message = 'Reset DLO v6: removed instagram_user_id from creative object_story_spec' WHERE id = 'ee2dad79-571f-40b9-9566-fea5284cf4d9';
+UPDATE campaign_job_items SET status = 'pending', error_message = NULL, facebook_id = NULL, config = '{}' WHERE job_id = 'ee2dad79-571f-40b9-9566-fea5284cf4d9';
