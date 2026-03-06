@@ -55,8 +55,7 @@ Deno.serve(async (req) => {
         creative:creatives(id, url, type)
       `)
       .eq('is_active', true)
-      .order('last_checked_at', { ascending: true, nullsFirst: true })
-      .limit(5);
+      .order('last_checked_at', { ascending: true, nullsFirst: true });
 
     if (monitorsError) {
       console.error('[monitor-catalog-media] Error fetching monitors:', monitorsError);
