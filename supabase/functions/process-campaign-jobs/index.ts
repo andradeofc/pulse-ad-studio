@@ -3365,6 +3365,7 @@ Deno.serve(async (req) => {
     const LAYER2_RETRIABLE_PATTERNS = [
       'request aborted',
       'an unknown error occurred',
+      'an unexpected error has occurred',
       'please reduce the amount of data',
       'service temporarily unavailable',
     ];
