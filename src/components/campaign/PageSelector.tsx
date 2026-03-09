@@ -90,11 +90,21 @@ export function PageSelector({
     try {
       const { data, error } = await supabase
         .from('facebook_pages')
-        .select('*')
+        .select('*, facebook_profiles!inner(status)')
+        .neq('facebook_profiles.status', 'disconnected')
         .order('name');
 
       if (error) throw error;
-      setPages(data || []);
+      
+      // Deduplicate by page_id — keep the entry with the most ads_running data (most complete)
+      const pageMap = new Map<string, FacebookPage>();
+      for (const row of (data || [])) {
+        const existing = pageMap.get(row.page_id);
+        if (!existing || (row.ads_running || 0) > (existing.ads_running || 0)) {
+          pageMap.set(row.page_id, row);
+        }
+      }
+      setPages(Array.from(pageMap.values()));
     } catch (error) {
       console.error('Error fetching pages:', error);
       toast.error('Erro ao carregar páginas');
