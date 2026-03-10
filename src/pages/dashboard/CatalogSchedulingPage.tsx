@@ -637,10 +637,46 @@ export default function CatalogSchedulingPage() {
 
               {/* Business Manager Selection */}
               <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Briefcase className="w-4 h-4" />
-                  Business Manager
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Briefcase className="w-4 h-4" />
+                    Business Manager
+                  </Label>
+                  {selectedProfile && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        setIsSyncingBMs(true);
+                        try {
+                          const { data, error } = await supabase.functions.invoke('facebook-sync-business-managers', {
+                            body: { profile_id: selectedProfile },
+                          });
+                          if (error) throw error;
+                          await queryClient.invalidateQueries({ queryKey: ['facebook-business-managers', selectedProfile] });
+                          toast({
+                            title: 'Business Managers sincronizados!',
+                            description: `${data?.business_managers_synced || 0} BM(s) encontrado(s).`,
+                          });
+                        } catch (err: any) {
+                          console.error('Error syncing BMs:', err);
+                          toast({
+                            title: 'Erro ao sincronizar BMs',
+                            description: err.message || 'Não foi possível sincronizar.',
+                            variant: 'destructive',
+                          });
+                        } finally {
+                          setIsSyncingBMs(false);
+                        }
+                      }}
+                      disabled={isSyncingBMs}
+                      className="h-7 text-xs"
+                    >
+                      <RefreshCw className={cn("w-3 h-3 mr-1", isSyncingBMs && "animate-spin")} />
+                      Sincronizar
+                    </Button>
+                  )}
+                </div>
                 <Select 
                   value={selectedBusinessManager} 
                   onValueChange={setSelectedBusinessManager}
@@ -654,7 +690,7 @@ export default function CatalogSchedulingPage() {
                       <div className="p-2 text-center text-muted-foreground">Carregando...</div>
                     ) : businessManagers?.length === 0 ? (
                       <div className="p-2 text-center text-muted-foreground">
-                        Nenhum Business Manager encontrado
+                        Nenhum BM encontrado. Clique em Sincronizar.
                       </div>
                     ) : (
                       <>
