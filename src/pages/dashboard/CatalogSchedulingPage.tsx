@@ -162,6 +162,8 @@ export default function CatalogSchedulingPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedHour, setSelectedHour] = useState<string>('21');
   const [selectedMinute, setSelectedMinute] = useState<string>('00');
+  const [productSetSearch, setProductSetSearch] = useState('');
+  const [productSetPopoverOpen, setProductSetPopoverOpen] = useState(false);
 
   // Fetch schedules
   const { data: schedules, isLoading: loadingSchedules } = useQuery({
