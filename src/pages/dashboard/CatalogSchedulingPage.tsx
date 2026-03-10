@@ -22,7 +22,6 @@ import {
   Eye,
   Check,
   ChevronDown,
-  ChevronDown,
 } from 'lucide-react';
 import { ScheduleProductsModal } from '@/components/catalog/ScheduleProductsModal';
 import { Button } from '@/components/ui/button';
