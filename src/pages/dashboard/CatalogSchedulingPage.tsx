@@ -22,7 +22,6 @@ import {
   Eye,
   Check,
   ChevronDown,
-  Search,
 } from 'lucide-react';
 import { ScheduleProductsModal } from '@/components/catalog/ScheduleProductsModal';
 import { Button } from '@/components/ui/button';
@@ -45,8 +44,7 @@ import {
 } from '@/components/ui/select';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -817,47 +815,32 @@ export default function CatalogSchedulingPage() {
                     align="start"
                     sideOffset={4}
                   >
-                    <div className="flex items-center border-b px-3 py-2">
-                      <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-                      <Input
+                    <Command shouldFilter={false} className="overflow-visible">
+                      <CommandInput
                         placeholder="Buscar conjunto..."
                         value={productSetSearch}
-                        onChange={(e) => setProductSetSearch(e.target.value)}
-                        className="h-8 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 text-sm"
-                        autoFocus
+                        onValueChange={setProductSetSearch}
                       />
-                    </div>
-                    <ScrollArea className="max-h-[220px]">
-                      <div className="p-1">
-                        {loadingProductSets ? (
-                          <div className="py-6 text-center text-sm text-muted-foreground">Carregando...</div>
-                        ) : (() => {
-                          const filtered = (productSets || []).filter(s =>
-                            s.name.toLowerCase().includes(productSetSearch.toLowerCase())
-                          );
-                          if (filtered.length === 0) {
-                            return (
-                              <div className="py-6 text-center text-sm text-muted-foreground">
-                                {productSets?.length === 0
-                                  ? 'Nenhum conjunto encontrado. Clique em Sincronizar.'
-                                  : 'Nenhum resultado para a busca.'}
-                              </div>
-                            );
-                          }
-                          return filtered.map((set) => (
-                            <button
+                      <CommandList>
+                        <CommandEmpty>
+                          {loadingProductSets
+                            ? 'Carregando...'
+                            : productSets?.length === 0
+                              ? 'Nenhum conjunto encontrado. Clique em Sincronizar.'
+                              : 'Nenhum resultado para a busca.'}
+                        </CommandEmpty>
+                        {!loadingProductSets && (productSets || [])
+                          .filter(s => s.name.toLowerCase().includes(productSetSearch.toLowerCase()))
+                          .map((set) => (
+                            <CommandItem
                               key={set.id}
-                              type="button"
-                              onClick={() => {
+                              value={set.name}
+                              onSelect={() => {
                                 setSelectedProductSet(set.id);
                                 setProductSetPopoverOpen(false);
                                 setProductSetSearch('');
                               }}
-                              className={cn(
-                                "flex w-full items-center justify-between rounded-md px-2 py-2 text-sm transition-colors",
-                                "hover:bg-accent hover:text-accent-foreground cursor-pointer",
-                                selectedProductSet === set.id && "bg-accent/50"
-                              )}
+                              className="flex items-center justify-between"
                             >
                               <span className="truncate">{set.name}</span>
                               <div className="flex items-center gap-2 shrink-0 ml-2">
@@ -867,15 +850,14 @@ export default function CatalogSchedulingPage() {
                                   </span>
                                 )}
                                 <Check className={cn(
-                                  "h-4 w-4 transition-opacity",
+                                  "h-4 w-4",
                                   selectedProductSet === set.id ? "opacity-100 text-primary" : "opacity-0"
                                 )} />
                               </div>
-                            </button>
-                          ));
-                        })()}
-                      </div>
-                    </ScrollArea>
+                            </CommandItem>
+                          ))}
+                      </CommandList>
+                    </Command>
                   </PopoverContent>
                 </Popover>
               </div>
