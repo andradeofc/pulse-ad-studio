@@ -784,37 +784,87 @@ export default function CatalogSchedulingPage() {
                     </Button>
                   )}
                 </div>
-                <Select 
-                  value={selectedProductSet} 
-                  onValueChange={setSelectedProductSet}
-                  disabled={!selectedCatalog}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={selectedCatalog ? "Selecione o conjunto" : "Selecione um catálogo primeiro"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {loadingProductSets ? (
-                      <div className="p-2 text-center text-muted-foreground">Carregando...</div>
-                    ) : productSets?.length === 0 ? (
-                      <div className="p-2 text-center text-muted-foreground">
-                        Nenhum conjunto encontrado. Clique em Sincronizar.
-                      </div>
-                    ) : (
-                      productSets?.map((set) => (
-                        <SelectItem key={set.id} value={set.id}>
-                          <div className="flex items-center justify-between gap-4">
-                            <span>{set.name}</span>
-                            {set.product_count !== null && (
-                              <span className="text-xs text-muted-foreground">
-                                {set.product_count} produtos
-                              </span>
+                <Popover open={productSetPopoverOpen} onOpenChange={(open) => {
+                  setProductSetPopoverOpen(open);
+                  if (!open) setProductSetSearch('');
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={productSetPopoverOpen}
+                      disabled={!selectedCatalog}
+                      className="w-full justify-between font-normal"
+                    >
+                      {selectedProductSet && productSets ? (
+                        <span className="truncate">
+                          {productSets.find(s => s.id === selectedProductSet)?.name || 'Selecione o conjunto'}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {selectedCatalog ? 'Selecione o conjunto' : 'Selecione um catálogo primeiro'}
+                        </span>
+                      )}
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <div className="flex items-center border-b px-3 py-2">
+                      <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                      <Input
+                        placeholder="Buscar conjunto..."
+                        value={productSetSearch}
+                        onChange={(e) => setProductSetSearch(e.target.value)}
+                        className="h-8 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="max-h-[200px] overflow-y-auto p-1">
+                      {loadingProductSets ? (
+                        <div className="p-2 text-center text-sm text-muted-foreground">Carregando...</div>
+                      ) : (() => {
+                        const filtered = (productSets || []).filter(s =>
+                          s.name.toLowerCase().includes(productSetSearch.toLowerCase())
+                        );
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="p-2 text-center text-sm text-muted-foreground">
+                              {productSets?.length === 0 
+                                ? 'Nenhum conjunto encontrado. Clique em Sincronizar.' 
+                                : 'Nenhum resultado para a busca.'}
+                            </div>
+                          );
+                        }
+                        return filtered.map((set) => (
+                          <button
+                            key={set.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedProductSet(set.id);
+                              setProductSetPopoverOpen(false);
+                              setProductSetSearch('');
+                            }}
+                            className={cn(
+                              "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
+                              selectedProductSet === set.id && "bg-accent"
                             )}
-                          </div>
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                          >
+                            <span className="truncate">{set.name}</span>
+                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                              {set.product_count !== null && (
+                                <span className="text-xs text-muted-foreground">
+                                  {set.product_count} produtos
+                                </span>
+                              )}
+                              {selectedProductSet === set.id && (
+                                <Check className="h-4 w-4 text-primary" />
+                              )}
+                            </div>
+                          </button>
+                        ));
+                      })()}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Date and Time Selection */}
