@@ -20,6 +20,8 @@ import {
   RefreshCw,
   Briefcase,
   Eye,
+  Search,
+  Check,
 } from 'lucide-react';
 import { ScheduleProductsModal } from '@/components/catalog/ScheduleProductsModal';
 import { Button } from '@/components/ui/button';
