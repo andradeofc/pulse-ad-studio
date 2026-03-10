@@ -20,8 +20,8 @@ import {
   RefreshCw,
   Briefcase,
   Eye,
-  Search,
   Check,
+  ChevronDown,
   ChevronDown,
 } from 'lucide-react';
 import { ScheduleProductsModal } from '@/components/catalog/ScheduleProductsModal';
