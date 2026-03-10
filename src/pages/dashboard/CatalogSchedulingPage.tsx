@@ -795,75 +795,70 @@ export default function CatalogSchedulingPage() {
                       role="combobox"
                       aria-expanded={productSetPopoverOpen}
                       disabled={!selectedCatalog}
-                      className="w-full justify-between font-normal"
-                    >
-                      {selectedProductSet && productSets ? (
-                        <span className="truncate">
-                          {productSets.find(s => s.id === selectedProductSet)?.name || 'Selecione o conjunto'}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {selectedCatalog ? 'Selecione o conjunto' : 'Selecione um catálogo primeiro'}
-                        </span>
+                      className={cn(
+                        "w-full justify-between font-normal h-10",
+                        !selectedProductSet && "text-muted-foreground"
                       )}
-                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    >
+                      <span className="truncate">
+                        {selectedProductSet && productSets
+                          ? productSets.find(s => s.id === selectedProductSet)?.name || 'Selecione o conjunto'
+                          : selectedCatalog ? 'Selecione o conjunto' : 'Selecione um catálogo primeiro'}
+                      </span>
+                      <ChevronDown className={cn(
+                        "ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform duration-200",
+                        productSetPopoverOpen && "rotate-180"
+                      )} />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                    <div className="flex items-center border-b px-3 py-2">
-                      <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-                      <Input
+                  <PopoverContent 
+                    className="w-[var(--radix-popover-trigger-width)] p-0" 
+                    align="start"
+                    sideOffset={4}
+                  >
+                    <Command shouldFilter={false}>
+                      <CommandInput
                         placeholder="Buscar conjunto..."
                         value={productSetSearch}
-                        onChange={(e) => setProductSetSearch(e.target.value)}
-                        className="h-8 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                        onValueChange={setProductSetSearch}
                       />
-                    </div>
-                    <div className="max-h-[200px] overflow-y-auto p-1">
-                      {loadingProductSets ? (
-                        <div className="p-2 text-center text-sm text-muted-foreground">Carregando...</div>
-                      ) : (() => {
-                        const filtered = (productSets || []).filter(s =>
-                          s.name.toLowerCase().includes(productSetSearch.toLowerCase())
-                        );
-                        if (filtered.length === 0) {
-                          return (
-                            <div className="p-2 text-center text-sm text-muted-foreground">
-                              {productSets?.length === 0 
-                                ? 'Nenhum conjunto encontrado. Clique em Sincronizar.' 
-                                : 'Nenhum resultado para a busca.'}
-                            </div>
-                          );
-                        }
-                        return filtered.map((set) => (
-                          <button
-                            key={set.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedProductSet(set.id);
-                              setProductSetPopoverOpen(false);
-                              setProductSetSearch('');
-                            }}
-                            className={cn(
-                              "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
-                              selectedProductSet === set.id && "bg-accent"
-                            )}
-                          >
-                            <span className="truncate">{set.name}</span>
-                            <div className="flex items-center gap-2 shrink-0 ml-2">
-                              {set.product_count !== null && (
-                                <span className="text-xs text-muted-foreground">
-                                  {set.product_count} produtos
-                                </span>
-                              )}
-                              {selectedProductSet === set.id && (
-                                <Check className="h-4 w-4 text-primary" />
-                              )}
-                            </div>
-                          </button>
-                        ));
-                      })()}
-                    </div>
+                      <CommandList>
+                        <CommandEmpty>
+                          {loadingProductSets
+                            ? 'Carregando...'
+                            : productSets?.length === 0
+                              ? 'Nenhum conjunto encontrado. Clique em Sincronizar.'
+                              : 'Nenhum resultado para a busca.'}
+                        </CommandEmpty>
+                        {!loadingProductSets && (productSets || [])
+                          .filter(s => s.name.toLowerCase().includes(productSetSearch.toLowerCase()))
+                          .map((set) => (
+                            <CommandItem
+                              key={set.id}
+                              value={set.name}
+                              onSelect={() => {
+                                setSelectedProductSet(set.id);
+                                setProductSetPopoverOpen(false);
+                                setProductSetSearch('');
+                              }}
+                              className="flex items-center justify-between"
+                            >
+                              <span className="truncate">{set.name}</span>
+                              <div className="flex items-center gap-2 shrink-0 ml-2">
+                                {set.product_count !== null && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {set.product_count} produtos
+                                  </span>
+                                )}
+                                <Check className={cn(
+                                  "h-4 w-4",
+                                  selectedProductSet === set.id ? "opacity-100 text-primary" : "opacity-0"
+                                )} />
+                              </div>
+                            </CommandItem>
+                          ))}
+                      </CommandList>
+                    </Command>
                   </PopoverContent>
                 </Popover>
               </div>
