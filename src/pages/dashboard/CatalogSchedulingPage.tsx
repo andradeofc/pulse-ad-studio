@@ -147,6 +147,7 @@ export default function CatalogSchedulingPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSyncingCatalogs, setIsSyncingCatalogs] = useState(false);
   const [isSyncingProductSets, setIsSyncingProductSets] = useState(false);
+  const [isSyncingBMs, setIsSyncingBMs] = useState(false);
   const [selectedScheduleForProducts, setSelectedScheduleForProducts] = useState<string | null>(null);
   
   // Form state
