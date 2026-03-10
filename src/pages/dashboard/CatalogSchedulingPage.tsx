@@ -815,7 +815,7 @@ export default function CatalogSchedulingPage() {
                     align="start"
                     sideOffset={4}
                   >
-                    <Command shouldFilter={false}>
+                    <Command shouldFilter={false} className="overflow-visible">
                       <CommandInput
                         placeholder="Buscar conjunto..."
                         value={productSetSearch}
