@@ -2410,16 +2410,39 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get job items
-    const { data: items, error: itemsError } = await supabase
-      .from('campaign_job_items')
-      .select('*')
-      .eq('job_id', jobId)
-      .order('created_at');
+    // Get job items — paginated to avoid Supabase's default 1000-row limit
+    // Jobs with many accounts/adsets can easily exceed 1000 items
+    const PAGE_SIZE = 1000;
+    let items: any[] = [];
+    let itemsFetchOffset = 0;
+    let itemsFetchHasMore = true;
 
-    if (itemsError || !items) {
-      throw new Error('Failed to fetch job items');
+    while (itemsFetchHasMore) {
+      const { data: batch, error: batchError } = await supabase
+        .from('campaign_job_items')
+        .select('*')
+        .eq('job_id', jobId)
+        .order('created_at')
+        .range(itemsFetchOffset, itemsFetchOffset + PAGE_SIZE - 1);
+
+      if (batchError) {
+        throw new Error(`Failed to fetch job items (offset ${itemsFetchOffset}): ${batchError.message}`);
+      }
+
+      if (batch && batch.length > 0) {
+        items = items.concat(batch);
+        itemsFetchOffset += batch.length;
+        itemsFetchHasMore = batch.length === PAGE_SIZE;
+      } else {
+        itemsFetchHasMore = false;
+      }
     }
+
+    if (items.length === 0) {
+      throw new Error('Failed to fetch job items: no items found');
+    }
+
+    console.log(`[process-jobs] Loaded ${items.length} job items (${Math.ceil(items.length / PAGE_SIZE)} page(s))`);
 
     // Determine whether job items are already partitioned per ad account
     // (newer jobs include item.config.accountId for every campaign/adset/ad)
