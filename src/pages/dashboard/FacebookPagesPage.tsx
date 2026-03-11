@@ -69,7 +69,17 @@ export default function FacebookPagesPage() {
         .order('name');
 
       if (error) throw error;
-      setPages(data || []);
+      
+      // Deduplicate pages by page_id, keeping the one with highest ads_running
+      const pagesMap = new Map<string, FacebookPage>();
+      for (const page of (data || [])) {
+        const existing = pagesMap.get(page.page_id);
+        if (!existing || (page.ads_running ?? 0) > (existing.ads_running ?? 0)) {
+          pagesMap.set(page.page_id, page as FacebookPage);
+        }
+      }
+      const dedupedPages = Array.from(pagesMap.values());
+      setPages(dedupedPages);
 
       // Expand all groups by default
       const groups: Record<string, boolean> = {};
