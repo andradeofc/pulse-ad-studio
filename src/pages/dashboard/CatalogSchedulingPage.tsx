@@ -340,9 +340,8 @@ export default function CatalogSchedulingPage() {
     try {
       const { error } = await supabase.functions.invoke('facebook-sync-product-sets', {
         body: { 
-          profileId: selectedProfile,
-          catalogId: catalog.catalog_id,
-          internalCatalogId: selectedCatalog,
+          catalog_id: catalog.catalog_id,
+          catalog_db_id: selectedCatalog,
         },
       });
 
