@@ -231,26 +231,17 @@ export default function CatalogSchedulingPage() {
     enabled: !!selectedProfile,
   });
 
-  // Fetch catalogs based on selected business manager
+  // Fetch catalogs based on selected profile (show all catalogs, BM selection is for sync only)
   const { data: catalogs, isLoading: loadingCatalogs, refetch: refetchCatalogs } = useQuery({
-    queryKey: ['facebook-catalogs', selectedProfile, selectedBusinessManager],
+    queryKey: ['facebook-catalogs', selectedProfile],
     queryFn: async () => {
       if (!selectedProfile) return [];
       
-      let query = supabase
+      const { data, error } = await supabase
         .from('facebook_catalogs')
         .select('id, catalog_id, name, profile_id, business_id, product_count')
-        .eq('profile_id', selectedProfile);
-      
-      // Filter by business manager if selected
-      if (selectedBusinessManager) {
-        const bm = businessManagers?.find(b => b.id === selectedBusinessManager);
-        if (bm) {
-          query = query.eq('business_id', bm.business_id);
-        }
-      }
-      
-      const { data, error } = await query.order('name');
+        .eq('profile_id', selectedProfile)
+        .order('name');
 
       if (error) throw error;
       return data as Catalog[];
