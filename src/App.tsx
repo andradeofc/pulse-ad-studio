@@ -128,6 +128,7 @@ const App = () => {
           <Route path="/ops-center/logs-api" element={<AdminApiLogsPage />} />
           <Route path="/ops-center/configuracoes" element={<AdminSettingsPage />} />
           <Route path="/ops-center/gastos" element={<AdminSpendPage />} />
+          <Route path="/ops-center/campanhas-gastos" element={<AdminCampaignSpendPage />} />
 
           {/* 404 */}
           <Route path="*" element={<NotFound />} />
