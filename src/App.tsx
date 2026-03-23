@@ -54,6 +54,7 @@ import AdminNotificationsPage from "@/pages/admin/AdminNotificationsPage";
 import AdminApiLogsPage from "@/pages/admin/AdminApiLogsPage";
 import AdminCampaignDetailsPage from "@/pages/admin/AdminCampaignDetailsPage";
 import AdminSpendPage from "@/pages/admin/AdminSpendPage";
+import AdminCampaignSpendPage from "@/pages/admin/AdminCampaignSpendPage";
 
 // Placeholder
 import { PlaceholderPage } from "@/components/PlaceholderPage";
