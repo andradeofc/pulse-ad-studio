@@ -194,6 +194,51 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_daily_spend: {
+        Row: {
+          account_name: string | null
+          ad_account_id: string
+          campaign_id: string
+          campaign_name: string | null
+          created_at: string
+          currency: string | null
+          date: string
+          fetched_at: string
+          id: string
+          purchases: number
+          spend: number
+          user_id: string
+        }
+        Insert: {
+          account_name?: string | null
+          ad_account_id: string
+          campaign_id: string
+          campaign_name?: string | null
+          created_at?: string
+          currency?: string | null
+          date: string
+          fetched_at?: string
+          id?: string
+          purchases?: number
+          spend?: number
+          user_id: string
+        }
+        Update: {
+          account_name?: string | null
+          ad_account_id?: string
+          campaign_id?: string
+          campaign_name?: string | null
+          created_at?: string
+          currency?: string | null
+          date?: string
+          fetched_at?: string
+          id?: string
+          purchases?: number
+          spend?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       campaign_job_items: {
         Row: {
           config: Json | null
