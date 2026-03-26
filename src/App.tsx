@@ -41,6 +41,7 @@ import SettingsPage from "@/pages/dashboard/SettingsPage";
 import HelpPage from "@/pages/dashboard/HelpPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
 import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
+import CampaignSchedulerPage from "@/pages/dashboard/CampaignSchedulerPage";
 
 // Admin Pages
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
