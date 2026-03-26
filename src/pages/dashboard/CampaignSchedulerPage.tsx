@@ -713,37 +713,101 @@ export default function CampaignSchedulerPage() {
 
       {/* Schedule Modal */}
       <Dialog open={showScheduleModal} onOpenChange={setShowScheduleModal}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Agendar Ativação</DialogTitle>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10">
+                <CalendarClock className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg">Agendar Ativação</DialogTitle>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Defina quando suas campanhas serão ativadas
+                </p>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <p className="text-sm text-muted-foreground">
-              {pausedSelectedCount} campanha{pausedSelectedCount !== 1 ? 's' : ''} pausada{pausedSelectedCount !== 1 ? 's' : ''} selecionada{pausedSelectedCount !== 1 ? 's' : ''}
-            </p>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label>Data</Label>
-                <Input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} />
+
+          <div className="space-y-5 pt-2">
+            {/* Campaign count indicator */}
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-primary/5 border border-primary/10">
+              <PlayCircle className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-medium text-foreground">
+                {pausedSelectedCount} campanha{pausedSelectedCount !== 1 ? 's' : ''} pausada{pausedSelectedCount !== 1 ? 's' : ''} será{pausedSelectedCount !== 1 ? 'ão' : ''} ativada{pausedSelectedCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {/* Date & Time inputs */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Data</Label>
+                <Input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={e => setScheduleDate(e.target.value)}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  className="h-11"
+                />
               </div>
-              <div className="space-y-1">
-                <Label>Horário</Label>
-                <Input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} />
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Horário</Label>
+                <Input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={e => setScheduleTime(e.target.value)}
+                  className="h-11"
+                />
               </div>
             </div>
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {campaigns.filter(c => selectedCampaigns.includes(c.campaign_id) && c.status === 'PAUSED').map(c => (
-                <div key={c.campaign_id} className="text-sm text-muted-foreground flex items-center gap-2">
-                  <CheckCircle2 className="w-3 h-3 text-primary" />
-                  {c.name}
-                </div>
-              ))}
+
+            {/* Selected campaigns list */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Campanhas selecionadas
+              </Label>
+              <div className="max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                {campaigns.filter(c => selectedCampaigns.includes(c.campaign_id) && c.status === 'PAUSED').map((c, i) => (
+                  <div key={c.campaign_id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">{c.name}</p>
+                      <p className="text-[11px] text-muted-foreground font-mono">ID: {c.campaign_id}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
+
+            {/* Scheduling preview */}
+            {scheduleDate && scheduleTime && (
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 border border-border">
+                <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-sm text-muted-foreground">
+                  Ativação programada para{' '}
+                  <span className="font-semibold text-foreground">
+                    {format(new Date(`${scheduleDate}T${scheduleTime}`), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowScheduleModal(false)}>Cancelar</Button>
-            <Button onClick={handleConfirmSchedule} disabled={scheduleActivation.isPending}>
-              {scheduleActivation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CalendarClock className="w-4 h-4 mr-2" />}
+
+          <DialogFooter className="pt-2 gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowScheduleModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmSchedule}
+              disabled={scheduleActivation.isPending || !scheduleDate || !scheduleTime}
+              className="min-w-[180px]"
+            >
+              {scheduleActivation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <CalendarClock className="w-4 h-4 mr-2" />
+              )}
               Confirmar Agendamento
             </Button>
           </DialogFooter>
