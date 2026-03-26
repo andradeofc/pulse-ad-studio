@@ -63,6 +63,12 @@ const mainNavSections: NavSection[] = [
     ],
   },
   {
+    label: 'AUTOMAÇÕES',
+    items: [
+      { title: 'Agendamento de Campanhas', href: '/agendamento-campanhas', icon: Timer },
+    ],
+  },
+  {
     label: 'ANALYTICS E RELATÓRIOS',
     items: [
       { title: 'Analytics', href: '/analytics', icon: BarChart3 },
