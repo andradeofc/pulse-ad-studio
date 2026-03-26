@@ -30,6 +30,7 @@ interface Campaign {
   purchases: number;
   daily_budget: number | null;
   lifetime_budget: number | null;
+  ad_account_id?: string;
 }
 
 interface ScheduledActivation {
