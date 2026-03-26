@@ -22,6 +22,7 @@ import {
   Menu,
   X,
   Megaphone,
+  Timer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -59,6 +60,12 @@ const mainNavSections: NavSection[] = [
       { title: 'Agendamento Catálogo', href: '/agendamento-catalogo', icon: CalendarClock },
       { title: 'Monitor Catálogo', href: '/monitor-catalogo', icon: Shield },
       { title: 'Públicos', href: '/publicos', icon: Target },
+    ],
+  },
+  {
+    label: 'AUTOMAÇÕES',
+    items: [
+      { title: 'Agendamento de Campanhas', href: '/agendamento-campanhas', icon: Timer },
     ],
   },
   {

@@ -41,6 +41,7 @@ import SettingsPage from "@/pages/dashboard/SettingsPage";
 import HelpPage from "@/pages/dashboard/HelpPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
 import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
+import CampaignSchedulerPage from "@/pages/dashboard/CampaignSchedulerPage";
 
 // Admin Pages
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
@@ -108,6 +109,7 @@ const App = () => {
             <Route path="/biblioteca-midia" element={<MediaLibraryPage />} />
             <Route path="/agendamento-catalogo" element={<CatalogSchedulingPage />} />
             <Route path="/monitor-catalogo" element={<CatalogMonitorPage />} />
+            <Route path="/agendamento-campanhas" element={<CampaignSchedulerPage />} />
             <Route path="/publicos" element={<PlaceholderPage title="Públicos" description="Gerencie seus públicos salvos" />} />
             <Route path="/analytics" element={<PlaceholderPage title="Analytics" description="Métricas e performance" />} />
             <Route path="/relatorios" element={<PlaceholderPage title="Relatórios" description="Relatórios personalizados" />} />
