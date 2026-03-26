@@ -194,6 +194,59 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_activation_schedules: {
+        Row: {
+          ad_account_id: string
+          campaign_id: string
+          campaign_name: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          processed_at: string | null
+          profile_id: string
+          scheduled_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ad_account_id: string
+          campaign_id: string
+          campaign_name?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          processed_at?: string | null
+          profile_id: string
+          scheduled_at: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ad_account_id?: string
+          campaign_id?: string
+          campaign_name?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          processed_at?: string | null
+          profile_id?: string
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_activation_schedules_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_daily_spend: {
         Row: {
           account_name: string | null
