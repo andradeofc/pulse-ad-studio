@@ -770,14 +770,14 @@ export default function CampaignSchedulerPage() {
                 Campanhas selecionadas
               </Label>
               <div className="max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-                {campaigns.filter(c => selectedCampaigns.includes(c.campaign_id) && c.status === 'PAUSED').map((c, i) => (
-                  <div key={c.campaign_id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
-                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 shrink-0">
+                {campaigns.filter(c => selectedCampaigns.includes(c.campaign_id) && c.status === 'PAUSED').map((c) => (
+                  <div key={c.campaign_id} className="flex items-start gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 shrink-0 mt-0.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">{c.name}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono">ID: {c.campaign_id}</p>
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p className="text-sm font-medium text-foreground break-words">{c.name}</p>
+                      <p className="text-[11px] text-muted-foreground font-mono truncate">ID: {c.campaign_id}</p>
                     </div>
                   </div>
                 ))}
