@@ -741,22 +741,26 @@ export default function CampaignSchedulerPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Data</Label>
-                <Input
-                  type="date"
-                  value={scheduleDate}
-                  onChange={e => setScheduleDate(e.target.value)}
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                  className="h-11"
-                />
+                <div className="relative">
+                  <Input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={e => setScheduleDate(e.target.value)}
+                    min={format(new Date(), 'yyyy-MM-dd')}
+                    className="h-11 bg-background [color-scheme:dark]"
+                  />
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Horário</Label>
-                <Input
-                  type="time"
-                  value={scheduleTime}
-                  onChange={e => setScheduleTime(e.target.value)}
-                  className="h-11"
-                />
+                <div className="relative">
+                  <Input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={e => setScheduleTime(e.target.value)}
+                    className="h-11 bg-background [color-scheme:dark]"
+                  />
+                </div>
               </div>
             </div>
 
