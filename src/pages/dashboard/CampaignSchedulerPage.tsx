@@ -359,7 +359,7 @@ export default function CampaignSchedulerPage() {
   };
 
   if (isCheckingAccess) {
-    return <LoadingState text="Verificando acesso..." />;
+    return <LoadingState message="Verificando acesso..." />;
   }
 
   if (!hasAccess) {
@@ -545,7 +545,7 @@ export default function CampaignSchedulerPage() {
           {isLoadingCampaigns && (
             <Card>
               <CardContent className="py-12">
-                <LoadingState text="Buscando campanhas na API..." />
+                <LoadingState message="Buscando campanhas na API..." />
               </CardContent>
             </Card>
           )}
@@ -653,7 +653,7 @@ export default function CampaignSchedulerPage() {
             </CardHeader>
             <CardContent>
               {isLoadingSchedules ? (
-                <LoadingState text="Carregando agendamentos..." />
+                <LoadingState message="Carregando agendamentos..." />
               ) : scheduledActivations.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
                   Nenhum agendamento encontrado
