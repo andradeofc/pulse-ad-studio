@@ -231,7 +231,7 @@ Deno.serve(async (req) => {
               const batch = batchRequests.slice(i, i + 4999);
               try {
                 const batchRes = await fetchWithRetry(
-                  `https://graph.facebook.com/v21.0/${catalogFbId}/items_batch`,
+                  `https://graph.facebook.com/v23.0/${catalogFbId}/items_batch`,
                   {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
