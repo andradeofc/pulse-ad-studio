@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
 
         // Fetch products from product set
         const productsWithIssues: Array<{ retailer_id: string; name: string }> = [];
-        let nextUrl: string | null = `https://graph.facebook.com/v21.0/${productSetFbId}/products?fields=id,retailer_id,name,videos,image_url&limit=500&access_token=${accessToken}`;
+        let nextUrl: string | null = `https://graph.facebook.com/v23.0/${productSetFbId}/products?fields=id,retailer_id,name,videos,image_url&limit=500&access_token=${accessToken}`;
         const allProducts: any[] = [];
 
         while (nextUrl) {
@@ -231,7 +231,7 @@ Deno.serve(async (req) => {
               const batch = batchRequests.slice(i, i + 4999);
               try {
                 const batchRes = await fetchWithRetry(
-                  `https://graph.facebook.com/v21.0/${catalogFbId}/items_batch`,
+                  `https://graph.facebook.com/v23.0/${catalogFbId}/items_batch`,
                   {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
