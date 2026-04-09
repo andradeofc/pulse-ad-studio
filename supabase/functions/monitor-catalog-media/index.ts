@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
 
         // Fetch products from product set
         const productsWithIssues: Array<{ retailer_id: string; name: string }> = [];
-        let nextUrl: string | null = `https://graph.facebook.com/v21.0/${productSetFbId}/products?fields=id,retailer_id,name,videos,image_url&limit=500&access_token=${accessToken}`;
+        let nextUrl: string | null = `https://graph.facebook.com/v23.0/${productSetFbId}/products?fields=id,retailer_id,name,videos,image_url&limit=500&access_token=${accessToken}`;
         const allProducts: any[] = [];
 
         while (nextUrl) {
