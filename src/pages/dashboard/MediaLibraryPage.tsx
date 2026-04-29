@@ -181,6 +181,28 @@ export default function MediaLibraryPage() {
     onError: () => toast.error('Erro ao mover criativos'),
   });
 
+  const metadataMutation = useMutation({
+    mutationFn: (params: { creativeIds?: string[]; folderId?: string | null }) =>
+      changeImageMetadata(params),
+    onMutate: () => {
+      toast.loading('Alterando metadados das imagens...', { id: 'metadata' });
+    },
+    onSuccess: (data) => {
+      toast.dismiss('metadata');
+      if (data.failed === 0) {
+        toast.success(`Metadados alterados em ${data.succeeded} imagem(ns)`);
+      } else {
+        toast.warning(`Concluído: ${data.succeeded} sucesso(s), ${data.failed} falha(s)`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['creatives'] });
+      setSelectedCreatives(new Set());
+    },
+    onError: (e: any) => {
+      toast.dismiss('metadata');
+      toast.error(e?.message || 'Erro ao alterar metadados');
+    },
+  });
+
   useEffect(() => {
     if (isEditingName && nameInputRef.current) {
       nameInputRef.current.focus();
