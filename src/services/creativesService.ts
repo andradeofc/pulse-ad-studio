@@ -106,7 +106,8 @@ async function generateVideoThumbnail(file: File): Promise<Blob | null> {
 export async function uploadCreative(
   file: File,
   onProgress?: (progress: number) => void,
-  effectiveUserId?: string
+  effectiveUserId?: string,
+  folderId?: string | null
 ): Promise<CreativeMetadata> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Usuário não autenticado');
