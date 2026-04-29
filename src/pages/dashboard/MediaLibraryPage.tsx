@@ -72,6 +72,7 @@ import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { CreativeUploadModal } from '@/components/campaign/CreativeUploadModal';
 import { fetchCreatives, deleteCreative, renameCreative, CreativeMetadata } from '@/services/creativesService';
 import { fetchFolders, createFolder, renameFolder, deleteFolder, moveCreativesToFolder, CreativeFolder } from '@/services/folderService';
+import { changeImageMetadata } from '@/services/imageMetadataService';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
