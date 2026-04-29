@@ -194,6 +194,7 @@ export async function uploadCreative(
       height: dimensions.height,
       size: file.size,
       duration: dimensions.duration ?? null,
+      folder_id: folderId ?? null,
     })
     .select()
     .single();
