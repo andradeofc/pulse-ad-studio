@@ -338,6 +338,20 @@ export default function MediaLibraryPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {currentFolderId && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (confirm(`Alterar metadados de TODAS as imagens da pasta "${currentFolder?.name}"? Isso reescreve EXIF e hash de cada arquivo.`)) {
+                  metadataMutation.mutate({ folderId: currentFolderId });
+                }
+              }}
+              disabled={metadataMutation.isPending}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Alterar metadados da pasta
+            </Button>
+          )}
           <Button 
             variant="outline" 
             onClick={() => setNewFolderDialogOpen(true)}
