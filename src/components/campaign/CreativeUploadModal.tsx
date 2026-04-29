@@ -16,6 +16,7 @@ interface CreativeUploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUploadComplete: (creatives: CreativeMetadata[]) => void;
+  folderId?: string | null;
 }
 
 const ACCEPTED_TYPES = {
@@ -34,6 +35,7 @@ export function CreativeUploadModal({
   open,
   onOpenChange,
   onUploadComplete,
+  folderId = null,
 }: CreativeUploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -127,7 +129,7 @@ export function CreativeUploadModal({
             ...prev,
             [file.name]: { ...prev[file.name], progress },
           }));
-        });
+        }, undefined, folderId);
 
         uploadedCreatives.push(creative);
         setUploadProgress((prev) => ({
