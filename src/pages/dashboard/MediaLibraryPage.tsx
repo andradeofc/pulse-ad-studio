@@ -471,19 +471,17 @@ export default function MediaLibraryPage() {
                   Raiz (sem pasta)
                 </DropdownMenuItem>
                 {folders.length > 0 && <DropdownMenuSeparator />}
-                {folders.map(folder => (
-                  <DropdownMenuItem
-                    key={folder.id}
-                    onClick={() => moveCreativesMutation.mutate({ 
-                      ids: Array.from(selectedCreatives), 
-                      folderId: folder.id 
-                    })}
-                    disabled={folder.id === currentFolderId}
-                  >
-                    <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
-                    {folder.name}
-                  </DropdownMenuItem>
-                ))}
+                <FolderTreeMenuItems
+                  folders={folders}
+                  disabledFolderId={currentFolderId}
+                  onSelect={(folderId) =>
+                    moveCreativesMutation.mutate({
+                      ids: Array.from(selectedCreatives),
+                      folderId,
+                    })
+                  }
+                />
+
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
