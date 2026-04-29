@@ -26,7 +26,8 @@ import {
   FolderOpen,
   ChevronRight,
   ArrowLeft,
-  FolderInput
+  FolderInput,
+  Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
