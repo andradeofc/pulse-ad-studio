@@ -70,6 +70,7 @@ import {
 } from '@/components/ui/dialog';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { CreativeUploadModal } from '@/components/campaign/CreativeUploadModal';
+import { FolderTreeMenuItems } from '@/components/media/FolderTreeMenu';
 import { fetchCreatives, deleteCreative, renameCreative, CreativeMetadata } from '@/services/creativesService';
 import { fetchFolders, createFolder, renameFolder, deleteFolder, moveCreativesToFolder, CreativeFolder } from '@/services/folderService';
 import { changeImageMetadata } from '@/services/imageMetadataService';
