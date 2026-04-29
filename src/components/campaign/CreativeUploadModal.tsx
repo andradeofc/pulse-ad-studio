@@ -129,7 +129,7 @@ export function CreativeUploadModal({
             ...prev,
             [file.name]: { ...prev[file.name], progress },
           }));
-        });
+        }, undefined, folderId);
 
         uploadedCreatives.push(creative);
         setUploadProgress((prev) => ({
