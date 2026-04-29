@@ -936,6 +936,15 @@ export default function MediaLibraryPage() {
                                 Download
                               </a>
                             </DropdownMenuItem>
+                            {creative.type === 'image' && (
+                              <DropdownMenuItem
+                                onClick={() => metadataMutation.mutate({ creativeIds: [creative.id] })}
+                                disabled={metadataMutation.isPending}
+                              >
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Alterar metadados
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuSub>
                               <DropdownMenuSubTrigger>
