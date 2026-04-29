@@ -627,6 +627,19 @@ export default function MediaLibraryPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Alterar metadados de TODAS as imagens da pasta "${folder.name}"?`)) {
+                                  metadataMutation.mutate({ folderId: folder.id });
+                                }
+                              }}
+                              disabled={metadataMutation.isPending}
+                            >
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Alterar metadados
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={(e) => {
                               e.stopPropagation();
                               setFolderToRename(folder);
