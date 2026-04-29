@@ -909,6 +909,7 @@ export default function MediaLibraryPage() {
       <CreativeUploadModal
         open={uploadModalOpen}
         onOpenChange={setUploadModalOpen}
+        folderId={currentFolderId}
         onUploadComplete={() => {
           queryClient.invalidateQueries({ queryKey: ['creatives'] });
         }}
