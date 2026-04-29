@@ -35,6 +35,7 @@ export function CreativeUploadModal({
   open,
   onOpenChange,
   onUploadComplete,
+  folderId = null,
 }: CreativeUploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
