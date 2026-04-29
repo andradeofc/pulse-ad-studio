@@ -70,6 +70,7 @@ import {
 } from '@/components/ui/dialog';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { CreativeUploadModal } from '@/components/campaign/CreativeUploadModal';
+import { FolderTreeMenuItems } from '@/components/media/FolderTreeMenu';
 import { fetchCreatives, deleteCreative, renameCreative, CreativeMetadata } from '@/services/creativesService';
 import { fetchFolders, createFolder, renameFolder, deleteFolder, moveCreativesToFolder, CreativeFolder } from '@/services/folderService';
 import { changeImageMetadata } from '@/services/imageMetadataService';
@@ -470,19 +471,17 @@ export default function MediaLibraryPage() {
                   Raiz (sem pasta)
                 </DropdownMenuItem>
                 {folders.length > 0 && <DropdownMenuSeparator />}
-                {folders.map(folder => (
-                  <DropdownMenuItem
-                    key={folder.id}
-                    onClick={() => moveCreativesMutation.mutate({ 
-                      ids: Array.from(selectedCreatives), 
-                      folderId: folder.id 
-                    })}
-                    disabled={folder.id === currentFolderId}
-                  >
-                    <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
-                    {folder.name}
-                  </DropdownMenuItem>
-                ))}
+                <FolderTreeMenuItems
+                  folders={folders}
+                  disabledFolderId={currentFolderId}
+                  onSelect={(folderId) =>
+                    moveCreativesMutation.mutate({
+                      ids: Array.from(selectedCreatives),
+                      folderId,
+                    })
+                  }
+                />
+
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
@@ -837,19 +836,17 @@ export default function MediaLibraryPage() {
                                 Raiz (sem pasta)
                               </DropdownMenuItem>
                               {folders.length > 0 && <DropdownMenuSeparator />}
-                              {folders.map(folder => (
-                                <DropdownMenuItem
-                                  key={folder.id}
-                                  onClick={() => moveCreativesMutation.mutate({ 
-                                    ids: [creative.id], 
-                                    folderId: folder.id 
-                                  })}
-                                  disabled={creative.folder_id === folder.id}
-                                >
-                                  <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
-                                  {folder.name}
-                                </DropdownMenuItem>
-                              ))}
+                              <FolderTreeMenuItems
+                                folders={folders}
+                                disabledFolderId={creative.folder_id}
+                                onSelect={(folderId) =>
+                                  moveCreativesMutation.mutate({
+                                    ids: [creative.id],
+                                    folderId,
+                                  })
+                                }
+                              />
+
                             </DropdownMenuSubContent>
                           </DropdownMenuSub>
                           <DropdownMenuSeparator />
@@ -976,19 +973,17 @@ export default function MediaLibraryPage() {
                                   Raiz (sem pasta)
                                 </DropdownMenuItem>
                                 {folders.length > 0 && <DropdownMenuSeparator />}
-                                {folders.map(folder => (
-                                  <DropdownMenuItem
-                                    key={folder.id}
-                                    onClick={() => moveCreativesMutation.mutate({ 
-                                      ids: [creative.id], 
-                                      folderId: folder.id 
-                                    })}
-                                    disabled={creative.folder_id === folder.id}
-                                  >
-                                    <Folder className="w-4 h-4 mr-2" style={{ color: folder.color }} />
-                                    {folder.name}
-                                  </DropdownMenuItem>
-                                ))}
+                                <FolderTreeMenuItems
+                                  folders={folders}
+                                  disabledFolderId={creative.folder_id}
+                                  onSelect={(folderId) =>
+                                    moveCreativesMutation.mutate({
+                                      ids: [creative.id],
+                                      folderId,
+                                    })
+                                  }
+                                />
+
                               </DropdownMenuSubContent>
                             </DropdownMenuSub>
                             <DropdownMenuSeparator />
