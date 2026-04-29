@@ -26,7 +26,8 @@ import {
   FolderOpen,
   ChevronRight,
   ArrowLeft,
-  FolderInput
+  FolderInput,
+  Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,6 +72,7 @@ import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { CreativeUploadModal } from '@/components/campaign/CreativeUploadModal';
 import { fetchCreatives, deleteCreative, renameCreative, CreativeMetadata } from '@/services/creativesService';
 import { fetchFolders, createFolder, renameFolder, deleteFolder, moveCreativesToFolder, CreativeFolder } from '@/services/folderService';
+import { changeImageMetadata } from '@/services/imageMetadataService';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -177,6 +179,28 @@ export default function MediaLibraryPage() {
       toast.success('Criativos movidos com sucesso');
     },
     onError: () => toast.error('Erro ao mover criativos'),
+  });
+
+  const metadataMutation = useMutation({
+    mutationFn: (params: { creativeIds?: string[]; folderId?: string | null }) =>
+      changeImageMetadata(params),
+    onMutate: () => {
+      toast.loading('Alterando metadados das imagens...', { id: 'metadata' });
+    },
+    onSuccess: (data) => {
+      toast.dismiss('metadata');
+      if (data.failed === 0) {
+        toast.success(`Metadados alterados em ${data.succeeded} imagem(ns)`);
+      } else {
+        toast.warning(`Concluído: ${data.succeeded} sucesso(s), ${data.failed} falha(s)`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['creatives'] });
+      setSelectedCreatives(new Set());
+    },
+    onError: (e: any) => {
+      toast.dismiss('metadata');
+      toast.error(e?.message || 'Erro ao alterar metadados');
+    },
   });
 
   useEffect(() => {
@@ -314,6 +338,20 @@ export default function MediaLibraryPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {currentFolderId && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (confirm(`Alterar metadados de TODAS as imagens da pasta "${currentFolder?.name}"? Isso reescreve EXIF e hash de cada arquivo.`)) {
+                  metadataMutation.mutate({ folderId: currentFolderId });
+                }
+              }}
+              disabled={metadataMutation.isPending}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Alterar metadados da pasta
+            </Button>
+          )}
           <Button 
             variant="outline" 
             onClick={() => setNewFolderDialogOpen(true)}
@@ -448,6 +486,15 @@ export default function MediaLibraryPage() {
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => metadataMutation.mutate({ creativeIds: Array.from(selectedCreatives) })}
+              disabled={metadataMutation.isPending}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Alterar metadados
+            </Button>
+            <Button
               variant="ghost"
               size="sm"
               onClick={() => setSelectedCreatives(new Set())}
@@ -580,6 +627,19 @@ export default function MediaLibraryPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Alterar metadados de TODAS as imagens da pasta "${folder.name}"?`)) {
+                                  metadataMutation.mutate({ folderId: folder.id });
+                                }
+                              }}
+                              disabled={metadataMutation.isPending}
+                            >
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Alterar metadados
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={(e) => {
                               e.stopPropagation();
                               setFolderToRename(folder);
@@ -750,6 +810,15 @@ export default function MediaLibraryPage() {
                               Download
                             </a>
                           </DropdownMenuItem>
+                          {creative.type === 'image' && (
+                            <DropdownMenuItem
+                              onClick={() => metadataMutation.mutate({ creativeIds: [creative.id] })}
+                              disabled={metadataMutation.isPending}
+                            >
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Alterar metadados
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuSub>
                             <DropdownMenuSubTrigger>
@@ -880,6 +949,15 @@ export default function MediaLibraryPage() {
                                 Download
                               </a>
                             </DropdownMenuItem>
+                            {creative.type === 'image' && (
+                              <DropdownMenuItem
+                                onClick={() => metadataMutation.mutate({ creativeIds: [creative.id] })}
+                                disabled={metadataMutation.isPending}
+                              >
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Alterar metadados
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuSub>
                               <DropdownMenuSubTrigger>
