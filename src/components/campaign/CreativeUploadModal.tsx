@@ -16,6 +16,7 @@ interface CreativeUploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUploadComplete: (creatives: CreativeMetadata[]) => void;
+  folderId?: string | null;
 }
 
 const ACCEPTED_TYPES = {
