@@ -472,6 +472,15 @@ export default function MediaLibraryPage() {
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => metadataMutation.mutate({ creativeIds: Array.from(selectedCreatives) })}
+              disabled={metadataMutation.isPending}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Alterar metadados
+            </Button>
+            <Button
               variant="ghost"
               size="sm"
               onClick={() => setSelectedCreatives(new Set())}
