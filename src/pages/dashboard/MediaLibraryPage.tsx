@@ -484,6 +484,34 @@ export default function MediaLibraryPage() {
           </Select>
         </div>
         <div className="flex items-center gap-2">
+          {filteredCreatives.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const allIds = filteredCreatives.map((c) => c.id);
+                const allSelected = allIds.every((id) => selectedCreatives.has(id));
+                if (allSelected) {
+                  setSelectedCreatives((prev) => {
+                    const next = new Set(prev);
+                    allIds.forEach((id) => next.delete(id));
+                    return next;
+                  });
+                } else {
+                  setSelectedCreatives((prev) => {
+                    const next = new Set(prev);
+                    allIds.forEach((id) => next.add(id));
+                    return next;
+                  });
+                }
+              }}
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              {filteredCreatives.every((c) => selectedCreatives.has(c.id))
+                ? 'Limpar seleção'
+                : 'Selecionar tudo'}
+            </Button>
+          )}
           <Button
             variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
             size="icon"
