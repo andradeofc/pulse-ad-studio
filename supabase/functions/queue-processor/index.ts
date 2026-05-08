@@ -265,27 +265,45 @@ Deno.serve(async (req) => {
 
       // Rate limit OK, trigger the job processor
       console.log(`[queue-processor] Triggering job ${job.id} (rate limit: ${rateCheck.usagePercent.toFixed(1)}%)`);
-      
-      // Call the main processor function
-      // We use the service role to call it internally
-      const processResponse = await supabase.functions.invoke('process-campaign-jobs', {
-        body: { 
-          job_id: job.id, 
-          batch_mode: true,
-          batch_size: RATE_LIMIT_CONFIG.BATCH_SIZE,
-        },
-      });
 
-      if (processResponse.error) {
-        console.error(`[queue-processor] Error processing job ${job.id}:`, processResponse.error);
-        results.push({ jobId: job.id, status: 'error', message: processResponse.error.message });
-      } else {
-        const data = processResponse.data;
-        results.push({ 
-          jobId: job.id, 
-          status: data?.status || 'processed', 
-          message: data?.message || 'OK' 
+      // Call the main processor function via direct fetch with explicit
+      // service role auth + shared internal secret header. We avoid
+      // supabase.functions.invoke() because, after the API key rotation
+      // system, the token forwarded by the SDK no longer reliably matches
+      // SUPABASE_SERVICE_ROLE_KEY on the receiving side.
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/process-campaign-jobs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'apikey': supabaseServiceKey,
+            'x-internal-call': supabaseServiceKey,
+          },
+          body: JSON.stringify({
+            job_id: job.id,
+            batch_mode: true,
+            batch_size: RATE_LIMIT_CONFIG.BATCH_SIZE,
+          }),
         });
+
+        const text = await res.text();
+        let data: any = null;
+        try { data = text ? JSON.parse(text) : null; } catch { /* keep text */ }
+
+        if (!res.ok) {
+          console.error(`[queue-processor] Error processing job ${job.id}: ${res.status} ${text}`);
+          results.push({ jobId: job.id, status: 'error', message: `HTTP ${res.status}: ${text?.slice(0, 200)}` });
+        } else {
+          results.push({
+            jobId: job.id,
+            status: data?.status || 'processed',
+            message: data?.message || 'OK',
+          });
+        }
+      } catch (err: any) {
+        console.error(`[queue-processor] Fetch error for job ${job.id}:`, err);
+        results.push({ jobId: job.id, status: 'error', message: err?.message || 'fetch failed' });
       }
 
       // Small delay between jobs
