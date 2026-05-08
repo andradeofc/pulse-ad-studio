@@ -2248,46 +2248,45 @@ Deno.serve(async (req) => {
 
     // Auth check - support both user tokens AND service role calls from queue-processor
     const authHeader = req.headers.get('Authorization');
+    const internalHeader = req.headers.get('x-internal-call');
     let userId: string | null = null;
     let isServiceRoleCall = false;
-    
-    if (authHeader) {
+
+    // Internal call from queue-processor (shared secret = service role key)
+    if (internalHeader && internalHeader === supabaseServiceKey) {
+      isServiceRoleCall = true;
+      console.log(`[process-jobs] Internal queue-processor call for job ${jobId}`);
+
+      const { data: jobForUser } = await supabase
+        .from('campaign_jobs')
+        .select('user_id')
+        .eq('id', jobId)
+        .single();
+
+      if (jobForUser) {
+        userId = jobForUser.user_id;
+      }
+    } else if (authHeader) {
       const token = authHeader.replace('Bearer ', '');
-      
-      // Check if this is the service role key (internal call from queue-processor)
-      if (token === supabaseServiceKey) {
+
+      // Check if this is the service role key (internal call)
+      if (token === supabaseServiceKey || token === supabaseAnonKey) {
         isServiceRoleCall = true;
-        console.log(`[process-jobs] Service role call for job ${jobId}`);
-        
-        // Get job to find user_id
+        console.log(`[process-jobs] Service/anon key call for job ${jobId}`);
+
         const { data: jobForUser } = await supabase
           .from('campaign_jobs')
           .select('user_id')
           .eq('id', jobId)
           .single();
-        
-        if (jobForUser) {
-          userId = jobForUser.user_id;
-        }
-      } else if (token === supabaseAnonKey) {
-        // Anon key call from queue-processor via functions.invoke
-        isServiceRoleCall = true;
-        console.log(`[process-jobs] Anon key call for job ${jobId}`);
-        
-        // Get job to find user_id
-        const { data: jobForUser } = await supabase
-          .from('campaign_jobs')
-          .select('user_id')
-          .eq('id', jobId)
-          .single();
-        
+
         if (jobForUser) {
           userId = jobForUser.user_id;
         }
       } else {
         // Regular user token
         const { data: { user: authUser }, error: userError } = await supabase.auth.getUser(token);
-        
+
         if (!userError && authUser) {
           // Resolve effective user id for collaborators
           const { data: teamMember } = await supabase
