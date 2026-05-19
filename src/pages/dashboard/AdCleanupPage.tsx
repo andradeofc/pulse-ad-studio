@@ -273,13 +273,24 @@ export default function AdCleanupPage() {
           <CardTitle className="text-base">1. Selecione a conta e os filtros</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
+          <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-secondary/30 bg-primary/5">
+            <Checkbox checked={scanAllAccounts} onCheckedChange={(v) => setScanAllAccounts(!!v)} />
+            <div>
+              <p className="text-sm font-medium">Buscar em todas as contas ({accounts.length})</p>
+              <p className="text-xs text-muted-foreground">
+                Varredura sequencial por todas as contas ativas. Pode levar alguns minutos.
+              </p>
+            </div>
+          </label>
+
+          <div className={`space-y-2 ${scanAllAccounts ? 'opacity-50 pointer-events-none' : ''}`}>
             <label className="text-sm font-medium">Conta de Anúncio</label>
             <Input
               placeholder="Buscar conta por nome ou ID..."
               value={accountFilter}
               onChange={(e) => setAccountFilter(e.target.value)}
               className="mb-2"
+              disabled={scanAllAccounts}
             />
             <div className="max-h-60 overflow-y-auto border rounded-lg divide-y divide-border">
               {filteredAccounts.length === 0 ? (
@@ -317,10 +328,27 @@ export default function AdCleanupPage() {
             </div>
           </div>
 
-          <Button onClick={handleScan} disabled={isScanning || !selectedAccount} className="w-full">
+          <Button
+            onClick={handleScan}
+            disabled={isScanning || (!scanAllAccounts && !selectedAccount)}
+            className="w-full"
+          >
             {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-            Buscar anúncios
+            {scanAllAccounts ? `Buscar em todas as contas (${accounts.length})` : 'Buscar anúncios'}
           </Button>
+
+          {scanProgress && (
+            <p className="text-xs text-muted-foreground text-center">
+              Escaneando {scanProgress.done}/{scanProgress.total}
+              {scanProgress.current ? ` — ${scanProgress.current}` : ''}
+            </p>
+          )}
+          {execProgress && (
+            <p className="text-xs text-muted-foreground text-center">
+              Executando {execProgress.done}/{execProgress.total} conta(s)
+              {execProgress.current ? ` — ${execProgress.current}` : ''}
+            </p>
+          )}
         </CardContent>
       </Card>
 
