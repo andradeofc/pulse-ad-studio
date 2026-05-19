@@ -30,6 +30,9 @@ interface RejectedAd {
   adset_id?: string;
   adset_name?: string;
   updated_time?: string;
+  _account_id?: string;
+  _account_name?: string;
+  _profile_id?: string;
 }
 
 const STATUS_OPTIONS = [
