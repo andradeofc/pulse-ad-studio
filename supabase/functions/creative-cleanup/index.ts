@@ -108,9 +108,19 @@ Deno.serve(async (req) => {
       let pages = 0
       while (url && pages < 25) {
         const data = await fetchWithRetry(url)
-        if (data.error) {
-          return new Response(JSON.stringify({ error: data.error.message || 'Erro Facebook API', code: data.error.code }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        if (!data || data.error) {
+          const errMsg = data?.error?.message || 'Erro ao consultar Facebook API'
+          const errCode = data?.error?.code
+          // Rate limit → return 200 with friendly message so UI doesn't crash
+          if (errCode === 4 || errCode === 17 || errCode === 32 || errCode === 613) {
+            return new Response(JSON.stringify({
+              error: `Limite de requisições do Facebook atingido para esta conta. Aguarde 1-2 minutos e tente novamente. (code ${errCode})`,
+              code: errCode,
+              rate_limited: true,
+            }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+          }
+          return new Response(JSON.stringify({ error: errMsg, code: errCode }), {
+            status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
         }
         for (const ad of (data.data || [])) {
