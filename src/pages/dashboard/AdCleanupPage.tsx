@@ -349,6 +349,35 @@ export default function AdCleanupPage() {
           </CardContent>
         </Card>
       )}
+
+      {lastResult?.facebook_responses?.length > 0 && (
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-base">Resposta técnica do Facebook</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-2 md:grid-cols-2">
+              {(lastResult.verification || []).slice(0, 8).map((item: any) => (
+                <div key={item.ad_id} className="rounded-lg border border-border p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-mono truncate">{item.ad_id}</span>
+                    <Badge variant={item.verified ? 'default' : 'destructive'}>
+                      {item.verified ? 'Verificado' : 'Não excluiu'}
+                    </Badge>
+                  </div>
+                  <p className="text-muted-foreground">Esperado: {item.expected_status} • Atual: {item.status || 'sem retorno'}</p>
+                </div>
+              ))}
+            </div>
+            <pre className="max-h-80 overflow-auto rounded-lg bg-secondary/40 p-3 text-xs text-foreground">
+              {JSON.stringify({
+                facebook_responses: lastResult.facebook_responses,
+                verification: lastResult.verification,
+              }, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
