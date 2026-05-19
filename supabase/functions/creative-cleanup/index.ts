@@ -219,24 +219,23 @@ Deno.serve(async (req) => {
         // 1st pass: POST status=DELETED/ARCHIVED (works for most ads)
         const r1 = await runBatch(chunk, 'post')
         success += r1.okIds.length
+        failed += r1.realErrors.filter((e) => e.ad_id || e.batch_error).length
         errors.push(...r1.realErrors)
 
-        // 2nd pass: retry "Bad Method" ones with HTTP DELETE (or POST for archive)
+        // 2nd pass: retry "Bad Method" ones with HTTP DELETE (or POST again for archive)
         if (r1.methodFailIds.length > 0) {
           await sleep(500)
           const r2 = await runBatch(r1.methodFailIds, op === 'delete' ? 'delete' : 'post')
           success += r2.okIds.length
+          failed += r2.realErrors.filter((e) => e.ad_id || e.batch_error).length
           errors.push(...r2.realErrors)
-          // anything still in methodFailIds after 2nd pass → real failure
+          // Anything still rejected with bad method after 2nd pass → real failure
           for (const id of r2.methodFailIds) {
             failed++
             errors.push({ ad_id: id, code: 405, error: 'Método HTTP não suportado (POST e DELETE recusados)' })
           }
         }
 
-        failed += r1.realErrors.filter((e) => e.ad_id).length
-
-        // Throttle between batches
         if (i + BATCH_SIZE < ad_ids.length) await sleep(800)
       }
 
