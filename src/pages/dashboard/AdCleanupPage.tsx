@@ -95,7 +95,7 @@ export default function AdCleanupPage() {
     setAds([]);
     setSelectedAds(new Set());
     try {
-      const { data, error } = await supabase.functions.invoke('cleanup-rejected-ads', {
+      const { data, error } = await supabase.functions.invoke('creative-cleanup', {
         body: {
           action: 'scan',
           ad_account_id: selectedAccount.account_id,
@@ -122,7 +122,7 @@ export default function AdCleanupPage() {
     setIsExecuting(true);
     try {
       const ids = Array.from(selectedAds);
-      const { data, error } = await supabase.functions.invoke('cleanup-rejected-ads', {
+      const { data, error } = await supabase.functions.invoke('creative-cleanup', {
         body: {
           action: 'execute',
           ad_account_id: selectedAccount.account_id,
