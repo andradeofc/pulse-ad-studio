@@ -161,17 +161,17 @@ Deno.serve(async (req) => {
       const errors: any[] = []
 
       // Helper: run a batch with a specific HTTP method strategy
-      // strategy 'post' -> POST status=DELETED/ARCHIVED
+      // strategy 'post' -> POST status=<targetStatus>
       // strategy 'delete' -> HTTP DELETE
-      async function runBatch(ids: string[], strategy: 'post' | 'delete') {
+      async function runBatch(ids: string[], strategy: 'post' | 'delete', targetStatus: 'ARCHIVED' | 'DELETED' = 'DELETED') {
         const batch = ids.map((id: string) => {
-          if (strategy === 'delete' && op === 'delete') {
+          if (strategy === 'delete') {
             return { method: 'DELETE', relative_url: id }
           }
           return {
             method: 'POST',
             relative_url: id,
-            body: op === 'delete' ? 'status=DELETED' : 'status=ARCHIVED',
+            body: `status=${targetStatus}`,
           }
         })
 
@@ -200,18 +200,15 @@ Deno.serve(async (req) => {
               continue
             }
 
-            // Detect "Bad Method / wrong HTTP verb" → eligible for fallback
             const isBadMethod =
               code === 405 ||
               /no path defined with the given http verb|bad method|method not allowed|unsupported (post|delete) request/i
                 .test(fbErrMsg + ' ' + rawBody)
-
             if (isBadMethod) {
               methodFailIds.push(ids[j])
               continue
             }
 
-            // "Object already deleted / not found" → treat as success
             const isGone =
               code === 404 ||
               fbErrCode === 100 || fbErrSub === 33 ||
@@ -234,23 +231,69 @@ Deno.serve(async (req) => {
       for (let i = 0; i < ad_ids.length; i += BATCH_SIZE) {
         const chunk = ad_ids.slice(i, i + BATCH_SIZE)
 
-        // 1st pass: POST status=DELETED/ARCHIVED (works for most ads)
-        const r1 = await runBatch(chunk, 'post')
-        success += r1.okIds.length
-        failed += r1.realErrors.filter((e) => e.ad_id || e.batch_error).length
-        errors.push(...r1.realErrors)
+        if (op === 'delete') {
+          // Estratégia para DELETE com criativos quebrados (erro 2446289):
+          // Facebook exige ARCHIVED antes de DELETED. Anúncios arquivados
+          // pulam a validação de "criativo incompleto" que bloqueia o delete direto.
+          const deletedSet = new Set<string>()
 
-        // 2nd pass: retry "Bad Method" ones with HTTP DELETE (or POST again for archive)
-        if (r1.methodFailIds.length > 0) {
-          await sleep(500)
-          const r2 = await runBatch(r1.methodFailIds, op === 'delete' ? 'delete' : 'post')
-          success += r2.okIds.length
-          failed += r2.realErrors.filter((e) => e.ad_id || e.batch_error).length
-          errors.push(...r2.realErrors)
-          // Anything still rejected with bad method after 2nd pass → real failure
-          for (const id of r2.methodFailIds) {
-            failed++
-            errors.push({ ad_id: id, code: 405, error: 'Método HTTP não suportado (POST e DELETE recusados)' })
+          // Passo 1: ARCHIVE em massa
+          const rArch = await runBatch(chunk, 'post', 'ARCHIVED')
+          const archivedIds = [...rArch.okIds]
+          const failedToArchive = [
+            ...rArch.methodFailIds,
+            ...rArch.realErrors.map((e) => e.ad_id).filter(Boolean),
+          ]
+
+          await sleep(400)
+
+          // Passo 2: DELETE nos arquivados
+          if (archivedIds.length > 0) {
+            const rDel = await runBatch(archivedIds, 'post', 'DELETED')
+            for (const id of rDel.okIds) deletedSet.add(id)
+            if (rDel.methodFailIds.length > 0) {
+              await sleep(300)
+              const rDel2 = await runBatch(rDel.methodFailIds, 'delete')
+              for (const id of rDel2.okIds) deletedSet.add(id)
+              for (const id of rDel2.methodFailIds) {
+                errors.push({ ad_id: id, code: 405, error: 'Método HTTP não suportado após arquivar' })
+              }
+              for (const e of rDel2.realErrors) errors.push(e)
+            }
+            for (const e of rDel.realErrors) {
+              if (!deletedSet.has(e.ad_id)) errors.push(e)
+            }
+          }
+
+          // Passo 3: tentar delete direto nos que falharam ao arquivar
+          if (failedToArchive.length > 0) {
+            await sleep(300)
+            const rDirect = await runBatch(failedToArchive, 'post', 'DELETED')
+            for (const id of rDirect.okIds) deletedSet.add(id)
+            if (rDirect.methodFailIds.length > 0) {
+              await sleep(300)
+              const rDirect2 = await runBatch(rDirect.methodFailIds, 'delete')
+              for (const id of rDirect2.okIds) deletedSet.add(id)
+              for (const id of rDirect2.methodFailIds) {
+                errors.push({ ad_id: id, code: 405, error: 'Não foi possível excluir (criativo quebrado)' })
+              }
+              for (const e of rDirect2.realErrors) errors.push(e)
+            }
+            for (const e of rDirect.realErrors) {
+              if (!deletedSet.has(e.ad_id)) errors.push(e)
+            }
+          }
+
+          success += deletedSet.size
+          failed += chunk.length - deletedSet.size
+        } else {
+          // ARCHIVE
+          const r1 = await runBatch(chunk, 'post', 'ARCHIVED')
+          success += r1.okIds.length
+          failed += r1.realErrors.length + r1.methodFailIds.length
+          errors.push(...r1.realErrors)
+          for (const id of r1.methodFailIds) {
+            errors.push({ ad_id: id, code: 405, error: 'Método HTTP não suportado' })
           }
         }
 
