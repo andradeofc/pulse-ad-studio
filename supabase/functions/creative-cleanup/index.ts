@@ -338,14 +338,61 @@ Deno.serve(async (req) => {
             }
           }
 
-          const verifiedDeleted = await verifyAdStatuses([...deletedSet], 'DELETED')
-          for (const id of deletedSet) {
-            if (!verifiedDeleted.has(id)) {
-              errors.push({ ad_id: id, error: 'Facebook respondeu sucesso, mas o anúncio não ficou DELETED na verificação' })
+          // Verifica: aceita DELETED OU ARCHIVED como sucesso final, pois
+          // o Facebook não permite DELETE real em anúncios com criativo quebrado
+          // (#2446289) via API. Nesse caso ARCHIVED é o estado terminal possível.
+          const verifyIds = [...deletedSet]
+          const verifiedDeleted = new Set<string>()
+          const archivedFallback = new Set<string>()
+          for (let i = 0; i < verifyIds.length; i += BATCH_SIZE) {
+            const chunkV = verifyIds.slice(i, i + BATCH_SIZE)
+            const params = new URLSearchParams({
+              ids: chunkV.join(','),
+              fields: 'id,name,status,effective_status',
+              access_token: token,
+            })
+            const data = await fetchWithRetry(`${FB_API}/?${params.toString()}`)
+            if (data?.error) {
+              verificationDetails.push({ expected_status: 'DELETED', batch_ids: chunkV, error: data.error })
+              continue
+            }
+            for (const id of chunkV) {
+              const item = data?.[id]
+              const itemErr = item?.error
+              const itemStatus = String(item?.status || '').toUpperCase()
+              const errMsg = itemErr?.message || ''
+              const errCode = itemErr?.code
+              const isGone = errCode === 100 || errCode === 33 ||
+                /does not exist|cannot be loaded|unsupported get request/i.test(errMsg)
+              let verified = false
+              let note: string | null = null
+              if (itemStatus === 'DELETED' || isGone) {
+                verifiedDeleted.add(id); verified = true
+              } else if (itemStatus === 'ARCHIVED') {
+                archivedFallback.add(id); verified = true
+                note = 'Facebook não permitiu DELETE (criativo quebrado #2446289). Anúncio foi ARQUIVADO — equivale a removido da listagem ativa.'
+              }
+              verificationDetails.push({
+                ad_id: id,
+                expected_status: 'DELETED',
+                status: itemStatus || null,
+                effective_status: item?.effective_status || null,
+                verified,
+                note,
+                error: itemErr || null,
+              })
             }
           }
-          success += verifiedDeleted.size
-          failed += chunk.length - verifiedDeleted.size
+          for (const id of deletedSet) {
+            if (!verifiedDeleted.has(id) && !archivedFallback.has(id)) {
+              errors.push({ ad_id: id, error: 'Facebook respondeu sucesso, mas o anúncio não ficou DELETED nem ARCHIVED na verificação' })
+            }
+          }
+          const okCount = verifiedDeleted.size + archivedFallback.size
+          success += okCount
+          failed += chunk.length - okCount
+          console.log(`[delete] chunk=${chunk.length} deleted=${verifiedDeleted.size} archivedFallback=${archivedFallback.size} failed=${chunk.length - okCount}`)
+          console.log('[delete] fb_responses:', JSON.stringify(facebookResponses.slice(-chunk.length * 3)))
         } else {
           // ARCHIVE
           const r1 = await runBatch(chunk, 'post', 'ARCHIVED')
