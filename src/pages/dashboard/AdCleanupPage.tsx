@@ -134,9 +134,10 @@ export default function AdCleanupPage() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
+      const firstErr = (data.errors || [])[0];
       toast({
         title: operation === 'delete' ? 'Exclusão concluída' : 'Arquivamento concluído',
-        description: `Sucesso: ${data.success} • Falhas: ${data.failed}`,
+        description: `Sucesso: ${data.success} • Falhas: ${data.failed}${firstErr ? ` — ${firstErr.error || firstErr.batch_error || ''}` : ''}`,
         variant: data.failed > 0 ? 'destructive' : 'default',
       });
 
