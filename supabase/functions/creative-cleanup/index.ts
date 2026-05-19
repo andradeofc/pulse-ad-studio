@@ -124,6 +124,9 @@ Deno.serve(async (req) => {
           })
         }
         for (const ad of (data.data || [])) {
+          if (['DELETED', 'ARCHIVED'].includes(String(ad.status || '').toUpperCase())) {
+            continue
+          }
           ads.push({
             id: ad.id,
             name: ad.name,
@@ -159,6 +162,8 @@ Deno.serve(async (req) => {
       let success = 0
       let failed = 0
       const errors: any[] = []
+      const facebookResponses: any[] = []
+      const verificationDetails: any[] = []
 
       // Helper: run a batch with a specific HTTP method strategy
       // strategy 'post' -> POST status=<targetStatus>
@@ -195,6 +200,14 @@ Deno.serve(async (req) => {
             const fbErrCode = parsedBody?.error?.code
             const fbErrSub = parsedBody?.error?.error_subcode
 
+            facebookResponses.push({
+              ad_id: ids[j],
+              strategy,
+              target_status: strategy === 'post' ? targetStatus : 'HTTP_DELETE',
+              http_code: code,
+              body: parsedBody ?? rawBody,
+            })
+
             if (code >= 200 && code < 300) {
               okIds.push(ids[j])
               continue
@@ -221,11 +234,52 @@ Deno.serve(async (req) => {
             realErrors.push({ ad_id: ids[j], code, error: fbErrMsg || rawBody || `HTTP ${code}` })
           }
         } else if (res?.error) {
+          facebookResponses.push({ strategy, target_status: strategy === 'post' ? targetStatus : 'HTTP_DELETE', batch_error: res.error })
           realErrors.push({ batch_error: res.error.message })
           for (const id of ids) methodFailIds.push(id)
         }
 
         return { okIds, methodFailIds, realErrors }
+      }
+
+      async function verifyAdStatuses(ids: string[], expectedStatus: 'ARCHIVED' | 'DELETED') {
+        const verifiedIds = new Set<string>()
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+          const chunk = ids.slice(i, i + BATCH_SIZE)
+          const params = new URLSearchParams({
+            ids: chunk.join(','),
+            fields: 'id,name,status,effective_status',
+            access_token: token,
+          })
+          const data = await fetchWithRetry(`${FB_API}/?${params.toString()}`)
+          if (data?.error) {
+            verificationDetails.push({ expected_status: expectedStatus, batch_ids: chunk, error: data.error })
+            continue
+          }
+
+          for (const id of chunk) {
+            const item = data?.[id]
+            const itemErr = item?.error
+            const itemStatus = String(item?.status || '').toUpperCase()
+            const errMsg = itemErr?.message || ''
+            const errCode = itemErr?.code
+            const isGone =
+              expectedStatus === 'DELETED' &&
+              (errCode === 100 || errCode === 33 || /does not exist|cannot be loaded|unsupported get request/i.test(errMsg))
+
+            const verified = itemStatus === expectedStatus || isGone
+            if (verified) verifiedIds.add(id)
+            verificationDetails.push({
+              ad_id: id,
+              expected_status: expectedStatus,
+              status: itemStatus || null,
+              effective_status: item?.effective_status || null,
+              verified,
+              error: itemErr || null,
+            })
+          }
+        }
+        return verifiedIds
       }
 
       for (let i = 0; i < ad_ids.length; i += BATCH_SIZE) {
