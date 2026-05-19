@@ -144,17 +144,13 @@ Deno.serve(async (req) => {
 
       for (let i = 0; i < ad_ids.length; i += BATCH_SIZE) {
         const chunk = ad_ids.slice(i, i + BATCH_SIZE)
-        const batch = chunk.map((id: string) => {
-          if (op === 'delete') {
-            return { method: 'DELETE', relative_url: id }
-          }
-          // archive
-          return {
-            method: 'POST',
-            relative_url: id,
-            body: 'status=ARCHIVED',
-          }
-        })
+        // Use POST status=DELETED/ARCHIVED — more reliable than HTTP DELETE
+        // and supported across all ad types (including boosted posts)
+        const batch = chunk.map((id: string) => ({
+          method: 'POST',
+          relative_url: id,
+          body: op === 'delete' ? 'status=DELETED' : 'status=ARCHIVED',
+        }))
 
         const form = new FormData()
         form.append('access_token', token)
@@ -165,17 +161,31 @@ Deno.serve(async (req) => {
           for (let j = 0; j < res.length; j++) {
             const r = res[j]
             const code = r?.code
+            let parsedBody: any = null
+            try { parsedBody = JSON.parse(r?.body || '{}') } catch { /* ignore */ }
+            const fbErrCode = parsedBody?.error?.code
+            const fbErrSub = parsedBody?.error?.error_subcode
+            const fbErrMsg = parsedBody?.error?.message || ''
+
             if (code >= 200 && code < 300) {
               success++
-            } else {
-              failed++
-              try {
-                const parsed = JSON.parse(r?.body || '{}')
-                errors.push({ ad_id: chunk[j], code, error: parsed.error?.message || r?.body })
-              } catch {
-                errors.push({ ad_id: chunk[j], code, error: r?.body })
-              }
+              continue
             }
+
+            // Treat "already deleted / not found" as success
+            const isGone =
+              code === 404 || code === 405 ||
+              fbErrCode === 100 || fbErrSub === 33 ||
+              /does not exist|cannot be loaded|unsupported (get|post) request|no path defined/i.test(fbErrMsg) ||
+              /no path defined/i.test(r?.body || '')
+
+            if (isGone) {
+              success++
+              continue
+            }
+
+            failed++
+            errors.push({ ad_id: chunk[j], code, error: fbErrMsg || r?.body || `HTTP ${code}` })
           }
         } else if (res?.error) {
           failed += chunk.length
