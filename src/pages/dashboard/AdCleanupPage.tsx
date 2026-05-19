@@ -386,6 +386,7 @@ export default function AdCleanupPage() {
                       <span className="text-sm font-medium truncate">{ad.name}</span>
                     </div>
                     <p className="text-xs text-muted-foreground truncate">
+                      {ad._account_name ? <>🏦 <strong>{ad._account_name}</strong> • </> : null}
                       📁 {ad.campaign_name || '—'} → 📦 {ad.adset_name || '—'} • ID: {ad.id}
                     </p>
                   </div>
