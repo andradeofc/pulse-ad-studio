@@ -366,6 +366,9 @@ export default function AdCleanupPage() {
                     </Badge>
                   </div>
                   <p className="text-muted-foreground">Esperado: {item.expected_status} • Atual: {item.status || 'sem retorno'}</p>
+                  {item.note && (
+                    <p className="mt-1 text-amber-600 dark:text-amber-400">{item.note}</p>
+                  )}
                 </div>
               ))}
             </div>
