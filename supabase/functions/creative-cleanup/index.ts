@@ -9,23 +9,31 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const FB_API = 'https://graph.facebook.com/v23.0'
 
 async function fetchWithRetry(url: string, init?: RequestInit, maxAttempts = 3): Promise<any> {
+  let lastJson: any = null
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(url, init)
-      const json = await res.json()
-      if (json.error?.code === 4 || json.error?.code === 17 || json.error?.code === 32 || res.status === 429) {
+      const json = await res.json().catch(() => ({}))
+      lastJson = json
+      if (json?.error?.code === 4 || json?.error?.code === 17 || json?.error?.code === 32 || res.status === 429) {
         const wait = Math.min(20000, 1500 * 2 ** (attempt - 1))
-        console.log(`Rate limit, waiting ${wait}ms`)
+        console.log(`Rate limit hit (code ${json?.error?.code}), waiting ${wait}ms`)
         await sleep(wait)
         continue
       }
       return json
     } catch (e) {
-      if (attempt === maxAttempts) throw e
+      console.error(`fetchWithRetry attempt ${attempt} failed:`, e)
+      if (attempt === maxAttempts) {
+        return lastJson ?? { error: { message: (e as Error).message || 'Network error', code: -1 } }
+      }
       await sleep(1000 * attempt)
     }
   }
+  // Exhausted retries (e.g. rate-limited every attempt)
+  return lastJson ?? { error: { message: 'Rate limit exceeded after retries', code: 17 } }
 }
+
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
