@@ -90,8 +90,8 @@ export default function AdCleanupPage() {
   };
 
   const handleScan = async () => {
-    if (!selectedAccount) {
-      toast({ title: 'Selecione uma conta', variant: 'destructive' });
+    if (!scanAllAccounts && !selectedAccount) {
+      toast({ title: 'Selecione uma conta ou marque "Todas as contas"', variant: 'destructive' });
       return;
     }
     if (selectedStatuses.length === 0) {
@@ -102,65 +102,140 @@ export default function AdCleanupPage() {
     setAds([]);
     setSelectedAds(new Set());
     setLastResult(null);
+
+    const targets = scanAllAccounts ? accounts : (selectedAccount ? [selectedAccount] : []);
+    setScanProgress({ done: 0, total: targets.length });
+
+    const collected: RejectedAd[] = [];
+    let successCount = 0;
+    let errorCount = 0;
+
     try {
-      const { data, error } = await supabase.functions.invoke('creative-cleanup', {
-        body: {
-          action: 'scan',
-          ad_account_id: selectedAccount.account_id,
-          profile_id: selectedAccount.profile_id,
-          statuses: selectedStatuses,
-        },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      setAds(data.ads || []);
+      for (let i = 0; i < targets.length; i++) {
+        const acc = targets[i];
+        setScanProgress({ done: i, total: targets.length, current: acc.name });
+        try {
+          const { data, error } = await supabase.functions.invoke('creative-cleanup', {
+            body: {
+              action: 'scan',
+              ad_account_id: acc.account_id,
+              profile_id: acc.profile_id,
+              statuses: selectedStatuses,
+            },
+          });
+          if (error) throw error;
+          if (data?.error) {
+            errorCount++;
+            console.warn(`[scan] ${acc.name}: ${data.error}`);
+            continue;
+          }
+          const enriched = (data.ads || []).map((a: any) => ({
+            ...a,
+            _account_id: acc.account_id,
+            _account_name: acc.name,
+            _profile_id: acc.profile_id,
+          }));
+          collected.push(...enriched);
+          successCount++;
+        } catch (e: any) {
+          errorCount++;
+          console.warn(`[scan] ${acc.name}: ${e.message}`);
+        }
+      }
+      setAds(collected);
       toast({
-        title: `${data.total} anúncio(s) encontrado(s)`,
-        description: data.total === 0 ? 'Nenhum anúncio corresponde aos filtros.' : undefined,
+        title: `${collected.length} anúncio(s) encontrado(s)`,
+        description: scanAllAccounts
+          ? `${successCount} conta(s) escaneadas${errorCount ? `, ${errorCount} com erro` : ''}.`
+          : (collected.length === 0 ? 'Nenhum anúncio corresponde aos filtros.' : undefined),
       });
-    } catch (e: any) {
-      toast({ title: 'Erro na busca', description: e.message, variant: 'destructive' });
     } finally {
       setIsScanning(false);
+      setScanProgress(null);
     }
   };
 
   const handleExecute = async (operation: 'archive' | 'delete') => {
-    if (!selectedAccount || selectedAds.size === 0) return;
+    if (selectedAds.size === 0) return;
     setIsExecuting(true);
+    setLastResult(null);
     try {
-      const ids = Array.from(selectedAds);
-      const { data, error } = await supabase.functions.invoke('creative-cleanup', {
-        body: {
-          action: 'execute',
-          ad_account_id: selectedAccount.account_id,
-          profile_id: selectedAccount.profile_id,
-          ad_ids: ids,
-          operation,
-        },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      setLastResult(data);
+      // Group selected ads by account
+      const groups = new Map<string, { account_id: string; profile_id: string; account_name: string; ids: string[] }>();
+      for (const adId of selectedAds) {
+        const ad = ads.find(a => a.id === adId);
+        if (!ad) continue;
+        const accId = ad._account_id || selectedAccount?.account_id;
+        const profId = ad._profile_id || selectedAccount?.profile_id;
+        const accName = ad._account_name || selectedAccount?.name || accId || 'conta';
+        if (!accId || !profId) continue;
+        const key = `${accId}|${profId}`;
+        if (!groups.has(key)) groups.set(key, { account_id: accId, profile_id: profId, account_name: accName, ids: [] });
+        groups.get(key)!.ids.push(adId);
+      }
 
-      const firstErr = (data.errors || [])[0];
+      const groupList = Array.from(groups.values());
+      setExecProgress({ done: 0, total: groupList.length });
+
+      let totalSuccess = 0;
+      let totalFailed = 0;
+      const allErrors: any[] = [];
+      const allVerification: any[] = [];
+      const allResponses: any[] = [];
+      const verifiedIds = new Set<string>();
+
+      for (let i = 0; i < groupList.length; i++) {
+        const g = groupList[i];
+        setExecProgress({ done: i, total: groupList.length, current: g.account_name });
+        try {
+          const { data, error } = await supabase.functions.invoke('creative-cleanup', {
+            body: {
+              action: 'execute',
+              ad_account_id: g.account_id,
+              profile_id: g.profile_id,
+              ad_ids: g.ids,
+              operation,
+            },
+          });
+          if (error) throw error;
+          if (data?.error) throw new Error(data.error);
+          totalSuccess += data.success || 0;
+          totalFailed += data.failed || 0;
+          (data.errors || []).forEach((e: any) => allErrors.push({ ...e, _account: g.account_name }));
+          (data.verification || []).forEach((v: any) => {
+            allVerification.push({ ...v, _account: g.account_name });
+            if (v.verified) verifiedIds.add(v.ad_id);
+          });
+          (data.facebook_responses || []).forEach((r: any) => allResponses.push({ _account: g.account_name, ...r }));
+        } catch (e: any) {
+          totalFailed += g.ids.length;
+          allErrors.push({ _account: g.account_name, error: e.message });
+        }
+      }
+
+      setLastResult({
+        success: totalSuccess,
+        failed: totalFailed,
+        errors: allErrors,
+        verification: allVerification,
+        facebook_responses: allResponses,
+      });
+
       toast({
         title: operation === 'delete' ? 'Exclusão concluída' : 'Arquivamento concluído',
-        description: `Sucesso: ${data.success} • Falhas: ${data.failed}${firstErr ? ` — ${firstErr.error || firstErr.batch_error || ''}` : ''}`,
-        variant: data.failed > 0 ? 'destructive' : 'default',
+        description: `Sucesso: ${totalSuccess} • Falhas: ${totalFailed} • ${groupList.length} conta(s)`,
+        variant: totalFailed > 0 ? 'destructive' : 'default',
       });
 
-      // Remove successful ones from list
-      if (data.success > 0) {
-        const failedIds = new Set((data.errors || []).map((e: any) => e.ad_id));
-        const verifiedIds = new Set((data.verification || []).filter((v: any) => v.verified).map((v: any) => v.ad_id));
-        setAds(prev => prev.filter(a => !verifiedIds.has(a.id) || failedIds.has(a.id)));
+      if (verifiedIds.size > 0) {
+        setAds(prev => prev.filter(a => !verifiedIds.has(a.id)));
         setSelectedAds(new Set());
       }
     } catch (e: any) {
       toast({ title: 'Erro na operação', description: e.message, variant: 'destructive' });
     } finally {
       setIsExecuting(false);
+      setExecProgress(null);
     }
   };
 
