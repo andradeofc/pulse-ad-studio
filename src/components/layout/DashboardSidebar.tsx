@@ -23,6 +23,7 @@ import {
   X,
   Megaphone,
   Timer,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -66,6 +67,12 @@ const mainNavSections: NavSection[] = [
     label: 'AUTOMAÇÕES',
     items: [
       { title: 'Agendamento de Campanhas', href: '/agendamento-campanhas', icon: Timer },
+    ],
+  },
+  {
+    label: 'LIMPEZA',
+    items: [
+      { title: 'Limpeza de Anúncios', href: '/limpeza-anuncios', icon: Sparkles },
     ],
   },
   {
