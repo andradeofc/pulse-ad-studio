@@ -142,55 +142,99 @@ Deno.serve(async (req) => {
       let failed = 0
       const errors: any[] = []
 
-      for (let i = 0; i < ad_ids.length; i += BATCH_SIZE) {
-        const chunk = ad_ids.slice(i, i + BATCH_SIZE)
-        // Use POST status=DELETED/ARCHIVED — more reliable than HTTP DELETE
-        // and supported across all ad types (including boosted posts)
-        const batch = chunk.map((id: string) => ({
-          method: 'POST',
-          relative_url: id,
-          body: op === 'delete' ? 'status=DELETED' : 'status=ARCHIVED',
-        }))
+      // Helper: run a batch with a specific HTTP method strategy
+      // strategy 'post' -> POST status=DELETED/ARCHIVED
+      // strategy 'delete' -> HTTP DELETE
+      async function runBatch(ids: string[], strategy: 'post' | 'delete') {
+        const batch = ids.map((id: string) => {
+          if (strategy === 'delete' && op === 'delete') {
+            return { method: 'DELETE', relative_url: id }
+          }
+          return {
+            method: 'POST',
+            relative_url: id,
+            body: op === 'delete' ? 'status=DELETED' : 'status=ARCHIVED',
+          }
+        })
 
         const form = new FormData()
         form.append('access_token', token)
         form.append('batch', JSON.stringify(batch))
 
         const res = await fetchWithRetry(FB_API, { method: 'POST', body: form })
+        const okIds: string[] = []
+        const methodFailIds: string[] = []
+        const realErrors: any[] = []
+
         if (Array.isArray(res)) {
           for (let j = 0; j < res.length; j++) {
             const r = res[j]
             const code = r?.code
+            const rawBody = r?.body || ''
             let parsedBody: any = null
-            try { parsedBody = JSON.parse(r?.body || '{}') } catch { /* ignore */ }
+            try { parsedBody = JSON.parse(rawBody) } catch { /* ignore */ }
+            const fbErrMsg = parsedBody?.error?.message || ''
             const fbErrCode = parsedBody?.error?.code
             const fbErrSub = parsedBody?.error?.error_subcode
-            const fbErrMsg = parsedBody?.error?.message || ''
 
             if (code >= 200 && code < 300) {
-              success++
+              okIds.push(ids[j])
               continue
             }
 
-            // Treat "already deleted / not found" as success
+            // Detect "Bad Method / wrong HTTP verb" → eligible for fallback
+            const isBadMethod =
+              code === 405 ||
+              /no path defined with the given http verb|bad method|method not allowed|unsupported (post|delete) request/i
+                .test(fbErrMsg + ' ' + rawBody)
+
+            if (isBadMethod) {
+              methodFailIds.push(ids[j])
+              continue
+            }
+
+            // "Object already deleted / not found" → treat as success
             const isGone =
-              code === 404 || code === 405 ||
+              code === 404 ||
               fbErrCode === 100 || fbErrSub === 33 ||
-              /does not exist|cannot be loaded|unsupported (get|post) request|no path defined/i.test(fbErrMsg) ||
-              /no path defined/i.test(r?.body || '')
-
+              /does not exist|cannot be loaded/i.test(fbErrMsg)
             if (isGone) {
-              success++
+              okIds.push(ids[j])
               continue
             }
 
-            failed++
-            errors.push({ ad_id: chunk[j], code, error: fbErrMsg || r?.body || `HTTP ${code}` })
+            realErrors.push({ ad_id: ids[j], code, error: fbErrMsg || rawBody || `HTTP ${code}` })
           }
         } else if (res?.error) {
-          failed += chunk.length
-          errors.push({ batch_error: res.error.message })
+          realErrors.push({ batch_error: res.error.message })
+          for (const id of ids) methodFailIds.push(id)
         }
+
+        return { okIds, methodFailIds, realErrors }
+      }
+
+      for (let i = 0; i < ad_ids.length; i += BATCH_SIZE) {
+        const chunk = ad_ids.slice(i, i + BATCH_SIZE)
+
+        // 1st pass: POST status=DELETED/ARCHIVED (works for most ads)
+        const r1 = await runBatch(chunk, 'post')
+        success += r1.okIds.length
+        errors.push(...r1.realErrors)
+
+        // 2nd pass: retry "Bad Method" ones with HTTP DELETE (or POST for archive)
+        if (r1.methodFailIds.length > 0) {
+          await sleep(500)
+          const r2 = await runBatch(r1.methodFailIds, op === 'delete' ? 'delete' : 'post')
+          success += r2.okIds.length
+          errors.push(...r2.realErrors)
+          // anything still in methodFailIds after 2nd pass → real failure
+          for (const id of r2.methodFailIds) {
+            failed++
+            errors.push({ ad_id: id, code: 405, error: 'Método HTTP não suportado (POST e DELETE recusados)' })
+          }
+        }
+
+        failed += r1.realErrors.filter((e) => e.ad_id).length
 
         // Throttle between batches
         if (i + BATCH_SIZE < ad_ids.length) await sleep(800)
