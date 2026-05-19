@@ -338,13 +338,25 @@ Deno.serve(async (req) => {
             }
           }
 
-          success += deletedSet.size
-          failed += chunk.length - deletedSet.size
+          const verifiedDeleted = await verifyAdStatuses([...deletedSet], 'DELETED')
+          for (const id of deletedSet) {
+            if (!verifiedDeleted.has(id)) {
+              errors.push({ ad_id: id, error: 'Facebook respondeu sucesso, mas o anúncio não ficou DELETED na verificação' })
+            }
+          }
+          success += verifiedDeleted.size
+          failed += chunk.length - verifiedDeleted.size
         } else {
           // ARCHIVE
           const r1 = await runBatch(chunk, 'post', 'ARCHIVED')
-          success += r1.okIds.length
-          failed += r1.realErrors.length + r1.methodFailIds.length
+          const verifiedArchived = await verifyAdStatuses(r1.okIds, 'ARCHIVED')
+          for (const id of r1.okIds) {
+            if (!verifiedArchived.has(id)) {
+              errors.push({ ad_id: id, error: 'Facebook respondeu sucesso, mas o anúncio não ficou ARCHIVED na verificação' })
+            }
+          }
+          success += verifiedArchived.size
+          failed += chunk.length - verifiedArchived.size
           errors.push(...r1.realErrors)
           for (const id of r1.methodFailIds) {
             errors.push({ ad_id: id, code: 405, error: 'Método HTTP não suportado' })
@@ -354,7 +366,14 @@ Deno.serve(async (req) => {
         if (i + BATCH_SIZE < ad_ids.length) await sleep(800)
       }
 
-      return new Response(JSON.stringify({ success, failed, errors: errors.slice(0, 50), operation: op }), {
+      return new Response(JSON.stringify({
+        success,
+        failed,
+        errors: errors.slice(0, 50),
+        operation: op,
+        facebook_responses: facebookResponses.slice(0, 50),
+        verification: verificationDetails.slice(0, 50),
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
