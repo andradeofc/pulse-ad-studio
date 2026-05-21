@@ -196,6 +196,7 @@ export default function AdCleanupPage() {
               profile_id: g.profile_id,
               ad_ids: g.ids,
               operation,
+              catalog_mode: catalogMode && operation === 'delete',
             },
           });
           if (error) throw error;
