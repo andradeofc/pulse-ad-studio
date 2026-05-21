@@ -477,28 +477,29 @@ Deno.serve(async (req) => {
         let chunk = ad_ids.slice(i, i + BATCH_SIZE)
 
         if (op === 'delete') {
-          // ===== MODO CATÁLOGO =====
-          // Tentativa 1: POST destination_type=WEBSITE
-          // Tentativa 2 (nos que falharem): POST destination_type=WEBSITE + link=https://www.amazon.com
+          // ===== MODO CATÁLOGO (rebuild creative) =====
+          // Tentativa 1: cria novo criativo com destination_type=WEBSITE
+          //   mantendo o link existente.
+          // Tentativa 2 (nos que falharem): força link=https://www.amazon.com
           if (catalog_mode) {
-            const a1 = await runCatalogEdit(chunk, 1, false)
+            const a1 = await runCatalogRebuild(chunk, 1, false)
             let editedTotal = [...a1.editedOk]
 
             if (a1.failedIds.length > 0) {
               await sleep(500)
-              const a2 = await runCatalogEdit(a1.failedIds, 2, true)
+              const a2 = await runCatalogRebuild(a1.failedIds, 2, true)
               editedTotal = [...editedTotal, ...a2.editedOk]
               for (const failedId of a2.failedIds) {
                 errors.push({
                   ad_id: failedId,
-                  error: '[catálogo] Falha nas 2 tentativas (sem URL e com URL amazon.com) — anúncio pulado',
+                  error: '[catálogo] Rebuild do criativo falhou nas 2 tentativas — anúncio pulado',
                 })
                 failed++
               }
             }
 
             const skippedTotal = chunk.length - editedTotal.length
-            console.log(`[catalog_mode] chunk=${chunk.length} edited_ok=${editedTotal.length} skipped=${skippedTotal}`)
+            console.log(`[catalog_rebuild] chunk=${chunk.length} edited_ok=${editedTotal.length} skipped=${skippedTotal}`)
             chunk = editedTotal
             if (chunk.length === 0) {
               if (i + BATCH_SIZE < ad_ids.length) await sleep(800)
