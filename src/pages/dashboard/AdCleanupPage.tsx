@@ -469,6 +469,7 @@ export default function AdCleanupPage() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+                </div>
               </div>
             )}
           </CardContent>
