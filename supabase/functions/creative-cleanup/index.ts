@@ -293,75 +293,181 @@ Deno.serve(async (req) => {
         })
       }
 
-      // Roda um batch de edição de catálogo (destination_type=WEBSITE [+ link])
-      async function runCatalogEdit(
+      // Reconstrói o criativo (igual ao fluxo manual da UI):
+      //   Passo A: GET criativo atual do ad
+      //   Passo B: POST /act_X/adcreatives com destination_type=WEBSITE [+ link]
+      //   Passo C: POST /{ad_id} body=creative={"creative_id":NEW}
+      // Attempt 1: mantém link original. Attempt 2: força https://www.amazon.com.
+      async function runCatalogRebuild(
         ids: string[],
         attempt: 1 | 2,
-        withUrl: boolean,
+        forceAmazonUrl: boolean,
       ): Promise<{ editedOk: string[]; failedIds: string[] }> {
-        const params = withUrl
-          ? 'destination_type=WEBSITE&link=https%3A%2F%2Fwww.amazon.com'
-          : 'destination_type=WEBSITE'
-        const editBatch = ids.map((id: string) => ({
-          method: 'POST',
-          relative_url: id,
-          body: params,
-        }))
-        const form = new FormData()
-        form.append('access_token', token)
-        form.append('batch', JSON.stringify(editBatch))
-        const editRes = await fetchWithRetry(FB_API, { method: 'POST', body: form })
-
-        const strategyLabel = withUrl ? 'catalog_edit_with_url' : 'catalog_edit'
+        const strategyLabel = forceAmazonUrl ? 'catalog_rebuild_amazon' : 'catalog_rebuild'
         const editedOk: string[] = []
         const failedIds: string[] = []
 
-        if (Array.isArray(editRes)) {
-          for (let j = 0; j < editRes.length; j++) {
-            const r = editRes[j]
+        // ===== Passo A: GET criativo atual =====
+        const creativeFields =
+          'creative{id,name,object_story_spec,asset_feed_spec,product_set_id,template_url_spec,destination_type,link_url,call_to_action_type,instagram_actor_id,actor_id,degrees_of_freedom_spec,object_type}'
+        const getBatch = ids.map((id) => ({
+          method: 'GET',
+          relative_url: `${id}?fields=${creativeFields}`,
+        }))
+        const getForm = new FormData()
+        getForm.append('access_token', token)
+        getForm.append('batch', JSON.stringify(getBatch))
+        const getRes = await fetchWithRetry(FB_API, { method: 'POST', body: getForm })
+
+        const adCreativeMap = new Map<string, any>()
+        if (Array.isArray(getRes)) {
+          for (let j = 0; j < getRes.length; j++) {
+            const r = getRes[j]
             const code = r?.code
-            const rawBody = r?.body || ''
-            let parsedBody: any = null
-            try { parsedBody = JSON.parse(rawBody) } catch { /* ignore */ }
-            facebookResponses.push({
-              ad_id: ids[j],
-              strategy: strategyLabel,
-              target_status: withUrl ? 'destination_type=WEBSITE + link=amazon.com' : 'destination_type=WEBSITE',
-              attempt,
-              http_code: code,
-              body: parsedBody ?? rawBody,
-            })
-            const ok = code >= 200 && code < 300
-            pushLog({
-              ad_id: ids[j],
-              operation: 'delete',
-              strategy: strategyLabel,
-              attempt,
-              http_code: code,
-              success: ok,
-              request_body: { body: params },
-              response_body: parsedBody ?? { raw: rawBody },
-              error_message: ok ? null : (parsedBody?.error?.message || rawBody || `HTTP ${code}`),
-            })
-            if (ok) editedOk.push(ids[j])
-            else failedIds.push(ids[j])
+            let parsed: any = null
+            try { parsed = JSON.parse(r?.body || '') } catch { /* ignore */ }
+            if (code >= 200 && code < 300 && parsed?.creative) {
+              adCreativeMap.set(ids[j], parsed.creative)
+            } else {
+              pushLog({
+                ad_id: ids[j], operation: 'delete', strategy: strategyLabel, attempt,
+                http_code: code, success: false,
+                request_body: { step: 'GET_creative', fields: creativeFields },
+                response_body: parsed ?? { raw: r?.body },
+                error_message: parsed?.error?.message || `Falha ao obter criativo (HTTP ${code})`,
+              })
+              failedIds.push(ids[j])
+            }
           }
-        } else if (editRes?.error) {
-          facebookResponses.push({ strategy: strategyLabel, attempt, batch_error: editRes.error })
+        } else {
           for (const id of ids) {
             pushLog({
-              ad_id: id,
-              operation: 'delete',
-              strategy: strategyLabel,
-              attempt,
-              http_code: null,
-              success: false,
-              request_body: { body: params },
-              response_body: editRes,
-              error_message: `Batch falhou: ${editRes.error.message}`,
+              ad_id: id, operation: 'delete', strategy: strategyLabel, attempt,
+              http_code: null, success: false,
+              request_body: { step: 'GET_creative' },
+              response_body: getRes,
+              error_message: `Batch GET falhou: ${getRes?.error?.message || 'erro desconhecido'}`,
             })
             failedIds.push(id)
           }
+          return { editedOk, failedIds }
+        }
+
+        const adsWithCreative = ids.filter((id) => adCreativeMap.has(id))
+        if (adsWithCreative.length === 0) return { editedOk, failedIds }
+
+        // ===== Passo B: cria novo adcreative com destino WEBSITE =====
+        const buildPayload = (oldCreative: any): Record<string, string> => {
+          const oss = oldCreative?.object_story_spec || {}
+          const newOss: any = { ...oss }
+          const desiredLink = forceAmazonUrl
+            ? 'https://www.amazon.com'
+            : (oldCreative?.link_url
+              || oss?.template_data?.link
+              || oss?.link_data?.link
+              || 'https://www.amazon.com')
+          if (newOss.template_data) {
+            newOss.template_data = { ...newOss.template_data, link: desiredLink }
+          }
+          if (newOss.link_data) {
+            newOss.link_data = { ...newOss.link_data, link: desiredLink }
+          }
+          const payload: Record<string, string> = {
+            destination_type: 'WEBSITE',
+            link_url: desiredLink,
+          }
+          if (oldCreative?.name) payload.name = `${oldCreative.name} (rebuilt)`.slice(0, 400)
+          if (oldCreative?.product_set_id) payload.product_set_id = oldCreative.product_set_id
+          if (Object.keys(newOss).length > 0) payload.object_story_spec = JSON.stringify(newOss)
+          if (oldCreative?.asset_feed_spec) payload.asset_feed_spec = JSON.stringify(oldCreative.asset_feed_spec)
+          if (oldCreative?.template_url_spec) payload.template_url_spec = JSON.stringify(oldCreative.template_url_spec)
+          if (oldCreative?.degrees_of_freedom_spec) {
+            payload.degrees_of_freedom_spec = JSON.stringify(oldCreative.degrees_of_freedom_spec)
+          }
+          if (oldCreative?.call_to_action_type) payload.call_to_action_type = oldCreative.call_to_action_type
+          if (oldCreative?.instagram_actor_id) payload.instagram_actor_id = oldCreative.instagram_actor_id
+          return payload
+        }
+
+        const createBatch = adsWithCreative.map((id) => ({
+          method: 'POST',
+          relative_url: `act_${accountId}/adcreatives`,
+          body: new URLSearchParams(buildPayload(adCreativeMap.get(id))).toString(),
+        }))
+        const createForm = new FormData()
+        createForm.append('access_token', token)
+        createForm.append('batch', JSON.stringify(createBatch))
+        const createRes = await fetchWithRetry(FB_API, { method: 'POST', body: createForm })
+
+        const newCreativeIds = new Map<string, string>()
+        if (Array.isArray(createRes)) {
+          for (let j = 0; j < createRes.length; j++) {
+            const adId = adsWithCreative[j]
+            const r = createRes[j]
+            const code = r?.code
+            let parsed: any = null
+            try { parsed = JSON.parse(r?.body || '') } catch { /* ignore */ }
+            const ok = code >= 200 && code < 300 && parsed?.id
+            pushLog({
+              ad_id: adId, operation: 'delete', strategy: strategyLabel, attempt,
+              http_code: code, success: !!ok,
+              request_body: { step: 'POST_adcreatives', payload: createBatch[j].body },
+              response_body: parsed ?? { raw: r?.body },
+              error_message: ok ? null : (parsed?.error?.message || `HTTP ${code}`),
+            })
+            facebookResponses.push({
+              ad_id: adId, strategy: strategyLabel, attempt,
+              target_status: 'NEW_CREATIVE', http_code: code, body: parsed ?? r?.body,
+            })
+            if (ok) newCreativeIds.set(adId, String(parsed.id))
+            else failedIds.push(adId)
+          }
+        } else {
+          for (const id of adsWithCreative) failedIds.push(id)
+          return { editedOk, failedIds }
+        }
+
+        const adsToRelink = [...newCreativeIds.keys()]
+        if (adsToRelink.length === 0) return { editedOk, failedIds }
+
+        // ===== Passo C: religa ad ao novo criativo =====
+        const relinkBatch = adsToRelink.map((id) => {
+          const creativeRef = JSON.stringify({ creative_id: newCreativeIds.get(id) })
+          return {
+            method: 'POST',
+            relative_url: id,
+            body: `creative=${encodeURIComponent(creativeRef)}`,
+          }
+        })
+        const relinkForm = new FormData()
+        relinkForm.append('access_token', token)
+        relinkForm.append('batch', JSON.stringify(relinkBatch))
+        const relinkRes = await fetchWithRetry(FB_API, { method: 'POST', body: relinkForm })
+
+        if (Array.isArray(relinkRes)) {
+          for (let j = 0; j < relinkRes.length; j++) {
+            const adId = adsToRelink[j]
+            const r = relinkRes[j]
+            const code = r?.code
+            let parsed: any = null
+            try { parsed = JSON.parse(r?.body || '') } catch { /* ignore */ }
+            const ok = code >= 200 && code < 300
+            pushLog({
+              ad_id: adId, operation: 'delete', strategy: strategyLabel, attempt,
+              http_code: code, success: ok,
+              request_body: { step: 'POST_ad_relink', new_creative_id: newCreativeIds.get(adId) },
+              response_body: parsed ?? { raw: r?.body },
+              error_message: ok ? null : (parsed?.error?.message || `HTTP ${code}`),
+            })
+            facebookResponses.push({
+              ad_id: adId, strategy: strategyLabel, attempt,
+              target_status: 'RELINK_CREATIVE', http_code: code, body: parsed ?? r?.body,
+            })
+            if (ok) editedOk.push(adId)
+            else failedIds.push(adId)
+          }
+        } else {
+          for (const id of adsToRelink) failedIds.push(id)
         }
 
         return { editedOk, failedIds }
