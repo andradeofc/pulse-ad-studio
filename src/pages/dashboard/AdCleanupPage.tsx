@@ -60,6 +60,7 @@ export default function AdCleanupPage() {
   const [search, setSearch] = useState('');
   const [lastResult, setLastResult] = useState<any>(null);
   const [scanAllAccounts, setScanAllAccounts] = useState(false);
+  const [catalogMode, setCatalogMode] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number; current?: string } | null>(null);
   const [execProgress, setExecProgress] = useState<{ done: number; total: number; current?: string } | null>(null);
 
