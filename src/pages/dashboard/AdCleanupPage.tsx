@@ -397,10 +397,23 @@ export default function AdCleanupPage() {
             </div>
 
             {selectedAds.size > 0 && (
-              <div className="flex items-center gap-3 pt-3 border-t">
-                <p className="text-sm text-muted-foreground flex-1">
-                  Operação será aplicada em <strong>{selectedAds.size}</strong> anúncio(s).
-                </p>
+              <div className="space-y-3 pt-3 border-t">
+                <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-secondary/30 bg-amber-500/5 border-amber-500/30">
+                  <Checkbox checked={catalogMode} onCheckedChange={(v) => setCatalogMode(!!v)} />
+                  <div>
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      🏷️ Catálogo — editar destino antes de excluir
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Para anúncios de catálogo com criativo quebrado: força <strong>destination_type = WEBSITE</strong> via API antes de tentar excluir. Se a edição falhar em algum anúncio, ele é <strong>pulado</strong> (não é excluído). Aplica-se somente à ação "Excluir".
+                    </p>
+                  </div>
+                </label>
+
+                <div className="flex items-center gap-3">
+                  <p className="text-sm text-muted-foreground flex-1">
+                    Operação será aplicada em <strong>{selectedAds.size}</strong> anúncio(s){catalogMode ? ' (modo catálogo)' : ''}.
+                  </p>
 
                 {/* Archive */}
                 <AlertDialog>
