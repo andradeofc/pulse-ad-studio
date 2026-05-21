@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { action, ad_account_id, profile_id, statuses, ad_ids, operation } = body
+    const { action, ad_account_id, profile_id, statuses, ad_ids, operation, catalog_mode } = body
 
     if (!action || !ad_account_id || !profile_id) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
