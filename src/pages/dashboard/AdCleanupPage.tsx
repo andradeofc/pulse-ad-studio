@@ -176,7 +176,23 @@ export default function AdCleanupPage() {
       }
 
       const groupList = Array.from(groups.values());
-      setExecProgress({ done: 0, total: groupList.length });
+      const CHUNK_SIZE = 50;
+      // Build flat list of (group, chunk) units for progress tracking
+      const units: { account_id: string; profile_id: string; account_name: string; ids: string[]; chunkIdx: number; totalChunks: number }[] = [];
+      for (const g of groupList) {
+        const totalChunks = Math.ceil(g.ids.length / CHUNK_SIZE);
+        for (let i = 0; i < g.ids.length; i += CHUNK_SIZE) {
+          units.push({
+            account_id: g.account_id,
+            profile_id: g.profile_id,
+            account_name: g.account_name,
+            ids: g.ids.slice(i, i + CHUNK_SIZE),
+            chunkIdx: Math.floor(i / CHUNK_SIZE) + 1,
+            totalChunks,
+          });
+        }
+      }
+      setExecProgress({ done: 0, total: units.length });
 
       let totalSuccess = 0;
       let totalFailed = 0;
@@ -185,16 +201,19 @@ export default function AdCleanupPage() {
       const allResponses: any[] = [];
       const verifiedIds = new Set<string>();
 
-      for (let i = 0; i < groupList.length; i++) {
-        const g = groupList[i];
-        setExecProgress({ done: i, total: groupList.length, current: g.account_name });
+      for (let i = 0; i < units.length; i++) {
+        const u = units[i];
+        const label = u.totalChunks > 1
+          ? `${u.account_name} (lote ${u.chunkIdx}/${u.totalChunks})`
+          : u.account_name;
+        setExecProgress({ done: i, total: units.length, current: label });
         try {
           const { data, error } = await supabase.functions.invoke('creative-cleanup', {
             body: {
               action: 'execute',
-              ad_account_id: g.account_id,
-              profile_id: g.profile_id,
-              ad_ids: g.ids,
+              ad_account_id: u.account_id,
+              profile_id: u.profile_id,
+              ad_ids: u.ids,
               operation,
               catalog_mode: catalogMode && operation === 'delete',
             },
@@ -203,16 +222,18 @@ export default function AdCleanupPage() {
           if (data?.error) throw new Error(data.error);
           totalSuccess += data.success || 0;
           totalFailed += data.failed || 0;
-          (data.errors || []).forEach((e: any) => allErrors.push({ ...e, _account: g.account_name }));
+          (data.errors || []).forEach((e: any) => allErrors.push({ ...e, _account: label }));
           (data.verification || []).forEach((v: any) => {
-            allVerification.push({ ...v, _account: g.account_name });
+            allVerification.push({ ...v, _account: label });
             if (v.verified) verifiedIds.add(v.ad_id);
           });
-          (data.facebook_responses || []).forEach((r: any) => allResponses.push({ _account: g.account_name, ...r }));
+          (data.facebook_responses || []).forEach((r: any) => allResponses.push({ _account: label, ...r }));
         } catch (e: any) {
-          totalFailed += g.ids.length;
-          allErrors.push({ _account: g.account_name, error: e.message });
+          totalFailed += u.ids.length;
+          allErrors.push({ _account: label, error: e.message });
         }
+        // Small breathing room between chunks to ease FB rate limits
+        if (i < units.length - 1) await new Promise(r => setTimeout(r, 800));
       }
 
       setLastResult({
@@ -225,9 +246,10 @@ export default function AdCleanupPage() {
 
       toast({
         title: operation === 'delete' ? 'Exclusão concluída' : 'Arquivamento concluído',
-        description: `Sucesso: ${totalSuccess} • Falhas: ${totalFailed} • ${groupList.length} conta(s)`,
+        description: `Sucesso: ${totalSuccess} • Falhas: ${totalFailed} • ${units.length} lote(s) em ${groupList.length} conta(s)`,
         variant: totalFailed > 0 ? 'destructive' : 'default',
       });
+
 
       if (verifiedIds.size > 0) {
         setAds(prev => prev.filter(a => !verifiedIds.has(a.id)));
