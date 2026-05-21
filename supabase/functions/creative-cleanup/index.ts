@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { action, ad_account_id, profile_id, statuses, ad_ids, operation } = body
+    const { action, ad_account_id, profile_id, statuses, ad_ids, operation, catalog_mode } = body
 
     if (!action || !ad_account_id || !profile_id) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
@@ -283,9 +283,69 @@ Deno.serve(async (req) => {
       }
 
       for (let i = 0; i < ad_ids.length; i += BATCH_SIZE) {
-        const chunk = ad_ids.slice(i, i + BATCH_SIZE)
+        let chunk = ad_ids.slice(i, i + BATCH_SIZE)
 
         if (op === 'delete') {
+          // ===== MODO CATÁLOGO =====
+          // Anúncios de catálogo com criativo quebrado bloqueiam delete (#2446289).
+          // Workaround manual usado pelo usuário: editar destino para Website e publicar
+          // antes de excluir. Replicamos via API: POST destination_type=WEBSITE no ad.
+          // Se a edição falhar para um ad, ele é PULADO (não tenta excluir).
+          if (catalog_mode) {
+            const editBatch = chunk.map((id: string) => ({
+              method: 'POST',
+              relative_url: id,
+              body: 'destination_type=WEBSITE',
+            }))
+            const form = new FormData()
+            form.append('access_token', token)
+            form.append('batch', JSON.stringify(editBatch))
+            const editRes = await fetchWithRetry(FB_API, { method: 'POST', body: form })
+
+            const editedOk: string[] = []
+            if (Array.isArray(editRes)) {
+              for (let j = 0; j < editRes.length; j++) {
+                const r = editRes[j]
+                const code = r?.code
+                const rawBody = r?.body || ''
+                let parsedBody: any = null
+                try { parsedBody = JSON.parse(rawBody) } catch { /* ignore */ }
+                facebookResponses.push({
+                  ad_id: chunk[j],
+                  strategy: 'catalog_edit',
+                  target_status: 'destination_type=WEBSITE',
+                  http_code: code,
+                  body: parsedBody ?? rawBody,
+                })
+                if (code >= 200 && code < 300) {
+                  editedOk.push(chunk[j])
+                } else {
+                  const errMsg = parsedBody?.error?.message || rawBody || `HTTP ${code}`
+                  errors.push({
+                    ad_id: chunk[j],
+                    code,
+                    error: `[catálogo] Falha ao editar destino para WEBSITE — anúncio pulado: ${errMsg}`,
+                  })
+                  failed++
+                }
+              }
+            } else if (editRes?.error) {
+              facebookResponses.push({ strategy: 'catalog_edit', batch_error: editRes.error })
+              for (const id of chunk) {
+                errors.push({ ad_id: id, error: `[catálogo] Batch falhou: ${editRes.error.message}` })
+                failed++
+              }
+            }
+
+            console.log(`[catalog_mode] chunk=${chunk.length} edited_ok=${editedOk.length} skipped=${chunk.length - editedOk.length}`)
+            chunk = editedOk
+            if (chunk.length === 0) {
+              if (i + BATCH_SIZE < ad_ids.length) await sleep(800)
+              continue
+            }
+            await sleep(500)
+          }
+
           // Estratégia para DELETE com criativos quebrados (erro 2446289):
           // Facebook exige ARCHIVED antes de DELETED. Anúncios arquivados
           // pulam a validação de "criativo incompleto" que bloqueia o delete direto.
