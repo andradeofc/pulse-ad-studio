@@ -309,7 +309,7 @@ Deno.serve(async (req) => {
 
         // ===== Passo A: GET criativo atual =====
         const creativeFields =
-          'creative{id,name,object_story_spec,asset_feed_spec,product_set_id,template_url_spec,destination_type,link_url,call_to_action_type,instagram_actor_id,actor_id,degrees_of_freedom_spec,object_type}'
+          'creative{id,name,object_story_spec,asset_feed_spec,product_set_id,template_url_spec,link_url,call_to_action_type,instagram_actor_id,actor_id,object_type}'
         const getBatch = ids.map((id) => ({
           method: 'GET',
           relative_url: `${id}?fields=${creativeFields}`,
