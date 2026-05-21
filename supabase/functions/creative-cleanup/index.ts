@@ -282,63 +282,118 @@ Deno.serve(async (req) => {
         return verifiedIds
       }
 
+      // Buffer de logs para persistir em batch no final
+      const logRows: any[] = []
+      const pushLog = (row: any) => {
+        logRows.push({
+          user_id: user.id,
+          profile_id,
+          ad_account_id: accountId,
+          ...row,
+        })
+      }
+
+      // Roda um batch de edição de catálogo (destination_type=WEBSITE [+ link])
+      async function runCatalogEdit(
+        ids: string[],
+        attempt: 1 | 2,
+        withUrl: boolean,
+      ): Promise<{ editedOk: string[]; failedIds: string[] }> {
+        const params = withUrl
+          ? 'destination_type=WEBSITE&link=https%3A%2F%2Fwww.amazon.com'
+          : 'destination_type=WEBSITE'
+        const editBatch = ids.map((id: string) => ({
+          method: 'POST',
+          relative_url: id,
+          body: params,
+        }))
+        const form = new FormData()
+        form.append('access_token', token)
+        form.append('batch', JSON.stringify(editBatch))
+        const editRes = await fetchWithRetry(FB_API, { method: 'POST', body: form })
+
+        const strategyLabel = withUrl ? 'catalog_edit_with_url' : 'catalog_edit'
+        const editedOk: string[] = []
+        const failedIds: string[] = []
+
+        if (Array.isArray(editRes)) {
+          for (let j = 0; j < editRes.length; j++) {
+            const r = editRes[j]
+            const code = r?.code
+            const rawBody = r?.body || ''
+            let parsedBody: any = null
+            try { parsedBody = JSON.parse(rawBody) } catch { /* ignore */ }
+            facebookResponses.push({
+              ad_id: ids[j],
+              strategy: strategyLabel,
+              target_status: withUrl ? 'destination_type=WEBSITE + link=amazon.com' : 'destination_type=WEBSITE',
+              attempt,
+              http_code: code,
+              body: parsedBody ?? rawBody,
+            })
+            const ok = code >= 200 && code < 300
+            pushLog({
+              ad_id: ids[j],
+              operation: 'delete',
+              strategy: strategyLabel,
+              attempt,
+              http_code: code,
+              success: ok,
+              request_body: { body: params },
+              response_body: parsedBody ?? { raw: rawBody },
+              error_message: ok ? null : (parsedBody?.error?.message || rawBody || `HTTP ${code}`),
+            })
+            if (ok) editedOk.push(ids[j])
+            else failedIds.push(ids[j])
+          }
+        } else if (editRes?.error) {
+          facebookResponses.push({ strategy: strategyLabel, attempt, batch_error: editRes.error })
+          for (const id of ids) {
+            pushLog({
+              ad_id: id,
+              operation: 'delete',
+              strategy: strategyLabel,
+              attempt,
+              http_code: null,
+              success: false,
+              request_body: { body: params },
+              response_body: editRes,
+              error_message: `Batch falhou: ${editRes.error.message}`,
+            })
+            failedIds.push(id)
+          }
+        }
+
+        return { editedOk, failedIds }
+      }
+
       for (let i = 0; i < ad_ids.length; i += BATCH_SIZE) {
         let chunk = ad_ids.slice(i, i + BATCH_SIZE)
 
         if (op === 'delete') {
           // ===== MODO CATÁLOGO =====
-          // Anúncios de catálogo com criativo quebrado bloqueiam delete (#2446289).
-          // Workaround manual usado pelo usuário: editar destino para Website e publicar
-          // antes de excluir. Replicamos via API: POST destination_type=WEBSITE no ad.
-          // Se a edição falhar para um ad, ele é PULADO (não tenta excluir).
+          // Tentativa 1: POST destination_type=WEBSITE
+          // Tentativa 2 (nos que falharem): POST destination_type=WEBSITE + link=https://www.amazon.com
           if (catalog_mode) {
-            const editBatch = chunk.map((id: string) => ({
-              method: 'POST',
-              relative_url: id,
-              body: 'destination_type=WEBSITE',
-            }))
-            const form = new FormData()
-            form.append('access_token', token)
-            form.append('batch', JSON.stringify(editBatch))
-            const editRes = await fetchWithRetry(FB_API, { method: 'POST', body: form })
+            const a1 = await runCatalogEdit(chunk, 1, false)
+            let editedTotal = [...a1.editedOk]
 
-            const editedOk: string[] = []
-            if (Array.isArray(editRes)) {
-              for (let j = 0; j < editRes.length; j++) {
-                const r = editRes[j]
-                const code = r?.code
-                const rawBody = r?.body || ''
-                let parsedBody: any = null
-                try { parsedBody = JSON.parse(rawBody) } catch { /* ignore */ }
-                facebookResponses.push({
-                  ad_id: chunk[j],
-                  strategy: 'catalog_edit',
-                  target_status: 'destination_type=WEBSITE',
-                  http_code: code,
-                  body: parsedBody ?? rawBody,
+            if (a1.failedIds.length > 0) {
+              await sleep(500)
+              const a2 = await runCatalogEdit(a1.failedIds, 2, true)
+              editedTotal = [...editedTotal, ...a2.editedOk]
+              for (const failedId of a2.failedIds) {
+                errors.push({
+                  ad_id: failedId,
+                  error: '[catálogo] Falha nas 2 tentativas (sem URL e com URL amazon.com) — anúncio pulado',
                 })
-                if (code >= 200 && code < 300) {
-                  editedOk.push(chunk[j])
-                } else {
-                  const errMsg = parsedBody?.error?.message || rawBody || `HTTP ${code}`
-                  errors.push({
-                    ad_id: chunk[j],
-                    code,
-                    error: `[catálogo] Falha ao editar destino para WEBSITE — anúncio pulado: ${errMsg}`,
-                  })
-                  failed++
-                }
-              }
-            } else if (editRes?.error) {
-              facebookResponses.push({ strategy: 'catalog_edit', batch_error: editRes.error })
-              for (const id of chunk) {
-                errors.push({ ad_id: id, error: `[catálogo] Batch falhou: ${editRes.error.message}` })
                 failed++
               }
             }
 
-            console.log(`[catalog_mode] chunk=${chunk.length} edited_ok=${editedOk.length} skipped=${chunk.length - editedOk.length}`)
-            chunk = editedOk
+            const skippedTotal = chunk.length - editedTotal.length
+            console.log(`[catalog_mode] chunk=${chunk.length} edited_ok=${editedTotal.length} skipped=${skippedTotal}`)
+            chunk = editedTotal
             if (chunk.length === 0) {
               if (i + BATCH_SIZE < ad_ids.length) await sleep(800)
               continue
