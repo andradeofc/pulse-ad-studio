@@ -708,6 +708,57 @@ export type Database = {
           },
         ]
       }
+      creative_cleanup_logs: {
+        Row: {
+          ad_account_id: string
+          ad_id: string
+          attempt: number
+          created_at: string
+          error_message: string | null
+          http_code: number | null
+          id: string
+          operation: string
+          profile_id: string
+          request_body: Json | null
+          response_body: Json | null
+          strategy: string
+          success: boolean
+          user_id: string
+        }
+        Insert: {
+          ad_account_id: string
+          ad_id: string
+          attempt?: number
+          created_at?: string
+          error_message?: string | null
+          http_code?: number | null
+          id?: string
+          operation: string
+          profile_id: string
+          request_body?: Json | null
+          response_body?: Json | null
+          strategy: string
+          success?: boolean
+          user_id: string
+        }
+        Update: {
+          ad_account_id?: string
+          ad_id?: string
+          attempt?: number
+          created_at?: string
+          error_message?: string | null
+          http_code?: number | null
+          id?: string
+          operation?: string
+          profile_id?: string
+          request_body?: Json | null
+          response_body?: Json | null
+          strategy?: string
+          success?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       creative_folders: {
         Row: {
           color: string | null
