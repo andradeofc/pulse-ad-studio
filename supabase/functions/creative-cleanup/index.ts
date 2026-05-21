@@ -528,6 +528,20 @@ Deno.serve(async (req) => {
         if (i + BATCH_SIZE < ad_ids.length) await sleep(800)
       }
 
+      // Persiste logs em batch (não falha a resposta se der erro)
+      if (logRows.length > 0) {
+        try {
+          // chunks de 500 para evitar payload gigante
+          for (let i = 0; i < logRows.length; i += 500) {
+            const slice = logRows.slice(i, i + 500)
+            const { error: logErr } = await service.from('creative_cleanup_logs').insert(slice)
+            if (logErr) console.error('[cleanup-logs] insert error:', logErr.message)
+          }
+        } catch (e) {
+          console.error('[cleanup-logs] persist failed:', (e as Error).message)
+        }
+      }
+
       return new Response(JSON.stringify({
         success,
         failed,
@@ -535,6 +549,7 @@ Deno.serve(async (req) => {
         operation: op,
         facebook_responses: facebookResponses.slice(0, 50),
         verification: verificationDetails.slice(0, 50),
+        logs_saved: logRows.length,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
