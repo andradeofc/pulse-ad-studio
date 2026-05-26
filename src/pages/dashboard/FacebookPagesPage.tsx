@@ -133,7 +133,16 @@ export default function FacebookPagesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
-  const [activeTab, setActiveTab] = useState<'all' | 'pools'>('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab: 'all' | 'pools' = searchParams.get('tab') === 'pools' ? 'pools' : 'all';
+  const setActiveTab = useCallback((tab: 'all' | 'pools') => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === 'pools') next.set('tab', 'pools');
+      else next.delete('tab');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
 
   // Pools (real, vindo do banco)
