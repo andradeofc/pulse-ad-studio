@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     if (!user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
     const { accountId, entityId, level, status } = await req.json()
-    if (!accountId || !entityId || !['campaign', 'adset', 'ad'].includes(level) || !['ACTIVE', 'PAUSED'].includes(status)) {
+    if (!accountId || !entityId || !['campaign', 'adset', 'ad'].includes(level) || !['ACTIVE', 'PAUSED', 'DELETED'].includes(status)) {
       return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
@@ -35,9 +35,15 @@ Deno.serve(async (req) => {
     const token = (acc as any)?.facebook_profiles?.access_token
     if (!token) return new Response(JSON.stringify({ error: 'No token' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-    const url = `https://graph.facebook.com/${FB_VERSION}/${entityId}`
-    const form = new URLSearchParams({ status, access_token: token })
-    const r = await fetch(url, { method: 'POST', body: form })
+    let r: Response
+    if (status === 'DELETED') {
+      const url = `https://graph.facebook.com/${FB_VERSION}/${entityId}?access_token=${encodeURIComponent(token)}`
+      r = await fetch(url, { method: 'DELETE' })
+    } else {
+      const url = `https://graph.facebook.com/${FB_VERSION}/${entityId}`
+      const form = new URLSearchParams({ status, access_token: token })
+      r = await fetch(url, { method: 'POST', body: form })
+    }
     const j = await r.json()
     if (j?.error) {
       return new Response(JSON.stringify({ error: j.error.message || 'FB error', fb: j.error }), {
