@@ -889,11 +889,12 @@ Deno.serve(async (req) => {
           name: userData.name,
           email: userData.email || null,
           avatar_url: userData.picture?.data?.url || null,
-          access_token: accessToken, // Keep for backward compatibility during migration
+          access_token: accessToken,
           status: "active",
           permissions,
           token_expires_at: expiresAt,
           sync_status: "syncing_accounts",
+          ...credentialFields,
         })
         .select()
         .single();
@@ -904,29 +905,36 @@ Deno.serve(async (req) => {
       }
       profile = data;
 
-      // Store token securely in facebook_credentials (service role bypasses RLS)
       const { error: credError } = await supabaseService
         .from("facebook_credentials")
-        .insert({
-          profile_id: profile.id,
-          access_token: accessToken,
-        });
+        .insert({ profile_id: profile.id, access_token: accessToken });
 
-      if (credError) {
-        console.error("Error storing secure credentials:", credError);
-        // Don't throw - backward compatible via facebook_profiles.access_token
-      } else {
-        console.log("Secure credentials stored successfully");
-      }
+      if (credError) console.error("Error storing secure credentials:", credError);
     }
 
     console.log("Profile saved successfully:", profile.id);
 
-    // 4. Start background sync (non-blocking)
+    // Link task to profile + report next step
+    if (taskId) {
+      try {
+        await supabaseService
+          .from("facebook_profile_tasks")
+          .update({ profile_id: profile.id })
+          .eq("id", taskId);
+      } catch (e) {
+        console.error("Failed to link task to profile:", e);
+      }
+      await reportTaskStep(supabaseService, taskId, 4, "creatingAccount", "Perfil salvo no banco de dados", {
+        profileId: profile.id,
+        facebookId: profile.facebook_id,
+      });
+    }
+
+    // 4. Start background sync (non-blocking) — pass taskId/svcClient so progress is reported
     console.log("Starting staged background sync...");
     // @ts-ignore: EdgeRuntime is available in Supabase Edge Functions
     EdgeRuntime.waitUntil(
-      performFullSync(supabaseUrl, supabaseKey, authHeader, profile.id, accessToken)
+      performFullSync(supabaseUrl, supabaseKey, authHeader, profile.id, accessToken, taskId, supabaseService)
     );
 
     return new Response(
