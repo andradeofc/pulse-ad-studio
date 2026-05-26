@@ -30,30 +30,107 @@ async function fbFetch(url: string, attempts = 3): Promise<any> {
   }
 }
 
-function buildInsightsMap(rows: any[]): Map<string, any> {
-  const m = new Map()
-  for (const row of rows || []) {
-    if (!row?.id) continue
-    const actions = row.actions || []
-    const find = (t: string) => {
-      const a = actions.find((x: any) => x.action_type === t)
-      return a ? parseFloat(a.value) : 0
-    }
-    const purchases = find('purchase') + find('omni_purchase')
-    const linkClicks = find('link_click')
-    m.set(row.id, {
-      spend: parseFloat(row.spend || '0'),
-      reach: parseInt(row.reach || '0'),
-      impressions: parseInt(row.impressions || '0'),
-      clicks: parseInt(row.clicks || '0'),
-      link_clicks: linkClicks,
-      ctr: parseFloat(row.ctr || '0'),
-      cpc: parseFloat(row.cpc || '0'),
-      frequency: parseFloat(row.frequency || '0'),
-      purchases,
-    })
+// Helpers to extract values from FB actions / action_values arrays
+function sumActions(arr: any[] | undefined, types: string[]): number {
+  if (!arr?.length) return 0
+  let total = 0
+  for (const a of arr) {
+    if (types.includes(a.action_type)) total += parseFloat(a.value || '0') || 0
   }
-  return m
+  return total
+}
+// For metrics that have both `purchase` and `omni_purchase`, FB recommends preferring omni_* when present.
+function preferOmni(arr: any[] | undefined, base: string): number {
+  if (!arr?.length) return 0
+  const omni = arr.find((a) => a.action_type === `omni_${base}`)
+  if (omni) return parseFloat(omni.value || '0') || 0
+  const plain = arr.find((a) => a.action_type === base)
+  return plain ? parseFloat(plain.value || '0') || 0 : 0
+}
+
+function buildInsights(r: any) {
+  const actions = r.actions || []
+  const actionValues = r.action_values || []
+  const costPerAction = r.cost_per_action_type || []
+  const outboundClicksArr = r.outbound_clicks || []
+  const costPerOutbound = r.cost_per_outbound_click || []
+  const purchaseRoas = r.purchase_roas || []
+  const websitePurchaseRoas = r.website_purchase_roas || []
+
+  const spend = parseFloat(r.spend || '0') || 0
+  const purchases = preferOmni(actions, 'purchase')
+  const purchaseValue = preferOmni(actionValues, 'purchase')
+
+  const outboundClicks = outboundClicksArr.reduce(
+    (s: number, x: any) => s + (parseFloat(x.value || '0') || 0),
+    0,
+  )
+  const costPerOutboundClick = costPerOutbound[0]
+    ? parseFloat(costPerOutbound[0].value || '0') || 0
+    : 0
+
+  const roas = (() => {
+    const arr = purchaseRoas.length ? purchaseRoas : websitePurchaseRoas
+    if (!arr.length) return purchaseValue && spend ? purchaseValue / spend : 0
+    return parseFloat(arr[0].value || '0') || 0
+  })()
+
+  const leads = preferOmni(actions, 'lead')
+  const addToCart = preferOmni(actions, 'add_to_cart')
+  const initiateCheckout = preferOmni(actions, 'initiated_checkout')
+  const addPaymentInfo = preferOmni(actions, 'add_payment_info')
+  const viewContent = preferOmni(actions, 'view_content')
+  const pageViews =
+    sumActions(actions, ['landing_page_view']) ||
+    sumActions(actions, ['page_view']) ||
+    0
+  const linkClicks = parseFloat(r.inline_link_clicks || '0') || sumActions(actions, ['link_click'])
+  const costPerLink = parseFloat(r.cost_per_inline_link_click || '0') || 0
+  const uniqueClicks = parseFloat(r.unique_clicks || '0') || 0
+
+  const cpaFor = (types: string[]) => {
+    for (const cpa of costPerAction) {
+      if (types.includes(cpa.action_type)) return parseFloat(cpa.value || '0') || 0
+    }
+    return 0
+  }
+
+  return {
+    spend,
+    reach: parseInt(r.reach || '0') || 0,
+    impressions: parseInt(r.impressions || '0') || 0,
+    clicks: parseInt(r.clicks || '0') || 0,
+    ctr: parseFloat(r.ctr || '0') || 0,
+    cpc: parseFloat(r.cpc || '0') || 0,
+    frequency: parseFloat(r.frequency || '0') || 0,
+
+    inline_link_clicks: linkClicks,
+    cost_per_inline_link_click: costPerLink || (linkClicks ? spend / linkClicks : 0),
+    unique_clicks: uniqueClicks,
+    outbound_clicks: outboundClicks,
+    cost_per_outbound_click: costPerOutboundClick || (outboundClicks ? spend / outboundClicks : 0),
+
+    page_views: pageViews,
+    cost_per_page_view: pageViews ? spend / pageViews : 0,
+    view_content: viewContent,
+    cost_per_view_content: cpaFor(['omni_view_content', 'view_content']) || (viewContent ? spend / viewContent : 0),
+    add_to_cart: addToCart,
+    cost_per_add_to_cart: cpaFor(['omni_add_to_cart', 'add_to_cart']) || (addToCart ? spend / addToCart : 0),
+    initiate_checkout: initiateCheckout,
+    cost_per_initiate_checkout:
+      cpaFor(['omni_initiated_checkout', 'initiate_checkout']) ||
+      (initiateCheckout ? spend / initiateCheckout : 0),
+    add_payment_info: addPaymentInfo,
+    cost_per_add_payment_info:
+      cpaFor(['omni_add_payment_info', 'add_payment_info']) ||
+      (addPaymentInfo ? spend / addPaymentInfo : 0),
+    purchases,
+    cost_per_purchase: cpaFor(['omni_purchase', 'purchase']) || (purchases ? spend / purchases : 0),
+    purchase_value: purchaseValue,
+    roas,
+    leads,
+    cost_per_lead: cpaFor(['omni_lead', 'lead']) || (leads ? spend / leads : 0),
+  }
 }
 
 Deno.serve(async (req) => {
@@ -104,19 +181,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Load ad accounts with tokens
     const { data: accounts, error: accErr } = await svc
       .from('facebook_ad_accounts')
       .select('id, account_id, name, currency, timezone, profile_id, facebook_profiles!inner(id, access_token, user_id)')
       .in('id', accountIds)
 
     if (accErr) throw accErr
-
-    // RLS check: only allow accounts owned by the user (or via team)
     const allowedAccounts = (accounts || []).filter((a: any) => a.facebook_profiles?.user_id)
 
     const timeRange = dateFrom && dateTo ? `&time_range=${encodeURIComponent(JSON.stringify({ since: dateFrom, until: dateTo }))}` : ''
-
     const allRows: any[] = []
 
     for (const acc of allowedAccounts) {
@@ -124,9 +197,8 @@ Deno.serve(async (req) => {
       if (!token) continue
       const actId = String(acc.account_id).replace(/^act_/, '')
 
-      // Fetch nodes
       const fields = level === 'campaign'
-        ? 'id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time,updated_time'
+        ? 'id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,start_time,stop_time,created_time,updated_time'
         : level === 'adset'
         ? 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,start_time,end_time,billing_event,optimization_goal,bid_strategy,created_time,updated_time'
         : 'id,name,status,effective_status,campaign_id,adset_id,creative{id,name,thumbnail_url},created_time,updated_time'
@@ -137,54 +209,59 @@ Deno.serve(async (req) => {
       const nodes: any[] = []
       while (nodeUrl) {
         const j: any = await fbFetch(nodeUrl)
-        if (j?.error) {
-          console.warn('FB error', actId, j.error)
-          break
-        }
+        if (j?.error) { console.warn('FB error', actId, j.error); break }
         if (j?.data) nodes.push(...j.data)
         nodeUrl = j?.paging?.next || null
       }
-
       if (!nodes.length) continue
 
-      // Insights via account-level query, filtered by level
-      const insightFields = 'spend,reach,impressions,clicks,ctr,cpc,frequency,actions'
+      const insightFields = [
+        'spend','reach','impressions','clicks','ctr','cpc','frequency',
+        'inline_link_clicks','cost_per_inline_link_click','unique_clicks',
+        'outbound_clicks','cost_per_outbound_click',
+        'actions','action_values','cost_per_action_type',
+        'purchase_roas','website_purchase_roas',
+      ].join(',')
+
       let insightUrl: string | null = `https://graph.facebook.com/${FB_VERSION}/act_${actId}/insights?level=${level}&fields=${insightFields}&limit=500${timeRange}&access_token=${token}`
-      const insightRows: any[] = []
+      const insightMap = new Map<string, any>()
       while (insightUrl) {
         const j: any = await fbFetch(insightUrl)
-        if (j?.error) {
-          console.warn('FB insights error', actId, j.error)
-          break
+        if (j?.error) { console.warn('FB insights error', actId, j.error); break }
+        for (const r of j?.data || []) {
+          const id = r.campaign_id || r.adset_id || r.ad_id
+          if (!id) continue
+          insightMap.set(id, buildInsights(r))
         }
-        if (j?.data) insightRows.push(...j.data.map((r: any) => ({ ...r, id: r.campaign_id || r.adset_id || r.ad_id || r.id })))
         insightUrl = j?.paging?.next || null
       }
-      // Map by id
-      const insightMap = new Map<string, any>()
-      for (const r of insightRows) {
-        const id = r.campaign_id || r.adset_id || r.ad_id
-        if (!id) continue
-        const actions = r.actions || []
-        const find = (t: string) => {
-          const a = actions.find((x: any) => x.action_type === t)
-          return a ? parseFloat(a.value) : 0
+
+      // For campaign level we also need to know if budget is at adset level (ABO).
+      // We do a quick HEAD-like query: count adsets per campaign that have budgets.
+      const adsetBudgetCampaigns = new Set<string>()
+      if (level === 'campaign') {
+        let abUrl: string | null = `https://graph.facebook.com/${FB_VERSION}/act_${actId}/adsets?fields=campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${token}`
+        while (abUrl) {
+          const j: any = await fbFetch(abUrl)
+          if (j?.error) break
+          for (const a of j?.data || []) {
+            if ((a.daily_budget && a.daily_budget !== '0') || (a.lifetime_budget && a.lifetime_budget !== '0')) {
+              if (a.campaign_id) adsetBudgetCampaigns.add(a.campaign_id)
+            }
+          }
+          abUrl = j?.paging?.next || null
         }
-        insightMap.set(id, {
-          spend: parseFloat(r.spend || '0'),
-          reach: parseInt(r.reach || '0'),
-          impressions: parseInt(r.impressions || '0'),
-          clicks: parseInt(r.clicks || '0'),
-          link_clicks: find('link_click'),
-          ctr: parseFloat(r.ctr || '0'),
-          cpc: parseFloat(r.cpc || '0'),
-          frequency: parseFloat(r.frequency || '0'),
-          purchases: find('purchase') + find('omni_purchase'),
-        })
       }
 
       for (const n of nodes) {
         const ins = insightMap.get(n.id) || {}
+        const dailyB = n.daily_budget ? parseFloat(n.daily_budget) / 100 : null
+        const lifeB = n.lifetime_budget ? parseFloat(n.lifetime_budget) / 100 : null
+        const budgetSource =
+          level === 'campaign' && !dailyB && !lifeB && adsetBudgetCampaigns.has(n.id)
+            ? 'adset'
+            : 'self'
+
         allRows.push({
           id: n.id,
           name: n.name,
@@ -193,8 +270,10 @@ Deno.serve(async (req) => {
           objective: n.objective || null,
           campaign_id: n.campaign_id || null,
           adset_id: n.adset_id || null,
-          daily_budget: n.daily_budget ? parseFloat(n.daily_budget) / 100 : null,
-          lifetime_budget: n.lifetime_budget ? parseFloat(n.lifetime_budget) / 100 : null,
+          daily_budget: dailyB,
+          lifetime_budget: lifeB,
+          budget_source: budgetSource,
+          budget_remaining: n.budget_remaining ? parseFloat(n.budget_remaining) / 100 : null,
           start_time: n.start_time || null,
           stop_time: n.stop_time || n.end_time || null,
           created_time: n.created_time || null,
@@ -206,7 +285,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Status filter
     const filtered = statuses.length
       ? allRows.filter((r) => statuses.includes(r.effective_status) || statuses.includes(r.status))
       : allRows
