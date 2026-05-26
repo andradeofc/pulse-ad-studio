@@ -907,15 +907,27 @@ function ManagerLinksDialog({
 }
 
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children, sortDir, onClick }: { children: React.ReactNode; sortDir?: 'asc' | 'desc' | null; onClick?: () => void }) {
+  const active = !!sortDir;
   return (
     <th className="p-3 text-left text-xs font-medium whitespace-nowrap">
-      <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${active ? 'text-foreground' : ''}`}
+      >
         {children}
-        <ArrowUpDown className="w-3 h-3 opacity-40" />
-      </span>
+        {sortDir === 'asc' ? (
+          <ArrowUp className="w-3 h-3 opacity-80" />
+        ) : sortDir === 'desc' ? (
+          <ArrowDown className="w-3 h-3 opacity-80" />
+        ) : (
+          <ArrowUpDown className="w-3 h-3 opacity-40" />
+        )}
+      </button>
     </th>
   );
+}
 }
 
 function PaginationBar({
