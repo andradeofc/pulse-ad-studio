@@ -149,12 +149,43 @@ export default function AdAccountsPage() {
 
   const activeCount = accounts.filter((a) => a.status === 'active').length;
 
-  // Calculate total spend (memoized for performance)
-  const totalSpend = useMemo(() => {
-    return accounts.reduce((sum, acc) => sum + (acc.amount_spent || 0), 0);
+  // Approximate FX rates to BRL (used to consolidate multi-currency totals)
+  const FX_TO_BRL: Record<string, number> = {
+    BRL: 1,
+    USD: 5.20,
+    EUR: 5.65,
+    GBP: 6.60,
+    ARS: 0.0055,
+    MXN: 0.28,
+    CLP: 0.0055,
+    COP: 0.0013,
+    PEN: 1.38,
+  };
+
+  // Aggregate spend by currency + total converted to BRL
+  const { spendByCurrency, totalSpendBRL } = useMemo(() => {
+    const byCurr: Record<string, number> = {};
+    for (const acc of accounts) {
+      const v = acc.amount_spent || 0;
+      if (!v) continue;
+      const curr = acc.currency || 'BRL';
+      byCurr[curr] = (byCurr[curr] || 0) + v;
+    }
+    const totalBRL = Object.entries(byCurr).reduce(
+      (sum, [curr, val]) => sum + val * (FX_TO_BRL[curr] ?? 1),
+      0
+    );
+    return { spendByCurrency: byCurr, totalSpendBRL: totalBRL };
   }, [accounts]);
 
-  // Format currency
+  // Breakdown entries (BRL first, others alphabetical)
+  const spendBreakdown = useMemo(() => {
+    const entries = Object.entries(spendByCurrency).filter(([, v]) => v > 0);
+    entries.sort(([a], [b]) => (a === 'BRL' ? -1 : b === 'BRL' ? 1 : a.localeCompare(b)));
+    return entries;
+  }, [spendByCurrency]);
+
+  // Format currency (with decimals - used in table rows)
   const formatCurrency = (value: number | null, currency: string | null) => {
     if (value === null || value === 0) return '-';
     const curr = currency || 'BRL';
@@ -164,6 +195,20 @@ export default function AdAccountsPage() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
+  };
+
+  // Compact format (no decimals) for the headline + breakdown
+  const formatCurrencyCompact = (value: number, currency: string) => {
+    try {
+      return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(value);
+    } catch {
+      return `${currency} ${Math.round(value).toLocaleString('pt-BR')}`;
+    }
   };
 
   return (
