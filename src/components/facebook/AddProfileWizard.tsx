@@ -840,6 +840,17 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
               </Button>
             </>
           )}
+          {currentStep === 3 && (task?.status === 'pending' || task?.status === 'running') && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                onComplete?.();
+              }}
+            >
+              Fechar e continuar em segundo plano
+            </Button>
+          )}
           {currentStep === 3 && task?.status === 'completed' && (
             <Button onClick={() => onOpenChange(false)} className="glow-primary">
               Concluir
