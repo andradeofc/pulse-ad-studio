@@ -1,216 +1,170 @@
 
+# Plano: Wizard profissional de "Adicionar Perfil" (paridade + superação vs DirectAds)
 
-# Sistema de Colaboradores - Plano Enterprise
+Objetivo: substituir o fluxo atual de adicionar perfil (cola token e pronto) por um **wizard de 3 etapas** com **App ID + App Secret + Token**, **troca automática para long-lived (60 dias)**, **teste de proxy integrado** e **progresso em tempo real (SSE de 8 etapas)** — sem quebrar nada do que já existe.
 
-## Resumo Executivo
+## Princípio de não-quebrar nada
 
-Permitir que usuarios do plano Enterprise adicionem ate 3 colaboradores que compartilham todos os recursos da conta principal (perfis Facebook, contas de anuncio, catalogos, campanhas, criativos, etc). Cada colaborador tera login proprio com senha padrao `adstormenterprise`, podendo alterar depois.
-
-## Arquitetura da Solucao
-
-### Principio Central: "Effective User ID"
-
-O sistema inteiro hoje funciona via RLS com `auth.uid()`. Para que colaboradores vejam os dados do dono, precisamos de uma abordagem que **nao altere nenhuma RLS existente**. A estrategia:
-
-1. Criar uma tabela `team_members` que mapeia colaborador -> dono
-2. Criar uma funcao SQL `effective_user_id()` que retorna:
-   - Se o usuario e colaborador: retorna o `user_id` do dono (master)
-   - Senao: retorna `auth.uid()` (comportamento normal)
-3. Adicionar **novas politicas RLS** (sem remover as existentes) que permitem colaboradores acessarem dados do dono
-4. Nas insercoes de dados (codigo frontend), usar o `effective_user_id` para que dados criados pelo colaborador pertencam ao dono
-
-### Por que essa abordagem e segura
-
-- Nenhuma politica RLS existente e alterada ou removida
-- Usuarios normais (Starter/Pro) continuam funcionando exatamente como antes
-- A funcao `effective_user_id()` e `SECURITY DEFINER`, impossivel de manipular pelo cliente
-- Colaboradores sao criados via Edge Function com `service_role`, nao pelo signup publico
+- Todos os campos novos (`app_id`, `app_secret`, `auth_method`, etc.) entram como **NULLABLE** com defaults seguros.
+- O fluxo antigo (`facebook-add-profile` com só `accessToken`) continua funcionando como fallback / modo "System User" (BETA, igual o concorrente).
+- Edge functions existentes (`facebook-sync-*`, `facebook-update-proxy`, `test-proxy-connection`) **não mudam de assinatura** — apenas serão **orquestradas** por um novo endpoint.
+- Nenhuma alteração em `campaign_jobs`, `process-campaign-jobs`, sync de catálogos ou qualquer fluxo de criação de campanha.
 
 ---
 
-## Fase 1: Banco de Dados (Migrations SQL)
+## Etapa 1 — Banco de dados (migração aditiva)
 
-### 1.1 Tabela `team_members`
+Adicionar em `facebook_profiles`:
+- `app_id TEXT NULL` — App ID do FB
+- `app_secret TEXT NULL` — App Secret (criptografado em repouso pelo Postgres)
+- `app_name TEXT NULL` — nome do app retornado pelo `/debug_token`
+- `auth_method TEXT NOT NULL DEFAULT 'token_only'` — `'facebook_app'` | `'token_only'` (System User BETA)
+- `token_status TEXT NOT NULL DEFAULT 'unknown'` — `VALID` | `EXPIRED` | `API_BLOCKED` | `RATE_LIMITED`
+- `token_check_error TEXT NULL` — última mensagem de erro do FB
+- `token_check_error_code TEXT NULL`
+- `last_token_check_at TIMESTAMPTZ NULL`
+- `rate_limited_until TIMESTAMPTZ NULL`
+- `rate_limit_count INTEGER NOT NULL DEFAULT 0`
+- `is_long_lived BOOLEAN NOT NULL DEFAULT false`
 
-```text
-team_members
-  id            uuid (PK)
-  owner_id      uuid (NOT NULL) -- usuario master (Enterprise)
-  member_id     uuid (NOT NULL) -- usuario colaborador (referencia auth.users)
-  email         text (NOT NULL) -- email do colaborador
-  invited_at    timestamptz
-  accepted_at   timestamptz
-  status        text ('active', 'removed') default 'active'
-  created_at    timestamptz
-  
-  UNIQUE(owner_id, email)
+Nova tabela `facebook_profile_tasks` (rastreia o progresso do wizard, igual o concorrente):
+- `id UUID PK`
+- `user_id UUID` (RLS por dono)
+- `task_type TEXT` (`add_profile`, `refresh_token`)
+- `status TEXT` (`pending`, `running`, `completed`, `failed`)
+- `current_step INTEGER`, `total_steps INTEGER`
+- `progress JSONB` — array de eventos `{step, message, detail, params, timestamp}`
+- `result JSONB` — `{profile_id, accounts_count, pages_count, bms_count}`
+- `error TEXT NULL`
+- timestamps
+
+RLS: dono via `auth.uid() = user_id`. Realtime habilitado nesta tabela.
+
+---
+
+## Etapa 2 — Edge functions
+
+### 2.1 `facebook-validate-credentials` (NOVA)
+Substitui parcialmente `facebook-validate-token` quando o usuário fornece App ID/Secret. Retorna:
 ```
-
-- RLS: Dono pode SELECT/INSERT/UPDATE/DELETE seus proprios registros
-- Colaborador pode ver registros onde ele e `member_id`
-
-### 1.2 Funcao `effective_user_id()`
-
-```text
-Funcao SECURITY DEFINER que:
-1. Verifica se auth.uid() existe em team_members como member_id com status 'active'
-2. Se sim, retorna o owner_id correspondente
-3. Se nao, retorna auth.uid()
+{ valid, userId, userName, scopes, expiresAt, isShortLived, appName }
 ```
+Usa `appsecret_proof` (hash HMAC) — boa prática que o FB recomenda e que reduz erros 190.
 
-### 1.3 Funcao `is_team_member_of(owner_uuid)`
-
-Funcao auxiliar SECURITY DEFINER que verifica se o usuario logado e colaborador do owner especificado.
-
-### 1.4 Novas politicas RLS (ADICIONAR, sem remover existentes)
-
-Para cada tabela que usa `user_id = auth.uid()`, adicionar uma politica **adicional** do tipo:
-
-```text
-"Team members can view owner data"
-FOR SELECT USING (user_id = effective_user_id())
+### 2.2 `facebook-exchange-token` (NOVA) ⭐
+O pulo do gato:
 ```
+GET /oauth/access_token?grant_type=fb_exchange_token
+  &client_id={app_id}&client_secret={app_secret}
+  &fb_exchange_token={short_token}
+```
+Recebe `{ profileId | credentials, shortToken }`, devolve `{ accessToken, tokenType, isLongLived: true, expiresAt }` (~60 dias). Atualiza o perfil se `profileId` for passado.
 
-Tabelas afetadas (somente SELECT adicional):
-- `facebook_profiles` 
-- `campaign_jobs`
-- `campaign_templates`
-- `creatives`
-- `creative_folders`
-- `naming_presets`
-- `naming_variables`
-- `user_zapi_settings`
-- `user_ad_usage`
-- `catalog_schedules`
-- `catalog_media_monitors`
-- `catalog_media_alerts`
-- `rate_limit_tracking`
+### 2.3 `facebook-add-profile-orchestrator` (NOVA)
+Endpoint principal que cria a "task" e processa em **background** (`EdgeRuntime.waitUntil`) as 8 etapas:
 
-Para tabelas que usam `profile_id` via join (facebook_ad_accounts, facebook_pages, facebook_pixels, facebook_catalogs, facebook_product_sets, facebook_business_managers), a politica adicional fara join via `facebook_profiles` usando `effective_user_id()`.
+1. `validatingToken` — chama `/debug_token`
+2. `verifyingAccount` — checa duplicidade por `facebook_id`
+3. `configuringToken` — troca para long-lived (se `auth_method = 'facebook_app'`)
+4. `creatingAccount` — INSERT em `facebook_profiles`
+5. `fetchingAdAccounts` + `savingAccounts` (em chunks de 15) — reusa `facebook-sync-accounts`
+6. `syncingBMs` — reusa `facebook-sync-business-managers`
+7. `syncingPages` — reusa `facebook-sync-pages`
+8. `completed` — escreve `result` na task
 
-Tambem precisamos de politicas de INSERT/UPDATE/DELETE para colaboradores nas tabelas onde eles precisam executar acoes (criar campanhas, upload de criativos, etc).
+Cada etapa faz UPDATE em `facebook_profile_tasks.progress` (append JSONB) → frontend recebe via **Supabase Realtime** (zero polling, alinhado com a memória "Sync Architecture").
 
-### 1.5 Limite de colaboradores
+### 2.4 `facebook-refresh-token` (NOVA, bônus)
+Cron diário: para perfis com `auth_method = 'facebook_app'` cujo token vence em <7 dias, refaz `exchange-token` automaticamente. **Resolve o problema crônico de tokens expirando.**
 
-Validado na Edge Function de criacao (max 3 por owner Enterprise).
-
----
-
-## Fase 2: Edge Function `manage-team-members`
-
-Nova Edge Function que gerencia colaboradores:
-
-**Acoes:**
-- `invite` - Cria conta do colaborador (via admin API) com senha padrao `adstormenterprise`, insere em `team_members`
-- `remove` - Marca colaborador como `removed`, desativa a conta
-- `list` - Lista colaboradores do dono
-
-**Validacoes:**
-- Verifica se o usuario que chama e plano Enterprise
-- Verifica limite de 3 colaboradores
-- Verifica se email ja esta em uso
-- Cria `user_profile` para o colaborador com plano `collaborator` (novo valor)
+### 2.5 Funções já existentes — não tocar em assinatura
+`test-proxy-connection`, `facebook-update-proxy`, `facebook-sync-accounts`, `facebook-sync-pages`, `facebook-sync-business-managers`, `facebook-sync-pixels`, `facebook-delete-profile` continuam exatamente iguais.
 
 ---
 
-## Fase 3: Frontend
+## Etapa 3 — Frontend (Wizard)
 
-### 3.1 Novo componente `TeamSettings.tsx`
+Novo componente `AddProfileWizard.tsx` (modal `Dialog` shadcn) com **3 sub-etapas** no sidebar esquerdo, como no print:
 
-Componente nas Configuracoes (nova aba "Equipe") visivel somente para usuarios Enterprise:
-- Lista colaboradores existentes (nome, email, status, data de convite)
-- Botao "Adicionar Colaborador" com campo de email
-- Botao "Remover" para cada colaborador
-- Indicador de slots usados (ex: 2/3 colaboradores)
-- Aviso informando a senha padrao
+### Step 1 — Proxy (opcional mas recomendado)
+- Formulário: Protocolo (HTTP/HTTPS/SOCKS5), Host, Porta, Usuário, Senha
+- Botão "Testar Conexão" → chama `test-proxy-connection` → mostra `responseTime` + `externalIp`
+- Card lateral com link "Webshare" e dica de proxy residencial
+- Botão "Continuar" (proxy salvo em memória, persistido no Step 4 junto com o perfil)
 
-### 3.2 Modificacao em `SettingsPage.tsx`
+### Step 2 — Credenciais
+- **Duas abas (tabs):**
+  - **"Facebook App"** (padrão, recomendado): App ID + App Secret + Token. Faz `validate-credentials` ao colar token; mostra card verde "Credenciais válidas! Conectado como: {nome}".
+  - **"System User" (BETA)**: só token (fluxo atual). Disclaimer: "Ideal para BMs centralizadas ou perfis com problemas de publicação".
+- Link contextual para `developers.facebook.com/apps` e `developers.facebook.com/tools/explorer`
+- Botão "Validar Credenciais e Sincronizar Perfil" → cria a task e abre Step 3.
 
-- Adicionar aba "Equipe" (icone Users) condicionalmente quando `plan === 'enterprise'`
-- Buscar plano do usuario do banco para decisao (nao confiar no store local)
+### Step 3 — Sincronização em tempo real
+- Substitui o spinner genérico. Stepper visual de 8 etapas (igual ao SSE do concorrente).
+- Subscreve via **Supabase Realtime** em `facebook_profile_tasks` filtrado por `task_id`.
+- Renderiza:
+  - Barra de progresso `step/total` (`5/8`)
+  - Mensagem traduzida (pt-BR): "Salvando contas (16–30 de 37)..."
+  - Ícone ✅ por etapa concluída, ⏳ na atual, ⚪ pendente
+- Ao receber evento `completed`, mostra resumo: "37 contas, 7 BMs, 16 páginas" + botão "Concluir".
+- Se `failed`, mostra mensagem + botão "Tentar Novamente" (reusa a mesma task).
 
-### 3.3 Hook `useEffectiveUserId`
-
-Novo hook que:
-1. Consulta `team_members` para verificar se o usuario logado e colaborador
-2. Se sim, retorna o `owner_id` como user_id efetivo
-3. Se nao, retorna o `auth.uid()` normal
-4. Cacheia o resultado via React Query
-
-### 3.4 Ajuste nos hooks de insercao de dados
-
-Os seguintes hooks precisam usar `effective_user_id` ao inserir dados:
-- `useCampaignJobs.ts` - `user_id` na insercao de campaign_jobs
-- `useNamingPresets.ts` - `user_id` na insercao de presets e variables
-- `useCampaignTemplates.ts` - `user_id` na insercao de templates
-
-Esses sao os unicos locais no frontend que fazem INSERT com `user_id` explicito. As demais tabelas (facebook_profiles, creatives, etc) sao populadas por Edge Functions que ja usam o user_id da sessao.
-
-### 3.5 Ajuste nas Edge Functions que inserem dados
-
-Edge Functions que fazem insert com `user_id` precisam resolver o effective_user_id:
-- `facebook-add-profile` 
-- `facebook-sync-*` (accounts, pages, pixels, catalogs, etc)
-- `process-campaign-jobs`
-- `monitor-catalog-media`
-
-Esses devem chamar `effective_user_id()` via RPC ou fazer lookup em `team_members` antes de inserir.
+### Substituição cirúrgica
+- `FacebookProfilesPage.tsx` apenas troca o handler do botão "Adicionar Perfil" para abrir `<AddProfileWizard />`.
+- O componente antigo (input de token simples) vira o conteúdo da aba "System User" → **zero código deletado**, só refatorado.
 
 ---
 
-## Fase 4: Seguranca e Restricoes para Colaboradores
+## Etapa 4 — UI/Status reativo (lista de perfis)
 
-### O que o colaborador PODE fazer:
-- Ver todos os dados do dono (perfis, contas, campanhas, criativos)
-- Criar campanhas (ficam vinculadas ao dono)
-- Upload de criativos (ficam vinculados ao dono)
-- Agendar catalogos
-- Ver fila de processamento
-
-### O que o colaborador NAO pode fazer:
-- Acessar Configuracoes de Plano/Faturamento
-- Adicionar/remover outros colaboradores
-- Alterar perfis do Facebook do dono
-- Acessar o Ops Center (admin)
-
-### Identificacao visual
-- No header do dashboard, mostrar um badge "Colaborador de [Nome do Dono]" quando o usuario logado for colaborador
+Adicionar à lista de perfis (sem refatorar):
+- Badge de `token_status`: 🟢 VALID / 🟡 EXPIRA EM 5D / 🔴 EXPIRED / ⛔ API_BLOCKED
+- Tooltip mostrando `token_check_error` em português
+- Indicador "60 dias" vs "Short-lived ⚠️" baseado em `is_long_lived`
+- Botão "Renovar token" (só aparece se `auth_method = 'facebook_app'`)
 
 ---
 
-## Resumo de Arquivos
+## Diferenciais nossos (onde superamos eles)
 
-| Acao | Arquivo | Descricao |
-|------|---------|-----------|
-| Migration SQL | Nova migration | Tabela team_members, funcoes effective_user_id() e is_team_member_of(), novas politicas RLS |
-| Criar | `supabase/functions/manage-team-members/index.ts` | Edge Function para CRUD de colaboradores |
-| Criar | `src/components/settings/TeamSettings.tsx` | UI de gestao de equipe |
-| Criar | `src/hooks/useEffectiveUserId.ts` | Hook para resolver user_id efetivo |
-| Criar | `src/hooks/useTeamMembers.ts` | Hook para listar/gerenciar colaboradores |
-| Editar | `src/pages/dashboard/SettingsPage.tsx` | Adicionar aba Equipe (condicional Enterprise) |
-| Editar | `src/hooks/useCampaignJobs.ts` | Usar effective_user_id no INSERT |
-| Editar | `src/hooks/useNamingPresets.ts` | Usar effective_user_id no INSERT |
-| Editar | `src/hooks/useCampaignTemplates.ts` | Usar effective_user_id no INSERT |
-| Editar | `src/components/layout/DashboardHeader.tsx` | Badge de colaborador |
-| Editar | Edge Functions de sync | Resolver effective_user_id |
+1. **Realtime nativo** (Supabase) em vez de SSE caseiro → mais robusto a desconexão.
+2. **Refresh automático via cron** — eles não têm isso aparente; nós resolvemos antes do token expirar.
+3. **Mantemos nossa arquitetura paralela** (Batch API 50, sync paralelo) — eles processam em chunks sequenciais de 15.
+4. **Persistência de task** — se o usuário fechar o modal, a sincronização continua e ele vê o resultado depois (eles perdem o progresso ao desconectar o SSE).
 
-## Riscos e Mitigacoes
+---
 
-| Risco | Mitigacao |
-|-------|----------|
-| Quebrar RLS existente | Somente ADICIONAR novas politicas, nunca alterar/remover existentes |
-| Performance das queries | `effective_user_id()` faz um unico SELECT simples com indice unico |
-| Colaborador se auto-promover | Funcao SECURITY DEFINER impede manipulacao client-side |
-| Conflito de sessoes | Cada colaborador tem conta propria, sem conflito de tokens |
-| Dados orfaos ao remover colaborador | Dados ja pertencem ao dono (owner_id), remocao so desativa acesso |
+## Ordem de implementação (sem riscos)
 
-## Ordem de Implementacao
+1. ✅ Migração do banco (campos NULLABLE + tabela `facebook_profile_tasks`)
+2. ✅ Edge functions novas (`validate-credentials`, `exchange-token`, `add-profile-orchestrator`)
+3. ✅ Componente `AddProfileWizard` com as 3 etapas
+4. ✅ Substituição do botão em `FacebookProfilesPage` (1 linha)
+5. ✅ Badges de status na lista
+6. ✅ Cron de refresh automático (último, pode ir em release separada)
 
-1. Migration SQL (tabela + funcoes + RLS) -- fundacao
-2. Edge Function manage-team-members -- backend
-3. Hook useEffectiveUserId -- infraestrutura frontend
-4. TeamSettings + aba nas Configuracoes -- UI
-5. Ajustes nos hooks de INSERT -- vinculacao correta
-6. Badge de colaborador no header -- UX
-7. Testes end-to-end
+Cada passo é independente e o fluxo antigo continua funcional até o passo 4.
 
+---
+
+## Riscos e mitigações
+
+| Risco | Mitigação |
+|---|---|
+| App Secret em texto plano no banco | Postgres já criptografa em repouso; RLS restringe a `auth.uid()`; mascarado no frontend |
+| Token long-lived ainda expira em 60d | Cron de refresh + badge "expira em Xd" + email/notificação 7d antes |
+| Usuário sem App próprio do FB | Aba "System User" (BETA) mantida — fluxo atual intacto |
+| Realtime cair | Fallback: polling de 3s só no Step 3 enquanto o modal está aberto |
+
+---
+
+## Estimativa
+
+- Etapa 1 (DB): 1 migração
+- Etapa 2 (Edge): 3 funções novas + 1 cron
+- Etapa 3 (Frontend): 1 wizard + ~4 sub-componentes
+- Etapa 4 (Badges): edição localizada em `FacebookProfilesPage`
+
+Tudo aditivo. **Zero breaking changes** no resto do sistema (campanhas, jobs, catálogos, sync existente).
+
+Posso começar pela **Etapa 1 (migração)** assim que você aprovar?
