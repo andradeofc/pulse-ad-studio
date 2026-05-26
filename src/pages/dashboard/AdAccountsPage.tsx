@@ -94,6 +94,13 @@ export default function AdAccountsPage() {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  type SortKey = 'name' | 'account_id' | 'nickname' | 'status' | 'currency' | 'timezone' | 'amount_spent' | 'spend_updated_at';
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
 
   // Nickname editing state
   const [editingNicknameId, setEditingNicknameId] = useState<string | null>(null);
