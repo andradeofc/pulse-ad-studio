@@ -277,6 +277,19 @@ export default function CampaignManagerPage() {
     setPage(0);
   }, [filtered.length, level, accountIds, datePreset, statuses]);
 
+  const [counts, setCounts] = useState<{ campaign?: number; adset?: number; ad?: number }>({});
+
+  useEffect(() => {
+    if (data?.rows) {
+      setCounts((prev) => ({ ...prev, [level]: data.rows.length }));
+    }
+  }, [data, level]);
+
+  // Reset counts when filters that affect data change
+  useEffect(() => {
+    setCounts({});
+  }, [accountIds, datePreset, dateRange.from, dateRange.to, statuses]);
+
   return (
     <div className="p-6 space-y-4">
       <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between">
@@ -287,7 +300,7 @@ export default function CampaignManagerPage() {
           <div>
             <h1 className="text-xl font-semibold">Campanhas</h1>
             <p className="text-sm text-muted-foreground">
-              {rows.length} {level === 'campaign' ? 'campanhas' : level === 'adset' ? 'conjuntos' : 'anúncios'}
+              {counts.campaign ?? 0} campanhas • {counts.adset ?? 0} conjuntos • {counts.ad ?? 0} anúncios
             </p>
           </div>
         </div>
@@ -313,6 +326,7 @@ export default function CampaignManagerPage() {
         <div className="min-w-[260px]">
           <AdAccountSelector
             multiSelect
+            hideCount
             selectedAccounts={accountIds}
             onSelectionChange={setAccountIds}
           />
