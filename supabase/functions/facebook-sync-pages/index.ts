@@ -374,6 +374,8 @@ Deno.serve(async (req) => {
           business_name: p.business_name,
           ads_running: p.ads_running,
           ads_limit: p.ads_limit,
+          source: "api",
+
         }));
 
         // Batch upsert
