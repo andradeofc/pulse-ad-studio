@@ -73,6 +73,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FanpagePoolsView } from '@/components/facebook/FanpagePoolsView';
+import { BulkPoolsButton } from '@/components/facebook/BulkPoolsButton';
+
+import {
+  fetchPools,
+  createPool,
+  addPagesToPool,
+  removePageFromPool,
+  PoolWithPages,
+} from '@/services/fanpagePoolsService';
+import { Ban, ShieldCheck, Layers } from 'lucide-react';
+
 
 
 
@@ -92,9 +103,13 @@ interface FacebookPage {
   ads_limit: number;
   tasks: string[] | null;
   source: 'api' | 'extension';
+  is_blacklisted: boolean;
+  blacklist_reason: string | null;
+  blacklisted_at: string | null;
   created_at: string;
   profile_name?: string;
 }
+
 
 
 type SortKey = 'name' | 'slots' | 'category' | 'access_type' | 'origin_access';
@@ -120,10 +135,23 @@ export default function FacebookPagesPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'pools'>('all');
 
 
-  // Pools (local, em breve persistência no backend)
-  const [pageIdToPools, setPageIdToPools] = useState<Record<string, string[]>>({});
+  // Pools (real, vindo do banco)
+  const [pools, setPools] = useState<PoolWithPages[]>([]);
   const [poolDialogPage, setPoolDialogPage] = useState<FacebookPage | null>(null);
   const [newPoolName, setNewPoolName] = useState('');
+
+  // Derivado: page_id -> nomes dos pools
+  const pageIdToPools = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const pool of pools) {
+      for (const pp of pool.pages) {
+        if (!map[pp.page_id]) map[pp.page_id] = [];
+        map[pp.page_id].push(pool.name);
+      }
+    }
+    return map;
+  }, [pools]);
+
 
 
   // Column visibility
@@ -183,9 +211,93 @@ export default function FacebookPagesPage() {
     }
   }, []);
 
+  const loadPools = useCallback(async () => {
+    try {
+      setPools(await fetchPools());
+    } catch (e) {
+      console.error('Error loading pools:', e);
+    }
+  }, []);
+
   useEffect(() => {
-    if (isAuthenticated) loadPages();
-  }, [isAuthenticated, loadPages]);
+    if (isAuthenticated) {
+      loadPages();
+      loadPools();
+    }
+  }, [isAuthenticated, loadPages, loadPools]);
+
+  const handleBulkBlacklist = async (blacklist: boolean) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const payload = blacklist
+        ? { is_blacklisted: true, blacklist_reason: 'Manual bulk blacklist', blacklisted_at: new Date().toISOString() }
+        : { is_blacklisted: false, blacklist_reason: null, blacklisted_at: null };
+      const { error } = await supabase
+        .from('facebook_pages')
+        .update(payload)
+        .in('id', Array.from(selectedIds));
+      if (error) throw error;
+      toast.success(blacklist
+        ? `${selectedIds.size} página(s) adicionada(s) à blacklist`
+        : `${selectedIds.size} página(s) removida(s) da blacklist`);
+      setSelectedIds(new Set());
+      await loadPages();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao atualizar blacklist');
+    }
+  };
+
+  const handleBulkAddToPool = async (poolId: string) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const items = pages
+        .filter((p) => selectedIds.has(p.id))
+        .map((p) => ({ page_id: p.page_id, profile_id: p.profile_id }));
+      await addPagesToPool(poolId, items);
+      toast.success(`${items.length} página(s) adicionada(s) ao pool`);
+      await loadPools();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao adicionar ao pool');
+    }
+  };
+
+  const handleBulkRemoveFromPool = async (poolId: string) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const pageIds = pages.filter((p) => selectedIds.has(p.id)).map((p) => p.page_id);
+      const { error } = await supabase
+        .from('fanpage_pool_pages')
+        .delete()
+        .eq('pool_id', poolId)
+        .in('page_id', pageIds);
+      if (error) throw error;
+      toast.success('Páginas removidas do pool');
+      await loadPools();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao remover do pool');
+    }
+  };
+
+  const handleCreatePoolFromSelection = async (name: string) => {
+    if (!name.trim() || selectedIds.size === 0) return;
+    try {
+      const created = await createPool(name.trim(), '#10b981');
+      const items = pages
+        .filter((p) => selectedIds.has(p.id))
+        .map((p) => ({ page_id: p.page_id, profile_id: p.profile_id }));
+      await addPagesToPool(created.id, items);
+      toast.success(`Pool "${name}" criado com ${items.length} página(s)`);
+      await loadPools();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao criar pool');
+    }
+  };
+
+
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -251,11 +363,13 @@ export default function FacebookPagesPage() {
   };
 
   const getStatus = (p: FacebookPage) => {
+    if (p.is_blacklisted) return { label: 'Em blacklist', tone: 'destructive' as const, Icon: Ban };
     const pct = p.ads_limit > 0 ? (p.ads_running / p.ads_limit) * 100 : 0;
     if (pct >= 100) return { label: 'Limite atingido', tone: 'destructive' as const, Icon: XCircle };
     if (pct >= 80) return { label: 'Atenção', tone: 'warning' as const, Icon: AlertTriangle };
     return { label: 'Sem problemas', tone: 'success' as const, Icon: CheckCircle2 };
   };
+
 
   const getAccessType = (p: FacebookPage) =>
     p.business_id ? { label: 'Business', color: 'bg-ads-info/10 text-ads-info border-ads-info/30' }
@@ -278,7 +392,9 @@ export default function FacebookPagesPage() {
         if (statusFilter === 'ok' && s !== 'Sem problemas') return false;
         if (statusFilter === 'warn' && s !== 'Atenção') return false;
         if (statusFilter === 'block' && s !== 'Limite atingido') return false;
+        if (statusFilter === 'blacklist' && !p.is_blacklisted) return false;
       }
+
       if (accessFilter !== 'all') {
         const at = getAccessType(p).label.toLowerCase();
         if (at !== accessFilter) return false;
@@ -533,7 +649,9 @@ export default function FacebookPagesPage() {
                 <SelectItem value="ok">Sem problemas</SelectItem>
                 <SelectItem value="warn">Atenção</SelectItem>
                 <SelectItem value="block">Limite atingido</SelectItem>
+                <SelectItem value="blacklist">Em blacklist</SelectItem>
               </SelectContent>
+
             </Select>
 
             <Select value={originFilter} onValueChange={setOriginFilter}>
@@ -557,7 +675,39 @@ export default function FacebookPagesPage() {
                 <SelectItem value="business">Business</SelectItem>
               </SelectContent>
             </Select>
+
+            {selectedIds.size > 0 && (
+              <>
+                <BulkPoolsButton
+                  selectedCount={selectedIds.size}
+                  pools={pools}
+                  selectedPageIds={pages.filter(p => selectedIds.has(p.id)).map(p => p.page_id)}
+                  onAdd={handleBulkAddToPool}
+                  onRemove={handleBulkRemoveFromPool}
+                  onCreate={handleCreatePoolFromSelection}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkBlacklist(true)}
+                  className="h-9 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Ban className="w-4 h-4 mr-1.5" />
+                  Blacklist
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkBlacklist(false)}
+                  className="h-9 border-ads-success/30 text-ads-success hover:bg-ads-success/10 hover:text-ads-success"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-1.5" />
+                  Remover Blacklist
+                </Button>
+              </>
+            )}
           </div>
+
 
           <div className="lg:ml-auto relative w-full lg:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1003,12 +1153,17 @@ export default function FacebookPagesPage() {
                     <Badge key={pool} variant="outline" className="font-normal gap-1 bg-primary/10 text-primary border-primary/30">
                       {pool}
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (!poolDialogPage) return;
-                          setPageIdToPools((prev) => ({
-                            ...prev,
-                            [poolDialogPage.page_id]: (prev[poolDialogPage.page_id] || []).filter((x) => x !== pool),
-                          }));
+                          const target = pools.find((p) => p.name === pool);
+                          if (!target) return;
+                          try {
+                            await removePageFromPool(target.id, poolDialogPage.page_id);
+                            await loadPools();
+                          } catch (e) {
+                            console.error(e);
+                            toast.error('Erro ao remover');
+                          }
                         }}
                         className="hover:opacity-70"
                       >
@@ -1025,36 +1180,34 @@ export default function FacebookPagesPage() {
                 placeholder="Ex: Emagrecimento, Disfunção..."
                 value={newPoolName}
                 onChange={(e) => setNewPoolName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (!poolDialogPage || !newPoolName.trim()) return;
-                    const name = newPoolName.trim();
-                    setPageIdToPools((prev) => {
-                      const cur = prev[poolDialogPage.page_id] || [];
-                      if (cur.includes(name)) return prev;
-                      return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
-                    });
-                    setNewPoolName('');
-                  }
-                }}
               />
               <Button
                 size="icon"
-                onClick={() => {
+                onClick={async () => {
                   if (!poolDialogPage || !newPoolName.trim()) return;
                   const name = newPoolName.trim();
-                  setPageIdToPools((prev) => {
-                    const cur = prev[poolDialogPage.page_id] || [];
-                    if (cur.includes(name)) return prev;
-                    return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
-                  });
-                  setNewPoolName('');
+                  try {
+                    let pool = pools.find((p) => p.name.toLowerCase() === name.toLowerCase());
+                    if (!pool) {
+                      const created = await createPool(name, '#10b981');
+                      pool = { ...created, pages: [] };
+                    }
+                    await addPagesToPool(pool.id, [{
+                      page_id: poolDialogPage.page_id,
+                      profile_id: poolDialogPage.profile_id,
+                    }]);
+                    setNewPoolName('');
+                    await loadPools();
+                  } catch (e) {
+                    console.error(e);
+                    toast.error('Erro ao adicionar ao pool');
+                  }
                 }}
               >
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
+
           </div>
 
           <DialogFooter>
