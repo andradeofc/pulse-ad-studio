@@ -29,6 +29,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -77,12 +84,10 @@ function formatDateLabel(presetId: string, range: { from: Date; to: Date }) {
 function StatusFilter({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const allSelected = value.length === 0 || value.length === STATUS_OPTIONS.length;
   const labelCount = allSelected ? 'Todos os Status' : `${value.length} Status`;
-
   const toggle = (v: string) => {
     if (value.includes(v)) onChange(value.filter((x) => x !== v));
     else onChange([...value, v]);
   };
-
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -98,29 +103,17 @@ function StatusFilter({ value, onChange }: { value: string[]; onChange: (v: stri
         <div className="flex items-center justify-between mb-3 text-sm">
           <span className="font-medium">Filtrar por status</span>
           <div className="flex items-center gap-2 text-xs">
-            <button
-              type="button"
-              className="text-primary hover:underline"
-              onClick={() => onChange(STATUS_OPTIONS.map((s) => s.value))}
-            >
+            <button type="button" className="text-primary hover:underline" onClick={() => onChange(STATUS_OPTIONS.map((s) => s.value))}>
               Selecionar todos
             </button>
             <span className="text-muted-foreground">·</span>
-            <button type="button" className="text-primary hover:underline" onClick={() => onChange([])}>
-              Limpar
-            </button>
+            <button type="button" className="text-primary hover:underline" onClick={() => onChange([])}>Limpar</button>
           </div>
         </div>
         <div className="space-y-1.5">
           {STATUS_OPTIONS.map((s) => (
-            <label
-              key={s.value}
-              className="flex items-center gap-2.5 text-sm py-1.5 cursor-pointer hover:bg-accent/40 rounded px-1"
-            >
-              <Checkbox
-                checked={value.length === 0 ? true : value.includes(s.value)}
-                onCheckedChange={() => toggle(s.value)}
-              />
+            <label key={s.value} className="flex items-center gap-2.5 text-sm py-1.5 cursor-pointer hover:bg-accent/40 rounded px-1">
+              <Checkbox checked={value.length === 0 ? true : value.includes(s.value)} onCheckedChange={() => toggle(s.value)} />
               <span className={cn('w-2.5 h-2.5 rounded-full border-2', s.dot)} />
               <span>{s.label}</span>
             </label>
@@ -132,14 +125,8 @@ function StatusFilter({ value, onChange }: { value: string[]; onChange: (v: stri
 }
 
 function DateRangeFilter({
-  preset,
-  range,
-  onChange,
-}: {
-  preset: string;
-  range: { from: Date; to: Date };
-  onChange: (preset: string, range: { from: Date; to: Date }) => void;
-}) {
+  preset, range, onChange,
+}: { preset: string; range: { from: Date; to: Date }; onChange: (preset: string, range: { from: Date; to: Date }) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -158,10 +145,7 @@ function DateRangeFilter({
                 key={p.id}
                 variant={preset === p.id ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => {
-                  onChange(p.id, p.range());
-                  setOpen(false);
-                }}
+                onClick={() => { onChange(p.id, p.range()); setOpen(false); }}
               >
                 {p.label}
               </Button>
@@ -173,11 +157,7 @@ function DateRangeFilter({
           <Calendar
             mode="range"
             selected={{ from: range.from, to: range.to }}
-            onSelect={(r: any) => {
-              if (r?.from && r?.to) {
-                onChange('custom', { from: r.from, to: r.to });
-              }
-            }}
+            onSelect={(r: any) => { if (r?.from && r?.to) onChange('custom', { from: r.from, to: r.to }); }}
             numberOfMonths={1}
             locale={ptBR}
             className={cn('p-0 pointer-events-auto')}
@@ -188,42 +168,145 @@ function DateRangeFilter({
   );
 }
 
+interface Insights {
+  spend?: number; reach?: number; impressions?: number; clicks?: number;
+  ctr?: number; cpc?: number; frequency?: number;
+  inline_link_clicks?: number; cost_per_inline_link_click?: number;
+  unique_clicks?: number; outbound_clicks?: number; cost_per_outbound_click?: number;
+  page_views?: number; cost_per_page_view?: number;
+  view_content?: number; cost_per_view_content?: number;
+  add_to_cart?: number; cost_per_add_to_cart?: number;
+  initiate_checkout?: number; cost_per_initiate_checkout?: number;
+  add_payment_info?: number; cost_per_add_payment_info?: number;
+  purchases?: number; cost_per_purchase?: number;
+  purchase_value?: number; roas?: number;
+  leads?: number; cost_per_lead?: number;
+}
+
 interface Row {
-  id: string;
-  name: string;
-  status: string;
-  effective_status: string;
-  objective?: string | null;
-  campaign_id?: string | null;
-  adset_id?: string | null;
-  daily_budget?: number | null;
-  lifetime_budget?: number | null;
+  id: string; name: string; status: string; effective_status: string;
+  objective?: string | null; campaign_id?: string | null; adset_id?: string | null;
+  daily_budget?: number | null; lifetime_budget?: number | null;
+  budget_source?: 'self' | 'adset';
   account: { id: string; account_id: string; name: string; currency?: string | null };
-  insights: {
-    spend?: number;
-    reach?: number;
-    impressions?: number;
-    clicks?: number;
-    link_clicks?: number;
-    ctr?: number;
-    cpc?: number;
-    frequency?: number;
-    purchases?: number;
-  };
+  insights: Insights;
 }
 
 function formatMoney(v: number | undefined, currency = 'BRL') {
-  if (v == null) return '—';
-  try {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(v);
-  } catch {
-    return v.toFixed(2);
-  }
+  if (v == null || isNaN(v)) return '—';
+  try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(v); }
+  catch { return v.toFixed(2); }
 }
 function formatNumber(v: number | undefined) {
-  if (v == null) return '—';
+  if (v == null || isNaN(v)) return '—';
   return new Intl.NumberFormat('pt-BR').format(v);
 }
+function formatPct(v: number | undefined) {
+  if (v == null || isNaN(v)) return '—';
+  return `${v.toFixed(2)}%`;
+}
+function formatDec(v: number | undefined, d = 2) {
+  if (v == null || isNaN(v)) return '—';
+  return v.toFixed(d);
+}
+
+type ColumnId =
+  | 'name' | 'delivery' | 'objective' | 'budget' | 'spend' | 'reach' | 'impressions'
+  | 'ctr' | 'inlineLinkClicks' | 'costPerInlineLinkClick' | 'frequency'
+  | 'uniqueClicks' | 'outboundClicks' | 'costPerOutboundClick'
+  | 'pageViews' | 'costPerPageView' | 'viewContent' | 'costPerViewContent'
+  | 'addToCart' | 'costPerAddToCart' | 'initiateCheckout' | 'costPerInitiateCheckout'
+  | 'addPaymentInfo' | 'costPerAddPaymentInfo'
+  | 'purchases' | 'costPerPurchase' | 'purchaseValue' | 'roas'
+  | 'leads' | 'costPerLead';
+
+const COLUMNS: { id: ColumnId; label: string }[] = [
+  { id: 'name', label: 'Nome' },
+  { id: 'delivery', label: 'Veiculação' },
+  { id: 'objective', label: 'Objetivo' },
+  { id: 'budget', label: 'Orçamento' },
+  { id: 'spend', label: 'Gasto' },
+  { id: 'reach', label: 'Alcance' },
+  { id: 'impressions', label: 'Impressões' },
+  { id: 'ctr', label: 'CTR' },
+  { id: 'inlineLinkClicks', label: 'Cliques no link' },
+  { id: 'costPerInlineLinkClick', label: 'CPC do link' },
+  { id: 'frequency', label: 'Frequência' },
+  { id: 'uniqueClicks', label: 'Cliques únicos' },
+  { id: 'outboundClicks', label: 'Cliques de saída' },
+  { id: 'costPerOutboundClick', label: 'Custo p/ clique de saída' },
+  { id: 'pageViews', label: 'Visualizações de página' },
+  { id: 'costPerPageView', label: 'Custo p/ visualização de página' },
+  { id: 'viewContent', label: 'View Content' },
+  { id: 'costPerViewContent', label: 'Custo p/ View Content' },
+  { id: 'addToCart', label: 'Add to Cart' },
+  { id: 'costPerAddToCart', label: 'Custo p/ Add to Cart' },
+  { id: 'initiateCheckout', label: 'Initiate Checkout' },
+  { id: 'costPerInitiateCheckout', label: 'Custo p/ Initiate Checkout' },
+  { id: 'addPaymentInfo', label: 'Add Payment Info' },
+  { id: 'costPerAddPaymentInfo', label: 'Custo p/ Add Payment Info' },
+  { id: 'purchases', label: 'Compras' },
+  { id: 'costPerPurchase', label: 'Custo p/ compra' },
+  { id: 'purchaseValue', label: 'Valor de compras' },
+  { id: 'roas', label: 'ROAS' },
+  { id: 'leads', label: 'Leads' },
+  { id: 'costPerLead', label: 'Custo p/ lead' },
+];
+
+const DEFAULT_VISIBLE: ColumnId[] = COLUMNS.map((c) => c.id);
+const STORAGE_KEY = 'fb-campaign-mgr-cols-v1';
+
+function ColumnsMenu({ visible, onChange }: { visible: ColumnId[]; onChange: (v: ColumnId[]) => void }) {
+  const allChecked = visible.length === COLUMNS.length;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-2">
+          <Columns3 className="w-4 h-4" /> Colunas
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[220px]">
+        <div
+          className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer"
+          onClick={() => onChange(allChecked ? ['name'] : COLUMNS.map((c) => c.id))}
+        >
+          <Checkbox checked={allChecked} />
+          <span className="text-xs font-medium">{allChecked ? 'Desmarcar todas' : 'Marcar todas'}</span>
+        </div>
+        <DropdownMenuSeparator />
+        <div className="max-h-[60vh] overflow-y-auto">
+          {COLUMNS.map((c) => (
+            <DropdownMenuCheckboxItem
+              key={c.id}
+              checked={visible.includes(c.id)}
+              disabled={c.id === 'name'}
+              onCheckedChange={(checked) => {
+                if (checked) onChange([...visible, c.id]);
+                else onChange(visible.filter((x) => x !== c.id));
+              }}
+              onSelect={(e) => e.preventDefault()}
+              className="text-xs"
+            >
+              {c.label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+const DELIVERY_LABEL: Record<string, { label: string; cls: string }> = {
+  ACTIVE: { label: 'Ativa', cls: 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30' },
+  PAUSED: { label: 'Inativa', cls: 'bg-muted text-muted-foreground' },
+  CAMPAIGN_PAUSED: { label: 'Camp. pausada', cls: 'bg-muted text-muted-foreground' },
+  ADSET_PAUSED: { label: 'Conj. pausado', cls: 'bg-muted text-muted-foreground' },
+  ARCHIVED: { label: 'Arquivada', cls: 'bg-muted text-muted-foreground' },
+  DELETED: { label: 'Excluída', cls: 'bg-destructive/15 text-destructive' },
+  PENDING_REVIEW: { label: 'Em revisão', cls: 'bg-amber-500/15 text-amber-600' },
+  DISAPPROVED: { label: 'Desaprovada', cls: 'bg-destructive/15 text-destructive' },
+  WITH_ISSUES: { label: 'Rascunho', cls: 'bg-amber-500/15 text-amber-600' },
+};
 
 export default function CampaignManagerPage() {
   const [accountIds, setAccountIds] = useState<string[]>([]);
@@ -234,11 +317,21 @@ export default function CampaignManagerPage() {
   const [level, setLevel] = useState<Level>('campaign');
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(0);
+  const [visibleCols, setVisibleCols] = useState<ColumnId[]>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return DEFAULT_VISIBLE;
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleCols)); } catch {}
+  }, [visibleCols]);
 
   const filterKey = useMemo(
     () => ({
-      accountIds,
-      level,
+      accountIds, level,
       dateFrom: format(dateRange.from, 'yyyy-MM-dd'),
       dateTo: format(dateRange.to, 'yyyy-MM-dd'),
       statuses,
@@ -251,9 +344,7 @@ export default function CampaignManagerPage() {
     enabled: accountIds.length > 0,
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('fetch-fb-campaign-manager', {
-        body: filterKey,
-      });
+      const { data, error } = await supabase.functions.invoke('fetch-fb-campaign-manager', { body: filterKey });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       return data as { rows: Row[]; cached: boolean; fetchedAt: string };
@@ -273,22 +364,90 @@ export default function CampaignManagerPage() {
     [filtered, page, pageSize]
   );
 
-  useEffect(() => {
-    setPage(0);
-  }, [filtered.length, level, accountIds, datePreset, statuses]);
+  useEffect(() => { setPage(0); }, [filtered.length, level, accountIds, datePreset, statuses]);
 
   const [counts, setCounts] = useState<{ campaign?: number; adset?: number; ad?: number }>({});
+  useEffect(() => { if (data?.rows) setCounts((prev) => ({ ...prev, [level]: data.rows.length })); }, [data, level]);
+  useEffect(() => { setCounts({}); }, [accountIds, datePreset, dateRange.from, dateRange.to, statuses]);
 
-  useEffect(() => {
-    if (data?.rows) {
-      setCounts((prev) => ({ ...prev, [level]: data.rows.length }));
+  const showCol = (id: ColumnId) => visibleCols.includes(id);
+
+  const renderCell = (id: ColumnId, r: Row) => {
+    const currency = r.account.currency || 'BRL';
+    const ins = r.insights || {};
+    switch (id) {
+      case 'name':
+        return (
+          <td className="p-3" key={id}>
+            <div className="font-medium truncate max-w-[260px]">{r.name}</div>
+            <div className="text-xs text-muted-foreground">{r.account.name}</div>
+          </td>
+        );
+      case 'delivery': {
+        const d = DELIVERY_LABEL[r.effective_status] || { label: r.effective_status, cls: 'bg-muted' };
+        return (
+          <td className="p-3" key={id}>
+            <span className={cn('inline-flex items-center px-2 py-0.5 text-xs rounded-md border border-transparent', d.cls)}>
+              {d.label}
+            </span>
+          </td>
+        );
+      }
+      case 'objective':
+        return <td className="p-3 text-xs" key={id}>{r.objective || '—'}</td>;
+      case 'budget': {
+        if (r.budget_source === 'adset') {
+          return (
+            <td className="p-3" key={id}>
+              <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-md bg-muted text-muted-foreground">
+                Conjuntos
+              </span>
+            </td>
+          );
+        }
+        const budget = r.daily_budget || r.lifetime_budget;
+        return (
+          <td className="p-3" key={id}>
+            {budget != null ? (
+              <>
+                {formatMoney(budget, currency)}
+                <span className="text-xs text-muted-foreground ml-1">/{r.daily_budget ? 'dia' : 'vida'}</span>
+              </>
+            ) : '—'}
+          </td>
+        );
+      }
+      case 'spend': return <td className="p-3" key={id}>{formatMoney(ins.spend, currency)}</td>;
+      case 'reach': return <td className="p-3" key={id}>{formatNumber(ins.reach)}</td>;
+      case 'impressions': return <td className="p-3" key={id}>{formatNumber(ins.impressions)}</td>;
+      case 'ctr': return <td className="p-3" key={id}>{formatPct(ins.ctr)}</td>;
+      case 'inlineLinkClicks': return <td className="p-3" key={id}>{formatNumber(ins.inline_link_clicks)}</td>;
+      case 'costPerInlineLinkClick': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_inline_link_click, currency)}</td>;
+      case 'frequency': return <td className="p-3" key={id}>{formatDec(ins.frequency)}</td>;
+      case 'uniqueClicks': return <td className="p-3" key={id}>{formatNumber(ins.unique_clicks)}</td>;
+      case 'outboundClicks': return <td className="p-3" key={id}>{formatNumber(ins.outbound_clicks)}</td>;
+      case 'costPerOutboundClick': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_outbound_click, currency)}</td>;
+      case 'pageViews': return <td className="p-3" key={id}>{formatNumber(ins.page_views)}</td>;
+      case 'costPerPageView': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_page_view, currency)}</td>;
+      case 'viewContent': return <td className="p-3" key={id}>{formatNumber(ins.view_content)}</td>;
+      case 'costPerViewContent': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_view_content, currency)}</td>;
+      case 'addToCart': return <td className="p-3" key={id}>{formatNumber(ins.add_to_cart)}</td>;
+      case 'costPerAddToCart': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_add_to_cart, currency)}</td>;
+      case 'initiateCheckout': return <td className="p-3" key={id}>{formatNumber(ins.initiate_checkout)}</td>;
+      case 'costPerInitiateCheckout': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_initiate_checkout, currency)}</td>;
+      case 'addPaymentInfo': return <td className="p-3" key={id}>{formatNumber(ins.add_payment_info)}</td>;
+      case 'costPerAddPaymentInfo': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_add_payment_info, currency)}</td>;
+      case 'purchases': return <td className="p-3" key={id}>{formatNumber(ins.purchases)}</td>;
+      case 'costPerPurchase': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_purchase, currency)}</td>;
+      case 'purchaseValue': return <td className="p-3" key={id}>{formatMoney(ins.purchase_value, currency)}</td>;
+      case 'roas': return <td className="p-3" key={id}>{formatDec(ins.roas)}</td>;
+      case 'leads': return <td className="p-3" key={id}>{formatNumber(ins.leads)}</td>;
+      case 'costPerLead': return <td className="p-3" key={id}>{formatMoney(ins.cost_per_lead, currency)}</td>;
     }
-  }, [data, level]);
+  };
 
-  // Reset counts when filters that affect data change
-  useEffect(() => {
-    setCounts({});
-  }, [accountIds, datePreset, dateRange.from, dateRange.to, statuses]);
+  const visibleColumnDefs = COLUMNS.filter((c) => visibleCols.includes(c.id));
+  const colCount = visibleColumnDefs.length + 1;
 
   return (
     <div className="p-6 space-y-4">
@@ -305,50 +464,25 @@ export default function CampaignManagerPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            title="Atualizar"
-          >
+          <Button variant="ghost" size="icon" onClick={() => refetch()} disabled={isFetching} title="Atualizar">
             <RefreshCw className={cn('w-5 h-5', isFetching && 'animate-spin')} />
           </Button>
           <Button asChild>
-            <Link to="/campanhas/criar">
-              <Plus className="w-4 h-4 mr-1" /> Nova Campanha
-            </Link>
+            <Link to="/campanhas/criar"><Plus className="w-4 h-4 mr-1" /> Nova Campanha</Link>
           </Button>
         </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-3 flex flex-wrap items-center gap-3">
         <div className="min-w-[260px]">
-          <AdAccountSelector
-            multiSelect
-            hideCount
-            selectedAccounts={accountIds}
-            onSelectionChange={setAccountIds}
-          />
+          <AdAccountSelector multiSelect hideCount selectedAccounts={accountIds} onSelectionChange={setAccountIds} />
         </div>
         <div className="h-8 w-px bg-border" />
-        <DateRangeFilter
-          preset={datePreset}
-          range={dateRange}
-          onChange={(p, r) => {
-            setDatePreset(p);
-            setDateRange(r);
-          }}
-        />
+        <DateRangeFilter preset={datePreset} range={dateRange} onChange={(p, r) => { setDatePreset(p); setDateRange(r); }} />
         <StatusFilter value={statuses} onChange={setStatuses} />
         <div className="ml-auto relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 w-64"
-          />
+          <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 w-64" />
         </div>
       </div>
 
@@ -360,13 +494,7 @@ export default function CampaignManagerPage() {
             { v: 'ad', label: 'Anúncios', icon: FileText },
           ] as { v: Level; label: string; icon: any }[]
         ).map((t) => (
-          <Button
-            key={t.v}
-            variant={level === t.v ? 'default' : 'outline'}
-            size="sm"
-            className="gap-2"
-            onClick={() => setLevel(t.v)}
-          >
+          <Button key={t.v} variant={level === t.v ? 'default' : 'outline'} size="sm" className="gap-2" onClick={() => setLevel(t.v)}>
             <t.icon className="w-4 h-4" />
             {t.label}
           </Button>
@@ -375,116 +503,50 @@ export default function CampaignManagerPage() {
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="flex justify-end p-3 border-b border-border">
-          <Button variant="ghost" size="sm" className="gap-2" disabled>
-            <Columns3 className="w-4 h-4" /> Colunas
-          </Button>
+          <ColumnsMenu visible={visibleCols} onChange={setVisibleCols} />
         </div>
 
-        <PaginationBar
-          total={filtered.length}
-          page={page}
-          pageSize={pageSize}
-          setPage={setPage}
-          setPageSize={setPageSize}
-        />
+        <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/30 border-y border-border text-muted-foreground">
               <tr>
                 <th className="w-10 p-3"><Checkbox /></th>
-                <Th>{level === 'campaign' ? 'Campanha' : level === 'adset' ? 'Conjunto' : 'Anúncio'}</Th>
-                <Th>Veiculação</Th>
-                <Th>Objetivo</Th>
-                <Th>Orçamento</Th>
-                <Th>Gasto</Th>
-                <Th>Alcance</Th>
-                <Th>Impressões</Th>
-                <Th>CTR</Th>
-                <Th>Cliques no Link</Th>
-                <Th>CPC do Link</Th>
-                <Th>Frequência</Th>
+                {visibleColumnDefs.map((c) => (
+                  <Th key={c.id}>
+                    {c.id === 'name'
+                      ? level === 'campaign' ? 'Campanha' : level === 'adset' ? 'Conjunto' : 'Anúncio'
+                      : c.label}
+                  </Th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {isLoading && accountIds.length > 0 && (
-                <tr>
-                  <td colSpan={12} className="p-10 text-center text-muted-foreground">
-                    <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Carregando...
-                  </td>
-                </tr>
+                <tr><td colSpan={colCount} className="p-10 text-center text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Carregando...
+                </td></tr>
               )}
               {!isLoading && accountIds.length === 0 && (
-                <tr>
-                  <td colSpan={12} className="p-12 text-center text-muted-foreground">
-                    Selecione uma ou mais contas de anúncio para carregar campanhas.
-                  </td>
-                </tr>
+                <tr><td colSpan={colCount} className="p-12 text-center text-muted-foreground">
+                  Selecione uma ou mais contas de anúncio para carregar campanhas.
+                </td></tr>
               )}
               {!isLoading && accountIds.length > 0 && visible.length === 0 && (
-                <tr>
-                  <td colSpan={12} className="p-12 text-center text-muted-foreground">
-                    Nenhum registro encontrado.
-                  </td>
-                </tr>
+                <tr><td colSpan={colCount} className="p-12 text-center text-muted-foreground">Nenhum registro encontrado.</td></tr>
               )}
-              {visible.map((r) => {
-                const currency = r.account.currency || 'BRL';
-                const budget = r.daily_budget || r.lifetime_budget;
-                return (
-                  <tr key={r.id} className="border-b border-border hover:bg-accent/20">
-                    <td className="p-3"><Checkbox /></td>
-                    <td className="p-3">
-                      <div className="font-medium truncate max-w-[260px]">{r.name}</div>
-                      <div className="text-xs text-muted-foreground">{r.account.name}</div>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant={r.effective_status === 'ACTIVE' ? 'default' : 'secondary'}>
-                        {r.effective_status}
-                      </Badge>
-                    </td>
-                    <td className="p-3">{r.objective || '—'}</td>
-                    <td className="p-3">
-                      {budget != null ? (
-                        <>
-                          {formatMoney(budget, currency)}
-                          <span className="text-xs text-muted-foreground ml-1">
-                            /{r.daily_budget ? 'dia' : 'vida'}
-                          </span>
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="p-3">{formatMoney(r.insights.spend, currency)}</td>
-                    <td className="p-3">{formatNumber(r.insights.reach)}</td>
-                    <td className="p-3">{formatNumber(r.insights.impressions)}</td>
-                    <td className="p-3">
-                      {r.insights.ctr != null ? `${r.insights.ctr.toFixed(2)}%` : '—'}
-                    </td>
-                    <td className="p-3">{formatNumber(r.insights.link_clicks)}</td>
-                    <td className="p-3">
-                      {r.insights.link_clicks
-                        ? formatMoney((r.insights.spend || 0) / r.insights.link_clicks, currency)
-                        : '—'}
-                    </td>
-                    <td className="p-3">
-                      {r.insights.frequency != null ? r.insights.frequency.toFixed(2) : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
+              {visible.map((r) => (
+                <tr key={r.id} className="border-b border-border hover:bg-accent/20">
+                  <td className="p-3"><Checkbox /></td>
+                  {visibleColumnDefs.map((c) => renderCell(c.id, r))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
 
-        <PaginationBar
-          total={filtered.length}
-          page={page}
-          pageSize={pageSize}
-          setPage={setPage}
-          setPageSize={setPageSize}
-        />
+        <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
       </div>
 
       {data?.cached && (
@@ -508,18 +570,8 @@ function Th({ children }: { children: React.ReactNode }) {
 }
 
 function PaginationBar({
-  total,
-  page,
-  pageSize,
-  setPage,
-  setPageSize,
-}: {
-  total: number;
-  page: number;
-  pageSize: number;
-  setPage: (n: number) => void;
-  setPageSize: (n: number) => void;
-}) {
+  total, page, pageSize, setPage, setPageSize,
+}: { total: number; page: number; pageSize: number; setPage: (n: number) => void; setPageSize: (n: number) => void }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div className="flex items-center justify-between p-3 text-sm text-muted-foreground border-b border-border last:border-b-0">
@@ -528,34 +580,18 @@ function PaginationBar({
         <span>·</span>
         <span>Por página:</span>
         <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
-          <SelectTrigger className="h-8 w-20">
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {[25, 50, 100, 200].map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                {n}
-              </SelectItem>
-            ))}
+            {[25, 50, 100, 200].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" onClick={() => setPage(0)} disabled={page === 0}>
-          <ChevronsLeft className="w-4 h-4" />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={() => setPage(page - 1)} disabled={page === 0}>
-          <ChevronLeft className="w-4 h-4" />
-        </Button>
-        <span className="px-2">
-          {total === 0 ? '0 / 0' : `${page + 1} / ${pageCount}`}
-        </span>
-        <Button variant="ghost" size="icon" onClick={() => setPage(page + 1)} disabled={page >= pageCount - 1}>
-          <ChevronRight className="w-4 h-4" />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={() => setPage(pageCount - 1)} disabled={page >= pageCount - 1}>
-          <ChevronsRight className="w-4 h-4" />
-        </Button>
+        <Button variant="ghost" size="icon" onClick={() => setPage(0)} disabled={page === 0}><ChevronsLeft className="w-4 h-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => setPage(page - 1)} disabled={page === 0}><ChevronLeft className="w-4 h-4" /></Button>
+        <span className="px-2">{total === 0 ? '0 / 0' : `${page + 1} / ${pageCount}`}</span>
+        <Button variant="ghost" size="icon" onClick={() => setPage(page + 1)} disabled={page >= pageCount - 1}><ChevronRight className="w-4 h-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => setPage(pageCount - 1)} disabled={page >= pageCount - 1}><ChevronsRight className="w-4 h-4" /></Button>
       </div>
     </div>
   );
