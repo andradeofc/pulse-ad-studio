@@ -55,6 +55,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { AdAccountSelector } from '@/components/campaign/AdAccountSelector';
+import { BulkEditDialog } from '@/components/campaign/BulkEditDialog';
 
 type Level = 'campaign' | 'adset' | 'ad';
 
