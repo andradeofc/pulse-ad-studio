@@ -422,7 +422,7 @@ export default function CampaignManagerPage() {
   };
 
   const [managerDialogOpen, setManagerDialogOpen] = useState(false);
-  const managerLinks = useMemo(() => {
+  const buildManagerLinks = () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return [] as { accountName: string; accountId: string; url: string; count: number }[];
     const byId = new Map(rows.map((r) => [r.id, r] as const));
@@ -443,19 +443,20 @@ export default function CampaignManagerPage() {
       count: g.ids.length,
       url: `https://business.facebook.com/adsmanager/manage/${path}?act=${g.accountId}&${param}=${g.ids.join(',')}`,
     }));
-  }, [selectedIds, rows, level]);
+  };
 
   const openInManager = () => setManagerDialogOpen(true);
-  const copyAllLinks = async () => {
+  const copyAllLinks = async (links: { url: string }[]) => {
     try {
-      await navigator.clipboard.writeText(managerLinks.map((l) => l.url).join('\n'));
+      await navigator.clipboard.writeText(links.map((l) => l.url).join('\n'));
       toast.success('Links copiados');
     } catch { toast.error('Falha ao copiar'); }
   };
-  const openAllLinks = () => {
-    managerLinks.forEach((l) => window.open(l.url, '_blank', 'noopener'));
+  const openAllLinks = (links: { url: string }[]) => {
+    links.forEach((l) => window.open(l.url, '_blank', 'noopener'));
     setManagerDialogOpen(false);
   };
+
 
 
   const filterKey = useMemo(
