@@ -72,6 +72,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FanpagePoolsView } from '@/components/facebook/FanpagePoolsView';
+
+
 
 
 interface FacebookPage {
