@@ -26,6 +26,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { WizardStepper } from '@/components/campaign/WizardStepper';
 import {
   Loader2,
+  ChevronRight,
   Shield,
   Wifi,
   WifiOff,
