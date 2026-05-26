@@ -96,6 +96,33 @@ export default function FacebookPagesPage() {
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
 
+  // Column visibility
+  type ColKey =
+    | 'page' | 'slots' | 'status' | 'category' | 'access_type' | 'profile_name'
+    | 'origin' | 'pools' | 'fb_url' | 'business_manager' | 'bm_verified' | 'followers' | 'created_fb';
+  const COLUMNS: { key: ColKey; label: string; available: boolean; defaultVisible: boolean }[] = [
+    { key: 'page', label: 'Página', available: true, defaultVisible: true },
+    { key: 'slots', label: 'Slots Disponíveis', available: true, defaultVisible: true },
+    { key: 'status', label: 'Status', available: true, defaultVisible: true },
+    { key: 'category', label: 'Categoria', available: true, defaultVisible: true },
+    { key: 'access_type', label: 'Tipo de Acesso', available: true, defaultVisible: true },
+    { key: 'profile_name', label: 'Nome do Perfil', available: true, defaultVisible: true },
+    { key: 'origin', label: 'Origem', available: true, defaultVisible: true },
+    { key: 'pools', label: 'Pools', available: true, defaultVisible: true },
+    { key: 'fb_url', label: 'URL Facebook', available: true, defaultVisible: false },
+    { key: 'business_manager', label: 'Business Manager', available: true, defaultVisible: false },
+    { key: 'bm_verified', label: 'BM verificado', available: false, defaultVisible: false },
+    { key: 'followers', label: 'Seguidores', available: true, defaultVisible: false },
+    { key: 'created_fb', label: 'Criada em (FB)', available: false, defaultVisible: false },
+  ];
+  const [visibleCols, setVisibleCols] = useState<Record<ColKey, boolean>>(() =>
+    COLUMNS.reduce((acc, c) => ({ ...acc, [c.key]: c.defaultVisible }), {} as Record<ColKey, boolean>)
+  );
+  const toggleCol = (k: ColKey) => setVisibleCols(prev => ({ ...prev, [k]: !prev[k] }));
+  const toggleAllCols = (value: boolean) =>
+    setVisibleCols(COLUMNS.reduce((acc, c) => ({ ...acc, [c.key]: c.available ? value : false }), {} as Record<ColKey, boolean>));
+  const allColsOn = COLUMNS.filter(c => c.available).every(c => visibleCols[c.key]);
+
   const loadPages = useCallback(async () => {
     try {
       setIsLoading(true);
