@@ -811,7 +811,12 @@ Deno.serve(async (req) => {
     credentialFields.token_check_error_code = null;
     credentialFields.last_token_check_at = new Date().toISOString();
     if (proxyConfig && typeof proxyConfig === "object") {
-      credentialFields.proxy_config = proxyConfig;
+      const pc = proxyConfig as Record<string, any>;
+      if (pc.protocol) credentialFields.proxy_protocol = pc.protocol;
+      if (pc.host) credentialFields.proxy_host = pc.host;
+      if (pc.port !== undefined && pc.port !== null) credentialFields.proxy_port = Number(pc.port);
+      if (pc.username) credentialFields.proxy_username = pc.username;
+      if (pc.password) credentialFields.proxy_password = pc.password;
     }
 
     if (existingProfile) {
