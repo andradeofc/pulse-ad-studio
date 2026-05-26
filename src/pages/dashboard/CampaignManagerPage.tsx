@@ -493,11 +493,71 @@ export default function CampaignManagerPage() {
     return rows.filter((r) => r.name?.toLowerCase().includes(q) || r.id.includes(q));
   }, [rows, search]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const [sort, setSort] = useState<{ col: ColumnId; dir: 'asc' | 'desc' } | null>({ col: 'spend', dir: 'desc' });
+
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    const getVal = (r: Row, col: ColumnId): number | string | null => {
+      const ins: any = r.insights || {};
+      switch (col) {
+        case 'name': return r.name || '';
+        case 'delivery': return r.effective_status || '';
+        case 'objective': return r.objective || '';
+        case 'budget': return r.daily_budget ?? r.lifetime_budget ?? 0;
+        case 'spend': return ins.spend ?? 0;
+        case 'reach': return ins.reach ?? 0;
+        case 'impressions': return ins.impressions ?? 0;
+        case 'ctr': return ins.ctr ?? 0;
+        case 'inlineLinkClicks': return ins.inline_link_clicks ?? 0;
+        case 'costPerInlineLinkClick': return ins.cost_per_inline_link_click ?? 0;
+        case 'frequency': return ins.frequency ?? 0;
+        case 'uniqueClicks': return ins.unique_clicks ?? 0;
+        case 'outboundClicks': return ins.outbound_clicks ?? 0;
+        case 'costPerOutboundClick': return ins.cost_per_outbound_click ?? 0;
+        case 'pageViews': return ins.page_views ?? 0;
+        case 'costPerPageView': return ins.cost_per_page_view ?? 0;
+        case 'viewContent': return ins.view_content ?? 0;
+        case 'costPerViewContent': return ins.cost_per_view_content ?? 0;
+        case 'addToCart': return ins.add_to_cart ?? 0;
+        case 'costPerAddToCart': return ins.cost_per_add_to_cart ?? 0;
+        case 'initiateCheckout': return ins.initiate_checkout ?? 0;
+        case 'costPerInitiateCheckout': return ins.cost_per_initiate_checkout ?? 0;
+        case 'addPaymentInfo': return ins.add_payment_info ?? 0;
+        case 'costPerAddPaymentInfo': return ins.cost_per_add_payment_info ?? 0;
+        case 'purchases': return ins.purchases ?? 0;
+        case 'costPerPurchase': return ins.cost_per_purchase ?? 0;
+        case 'purchaseValue': return ins.purchase_value ?? 0;
+        case 'roas': return ins.roas ?? 0;
+        case 'leads': return ins.leads ?? 0;
+        case 'costPerLead': return ins.cost_per_lead ?? 0;
+        default: return 0;
+      }
+    };
+    const mult = sort.dir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = getVal(a, sort.col);
+      const vb = getVal(b, sort.col);
+      if (typeof va === 'string' || typeof vb === 'string') {
+        return String(va ?? '').localeCompare(String(vb ?? ''), 'pt-BR', { numeric: true }) * mult;
+      }
+      return (((va as number) || 0) - ((vb as number) || 0)) * mult;
+    });
+  }, [filtered, sort]);
+
+  const handleSort = (col: ColumnId) => {
+    setSort((prev) => {
+      if (!prev || prev.col !== col) return { col, dir: 'desc' };
+      if (prev.dir === 'desc') return { col, dir: 'asc' };
+      return null;
+    });
+  };
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
   const visible = useMemo(
-    () => filtered.slice(page * pageSize, page * pageSize + pageSize),
-    [filtered, page, pageSize]
+    () => sorted.slice(page * pageSize, page * pageSize + pageSize),
+    [sorted, page, pageSize]
   );
+
 
   useEffect(() => { setPage(0); }, [filtered.length, level, accountIds, datePreset, statuses]);
 
