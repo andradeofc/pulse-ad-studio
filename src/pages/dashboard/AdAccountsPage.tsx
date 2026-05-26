@@ -20,6 +20,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -92,6 +94,13 @@ export default function AdAccountsPage() {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  type SortKey = 'name' | 'account_id' | 'nickname' | 'status' | 'currency' | 'timezone' | 'amount_spent' | 'spend_updated_at';
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
 
   // Nickname editing state
   const [editingNicknameId, setEditingNicknameId] = useState<string | null>(null);
@@ -170,11 +179,34 @@ export default function AdAccountsPage() {
   // Reset to page 1 when filters change
   useEffect(() => { setPage(1); }, [searchQuery, statusFilter, currencyFilter, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredAccounts.length / pageSize));
+  const sortedAccounts = useMemo(() => {
+    const arr = [...filteredAccounts];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const getVal = (a: FacebookAdAccount): string | number => {
+      switch (sortKey) {
+        case 'name': return (a.name || '').toLowerCase();
+        case 'account_id': return (a.account_id || '').toLowerCase();
+        case 'nickname': return (a.nickname || '').toLowerCase();
+        case 'status': return (a.status || '').toLowerCase();
+        case 'currency': return (a.currency || '').toLowerCase();
+        case 'timezone': return tzToOffset(a.timezone).toLowerCase();
+        case 'amount_spent': return a.amount_spent || 0;
+        case 'spend_updated_at': return a.spend_updated_at ? new Date(a.spend_updated_at).getTime() : 0;
+      }
+    };
+    arr.sort((a, b) => {
+      const va = getVal(a); const vb = getVal(b);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), 'pt-BR') * dir;
+    });
+    return arr;
+  }, [filteredAccounts, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedAccounts.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const startIdx = (currentPage - 1) * pageSize;
-  const endIdx = Math.min(startIdx + pageSize, filteredAccounts.length);
-  const pagedAccounts = filteredAccounts.slice(startIdx, endIdx);
+  const endIdx = Math.min(startIdx + pageSize, sortedAccounts.length);
+  const pagedAccounts = sortedAccounts.slice(startIdx, endIdx);
 
   const activeCount = accounts.filter((a) => a.status === 'active').length;
 
@@ -443,29 +475,41 @@ export default function AdAccountsPage() {
                           onCheckedChange={(c) => toggleAll(Boolean(c))}
                         />
                       </th>
-                      {[
-                        { label: 'Conta' },
-                        { label: 'ID da Conta' },
-                        { label: 'Apelido' },
-                        { label: 'Status' },
-                        { label: 'Moeda' },
-                        { label: 'Fuso' },
-                        { label: 'Gasto Total', align: 'right' as const },
-                        { label: 'Última atividade' },
-                      ].map((col) => (
-                        <th
-                          key={col.label}
-                          className={cn(
-                            'py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap',
-                            col.align === 'right' ? 'text-right' : 'text-left'
-                          )}
-                        >
-                          <div className={cn('flex items-center gap-1.5', col.align === 'right' && 'justify-end')}>
-                            {col.label}
-                            <ArrowUpDown className="w-3 h-3 opacity-50" />
-                          </div>
-                        </th>
-                      ))}
+                      {([
+                        { key: 'name', label: 'Conta' },
+                        { key: 'account_id', label: 'ID da Conta' },
+                        { key: 'nickname', label: 'Apelido' },
+                        { key: 'status', label: 'Status' },
+                        { key: 'currency', label: 'Moeda' },
+                        { key: 'timezone', label: 'Fuso' },
+                        { key: 'amount_spent', label: 'Gasto Total', align: 'right' as const },
+                        { key: 'spend_updated_at', label: 'Última atividade' },
+                      ] as Array<{ key: SortKey; label: string; align?: 'right' }>).map((col) => {
+                        const isActive = sortKey === col.key;
+                        const Icon = isActive ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+                        return (
+                          <th
+                            key={col.key}
+                            className={cn(
+                              'py-3 px-4 text-xs font-semibold uppercase tracking-wide whitespace-nowrap select-none',
+                              isActive ? 'text-foreground' : 'text-muted-foreground',
+                              col.align === 'right' ? 'text-right' : 'text-left'
+                            )}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleSort(col.key)}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 hover:text-foreground transition-colors',
+                                col.align === 'right' && 'justify-end'
+                              )}
+                            >
+                              {col.label}
+                              <Icon className={cn('w-3 h-3', isActive ? 'opacity-100 text-primary' : 'opacity-50')} />
+                            </button>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
