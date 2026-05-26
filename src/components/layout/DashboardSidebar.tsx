@@ -55,7 +55,7 @@ const mainNavSections: NavSection[] = [
   {
     label: 'GESTÃO DE ANÚNCIOS',
     items: [
-      { title: 'Campanhas', href: '/campanhas', icon: Megaphone },
+      { title: 'Gerenciador de Campanhas', href: '/campanhas', icon: Megaphone },
       { title: 'Páginas', href: '/paginas', icon: FileText },
       { title: 'Fila de Processamento', href: '/fila-processamento', icon: Clock },
       { title: 'Biblioteca de Mídia', href: '/biblioteca-midia', icon: Image },
@@ -79,6 +79,7 @@ const mainNavSections: NavSection[] = [
   {
     label: 'ANALYTICS E RELATÓRIOS',
     items: [
+      { title: 'Histórico de Criações', href: '/campanhas/historico', icon: Megaphone },
       { title: 'Analytics', href: '/analytics', icon: BarChart3 },
       { title: 'Relatórios', href: '/relatorios', icon: FileBarChart },
     ],
