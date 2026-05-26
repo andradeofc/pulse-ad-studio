@@ -1103,6 +1103,7 @@ export type Database = {
           page_id: string
           picture_url: string | null
           profile_id: string
+          source: string
           tasks: string[] | null
           updated_at: string
         }
@@ -1121,6 +1122,7 @@ export type Database = {
           page_id: string
           picture_url?: string | null
           profile_id: string
+          source?: string
           tasks?: string[] | null
           updated_at?: string
         }
@@ -1139,6 +1141,7 @@ export type Database = {
           page_id?: string
           picture_url?: string | null
           profile_id?: string
+          source?: string
           tasks?: string[] | null
           updated_at?: string
         }
