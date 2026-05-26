@@ -297,18 +297,21 @@ function Stat({ label, value }: { label: string; value: number }) {
 function PoolDetailsSheet({
   pool,
   pages,
+  profiles,
   open,
   onOpenChange,
   onChanged,
 }: {
   pool: EnrichedPool | null;
   pages: PageForPool[];
+  profiles: { id: string; name: string }[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onChanged: () => void;
 }) {
   const [name, setName] = useState('');
   const [color, setColor] = useState(POOL_COLORS[0]);
+  const [creatorProfileId, setCreatorProfileId] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -316,6 +319,7 @@ function PoolDetailsSheet({
     if (pool) {
       setName(pool.name);
       setColor(pool.color);
+      setCreatorProfileId(pool.creator_profile_id ?? pool.creatorProfileId ?? '');
     }
   }, [pool]);
 
