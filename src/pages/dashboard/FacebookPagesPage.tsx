@@ -385,8 +385,47 @@ export default function FacebookPagesPage() {
         </Button>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-2 border-b border-border/50 pb-3">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={cn(
+            'inline-flex items-center px-4 h-9 rounded-md text-sm font-medium transition-colors',
+            activeTab === 'all'
+              ? 'bg-background text-foreground border border-border shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Todas as fanpages
+        </button>
+        <button
+          onClick={() => setActiveTab('pools')}
+          className={cn(
+            'inline-flex items-center px-4 h-9 rounded-md text-sm font-medium transition-colors',
+            activeTab === 'pools'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Pools de Fanpages
+        </button>
+      </div>
+
+      {activeTab === 'pools' ? (
+        <FanpagePoolsView
+          pages={pages.map((p) => ({
+            page_id: p.page_id,
+            name: p.name,
+            profile_id: p.profile_id,
+            profile_name: p.profile_name ?? null,
+            picture_url: p.picture_url,
+          }))}
+        />
+      ) : (
+      <>
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+
         <Card className="glass-card">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
