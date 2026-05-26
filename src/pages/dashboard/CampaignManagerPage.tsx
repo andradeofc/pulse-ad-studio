@@ -928,7 +928,7 @@ function Th({ children, sortDir, onClick }: { children: React.ReactNode; sortDir
     </th>
   );
 }
-}
+
 
 function PaginationBar({
   total, page, pageSize, setPage, setPageSize,
