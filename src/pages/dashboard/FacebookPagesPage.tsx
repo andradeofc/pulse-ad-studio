@@ -88,9 +88,11 @@ interface FacebookPage {
   ads_running: number;
   ads_limit: number;
   tasks: string[] | null;
+  source: 'api' | 'extension';
   created_at: string;
   profile_name?: string;
 }
+
 
 type SortKey = 'name' | 'slots' | 'category' | 'access_type' | 'origin_access';
 type SortDir = 'asc' | 'desc';
