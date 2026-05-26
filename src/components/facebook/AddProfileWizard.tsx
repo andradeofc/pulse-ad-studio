@@ -752,9 +752,9 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
           <AlertTitle>Conexão concluída</AlertTitle>
           <AlertDescription className="space-y-3">
             <p>
-              Contas, BMs e pixels foram sincronizados com sucesso. As <strong>páginas</strong> também
-              foram baixadas, mas recomendamos revisar e validar manualmente quais você quer
-              habilitar para uso em campanhas.
+              Contas, BMs e pixels foram sincronizados com sucesso. As <strong>páginas</strong> não
+              são sincronizadas automaticamente — use a extensão do navegador ou clique em
+              <em> Sincronizar páginas</em> na tela de Páginas quando precisar.
             </p>
             <Button
               size="sm"
