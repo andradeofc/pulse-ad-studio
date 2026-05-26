@@ -20,6 +20,11 @@ import {
   ChevronsRight,
   ArrowUpDown,
   Loader2,
+  Play,
+  Pause,
+  Trash2,
+  Pencil,
+  ExternalLink,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
