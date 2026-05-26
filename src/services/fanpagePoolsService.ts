@@ -5,6 +5,7 @@ export interface FanpagePool {
   user_id: string;
   name: string;
   color: string;
+  creator_profile_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -43,24 +44,30 @@ export async function fetchPools(): Promise<PoolWithPages[]> {
   }));
 }
 
-export async function createPool(name: string, color: string): Promise<FanpagePool> {
+export async function createPool(name: string, color: string, creatorProfileId?: string | null): Promise<FanpagePool> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Não autenticado');
 
   const { data, error } = await supabase
     .from('fanpage_pools')
-    .insert({ user_id: user.id, name, color })
+    .insert({ user_id: user.id, name, color, creator_profile_id: creatorProfileId ?? null })
     .select()
     .single();
   if (error) throw error;
   return data as FanpagePool;
 }
 
-export async function renamePool(id: string, name: string, color?: string): Promise<void> {
-  const payload: Record<string, unknown> = { name };
-  if (color) payload.color = color;
-  const { error } = await supabase.from('fanpage_pools').update(payload).eq('id', id);
+export async function updatePool(
+  id: string,
+  patch: { name?: string; color?: string; creator_profile_id?: string | null },
+): Promise<void> {
+  const { error } = await supabase.from('fanpage_pools').update(patch).eq('id', id);
   if (error) throw error;
+}
+
+// Backwards-compatible alias
+export async function renamePool(id: string, name: string, color?: string): Promise<void> {
+  await updatePool(id, { name, ...(color ? { color } : {}) });
 }
 
 export async function deletePool(id: string): Promise<void> {
