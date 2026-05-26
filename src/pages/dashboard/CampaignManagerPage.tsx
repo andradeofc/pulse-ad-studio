@@ -679,7 +679,12 @@ export default function CampaignManagerPage() {
                 const rowOverride = { ...r, effective_status: eff } as Row;
                 return (
                   <tr key={r.id} className="border-b border-border hover:bg-accent/20">
-                    <td className="p-3"><Checkbox /></td>
+                    <td className="p-3">
+                      <Checkbox
+                        checked={selectedIds.has(r.id)}
+                        onCheckedChange={(c) => toggleOne(r.id, !!c)}
+                      />
+                    </td>
                     <td className="p-3">
                       <Switch
                         checked={isActive}
