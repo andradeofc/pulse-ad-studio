@@ -635,7 +635,6 @@ export default function CampaignManagerPage() {
             <div className="ml-auto"><ColumnsMenu visible={visibleCols} onChange={setVisibleCols} /></div>
           )}
         </div>
-        </div>
 
         <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
 
