@@ -528,17 +528,23 @@ async function performFullSync(
       if (error) console.error("Error upserting pages:", error);
     }
 
+    pagesCount = finalPages.length;
     console.log(`✓ STAGE 2 COMPLETE: ${finalPages.length} pages synced`);
+    await reportTaskStep(svcClient, taskId, 7, "syncingPages", `Sincronizadas ${finalPages.length} páginas`, {
+      pagesCount: finalPages.length,
+    });
 
   } catch (error) {
     console.error("Error in Stage 2 (pages):", error);
     await updateSyncStatus(supabase, profileId, "error");
+    await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar páginas" });
     return;
   }
 
   // ========== STAGE 3: SYNC PIXELS ==========
   console.log("=== STAGE 3: SYNCING PIXELS ===");
   await updateSyncStatus(supabase, profileId, "syncing_pixels");
+  await reportTaskStep(svcClient, taskId, 8, "syncingPixels", "Sincronizando pixels...");
 
   try {
     const pixelsMap = new Map<string, any>(); // Deduplicate by pixel_id
