@@ -743,7 +743,11 @@ export default function CampaignManagerPage() {
                 </th>
                 <th className="w-14 p-3 text-left text-xs font-medium"></th>
                 {visibleColumnDefs.map((c) => (
-                  <Th key={c.id}>
+                  <Th
+                    key={c.id}
+                    sortDir={sort?.col === c.id ? sort.dir : null}
+                    onClick={() => handleSort(c.id)}
+                  >
                     {c.id === 'name'
                       ? level === 'campaign' ? 'Campanha' : level === 'adset' ? 'Conjunto' : 'Anúncio'
                       : c.label}
