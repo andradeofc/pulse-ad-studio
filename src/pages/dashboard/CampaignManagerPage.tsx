@@ -651,7 +651,7 @@ export default function CampaignManagerPage() {
               <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" disabled={bulkBusy} onClick={() => runBulk('DELETED')}>
                 <Trash2 className="w-4 h-4" /> Excluir
               </Button>
-              <Button variant="outline" size="sm" className="gap-2" disabled onClick={() => toast.info('Em breve')}>
+              <Button variant="outline" size="sm" className="gap-2" disabled={bulkBusy} onClick={() => setBulkEditOpen(true)}>
                 <Pencil className="w-4 h-4" /> Editar em massa
               </Button>
               <Button variant="outline" size="sm" className="gap-2 text-primary" onClick={openInManager}>
