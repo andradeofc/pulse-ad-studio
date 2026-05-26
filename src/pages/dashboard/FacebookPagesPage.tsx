@@ -21,7 +21,13 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsRight,
+  Eye,
+  Plus,
+  ExternalLink,
+  Copy,
+  X,
 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
