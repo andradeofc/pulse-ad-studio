@@ -1087,6 +1087,30 @@ export type Database = {
         }
         Relationships: []
       }
+      facebook_page_blacklist: {
+        Row: {
+          created_at: string
+          id: string
+          page_id: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          page_id: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          page_id?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       facebook_pages: {
         Row: {
           access_token: string | null
