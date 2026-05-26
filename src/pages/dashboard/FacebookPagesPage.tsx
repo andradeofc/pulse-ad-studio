@@ -92,9 +92,13 @@ interface FacebookPage {
   ads_limit: number;
   tasks: string[] | null;
   source: 'api' | 'extension';
+  is_blacklisted: boolean;
+  blacklist_reason: string | null;
+  blacklisted_at: string | null;
   created_at: string;
   profile_name?: string;
 }
+
 
 
 type SortKey = 'name' | 'slots' | 'category' | 'access_type' | 'origin_access';
