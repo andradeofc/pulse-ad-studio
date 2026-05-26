@@ -87,6 +87,31 @@ export default function FacebookProfilesPage() {
   const [isValidating, setIsValidating] = useState(false);
   const [isUpdatingToken, setIsUpdatingToken] = useState(false);
   const [isSyncing, setSyncing] = useState<string | null>(null);
+  const [refreshingTokenId, setRefreshingTokenId] = useState<string | null>(null);
+
+  const handleRefreshToken = async (profile: FacebookProfile) => {
+    setRefreshingTokenId(profile.id);
+    try {
+      const res = await refreshFacebookProfileToken(profile.id);
+      const r = res.results?.[0];
+      if (r?.action === 'refreshed') {
+        toast({ title: 'Token renovado', description: 'Validade estendida por ~60 dias.' });
+      } else if (r?.action === 'checked_ok') {
+        toast({ title: 'Token saudável', description: 'Nenhuma renovação necessária.' });
+      } else if (r?.action === 'marked_expired') {
+        toast({ title: 'Token expirado', description: r.error || 'Atualize o token manualmente.', variant: 'destructive' });
+      } else if (r?.action === 'marked_blocked') {
+        toast({ title: 'App bloqueado pelo Facebook', description: r.error || 'Rate limit ou bloqueio.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Não foi possível renovar', description: r?.error || 'Tente novamente.', variant: 'destructive' });
+      }
+      await loadProfiles();
+    } catch (e: any) {
+      toast({ title: 'Erro ao renovar', description: e?.message || 'Erro desconhecido', variant: 'destructive' });
+    } finally {
+      setRefreshingTokenId(null);
+    }
+  };
   
   const [proxyForm, setProxyForm] = useState({
     protocol: 'http',
