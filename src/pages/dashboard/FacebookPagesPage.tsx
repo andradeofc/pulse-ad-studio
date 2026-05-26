@@ -209,9 +209,93 @@ export default function FacebookPagesPage() {
     }
   }, []);
 
+  const loadPools = useCallback(async () => {
+    try {
+      setPools(await fetchPools());
+    } catch (e) {
+      console.error('Error loading pools:', e);
+    }
+  }, []);
+
   useEffect(() => {
-    if (isAuthenticated) loadPages();
-  }, [isAuthenticated, loadPages]);
+    if (isAuthenticated) {
+      loadPages();
+      loadPools();
+    }
+  }, [isAuthenticated, loadPages, loadPools]);
+
+  const handleBulkBlacklist = async (blacklist: boolean) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const payload = blacklist
+        ? { is_blacklisted: true, blacklist_reason: 'Manual bulk blacklist', blacklisted_at: new Date().toISOString() }
+        : { is_blacklisted: false, blacklist_reason: null, blacklisted_at: null };
+      const { error } = await supabase
+        .from('facebook_pages')
+        .update(payload)
+        .in('id', Array.from(selectedIds));
+      if (error) throw error;
+      toast.success(blacklist
+        ? `${selectedIds.size} página(s) adicionada(s) à blacklist`
+        : `${selectedIds.size} página(s) removida(s) da blacklist`);
+      setSelectedIds(new Set());
+      await loadPages();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao atualizar blacklist');
+    }
+  };
+
+  const handleBulkAddToPool = async (poolId: string) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const items = pages
+        .filter((p) => selectedIds.has(p.id))
+        .map((p) => ({ page_id: p.page_id, profile_id: p.profile_id }));
+      await addPagesToPool(poolId, items);
+      toast.success(`${items.length} página(s) adicionada(s) ao pool`);
+      await loadPools();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao adicionar ao pool');
+    }
+  };
+
+  const handleBulkRemoveFromPool = async (poolId: string) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const pageIds = pages.filter((p) => selectedIds.has(p.id)).map((p) => p.page_id);
+      const { error } = await supabase
+        .from('fanpage_pool_pages')
+        .delete()
+        .eq('pool_id', poolId)
+        .in('page_id', pageIds);
+      if (error) throw error;
+      toast.success('Páginas removidas do pool');
+      await loadPools();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao remover do pool');
+    }
+  };
+
+  const handleCreatePoolFromSelection = async (name: string) => {
+    if (!name.trim() || selectedIds.size === 0) return;
+    try {
+      const created = await createPool(name.trim(), '#10b981');
+      const items = pages
+        .filter((p) => selectedIds.has(p.id))
+        .map((p) => ({ page_id: p.page_id, profile_id: p.profile_id }));
+      await addPagesToPool(created.id, items);
+      toast.success(`Pool "${name}" criado com ${items.length} página(s)`);
+      await loadPools();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao criar pool');
+    }
+  };
+
+
 
   const handleSync = async () => {
     setIsSyncing(true);
