@@ -475,29 +475,41 @@ export default function AdAccountsPage() {
                           onCheckedChange={(c) => toggleAll(Boolean(c))}
                         />
                       </th>
-                      {[
-                        { label: 'Conta' },
-                        { label: 'ID da Conta' },
-                        { label: 'Apelido' },
-                        { label: 'Status' },
-                        { label: 'Moeda' },
-                        { label: 'Fuso' },
-                        { label: 'Gasto Total', align: 'right' as const },
-                        { label: 'Última atividade' },
-                      ].map((col) => (
-                        <th
-                          key={col.label}
-                          className={cn(
-                            'py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap',
-                            col.align === 'right' ? 'text-right' : 'text-left'
-                          )}
-                        >
-                          <div className={cn('flex items-center gap-1.5', col.align === 'right' && 'justify-end')}>
-                            {col.label}
-                            <ArrowUpDown className="w-3 h-3 opacity-50" />
-                          </div>
-                        </th>
-                      ))}
+                      {([
+                        { key: 'name', label: 'Conta' },
+                        { key: 'account_id', label: 'ID da Conta' },
+                        { key: 'nickname', label: 'Apelido' },
+                        { key: 'status', label: 'Status' },
+                        { key: 'currency', label: 'Moeda' },
+                        { key: 'timezone', label: 'Fuso' },
+                        { key: 'amount_spent', label: 'Gasto Total', align: 'right' as const },
+                        { key: 'spend_updated_at', label: 'Última atividade' },
+                      ] as Array<{ key: SortKey; label: string; align?: 'right' }>).map((col) => {
+                        const isActive = sortKey === col.key;
+                        const Icon = isActive ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+                        return (
+                          <th
+                            key={col.key}
+                            className={cn(
+                              'py-3 px-4 text-xs font-semibold uppercase tracking-wide whitespace-nowrap select-none',
+                              isActive ? 'text-foreground' : 'text-muted-foreground',
+                              col.align === 'right' ? 'text-right' : 'text-left'
+                            )}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleSort(col.key)}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 hover:text-foreground transition-colors',
+                                col.align === 'right' && 'justify-end'
+                              )}
+                            >
+                              {col.label}
+                              <Icon className={cn('w-3 h-3', isActive ? 'opacity-100 text-primary' : 'opacity-50')} />
+                            </button>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
