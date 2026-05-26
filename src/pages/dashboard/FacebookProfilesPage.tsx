@@ -62,9 +62,11 @@ import {
   validateFacebookToken,
   updateFacebookToken,
   testProxyConnection,
+  refreshFacebookProfileToken,
   type FacebookProfile,
 } from '@/services/facebookService';
 import { AddProfileWizard } from '@/components/facebook/AddProfileWizard';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 export default function FacebookProfilesPage() {
