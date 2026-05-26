@@ -169,9 +169,9 @@ Deno.serve(async (req) => {
       // List Facebook profiles owned by this user (the "accounts" in extension lingo)
       const { data: profiles, error } = await admin
         .from("facebook_profiles")
-        .select("id, name, picture_url, status, facebook_user_id")
+        .select("id, name, avatar_url, status, facebook_id")
         .eq("user_id", userId)
-        .neq("status", "deleted")
+        .eq("status", "active")
         .order("name");
       if (error) return json({ error: error.message }, 500);
 
@@ -180,8 +180,8 @@ Deno.serve(async (req) => {
           id: p.id,
           accountName: p.name,
           facebookUserName: p.name,
-          facebookUserId: p.facebook_user_id || null,
-          profilePictureUrl: p.picture_url,
+          facebookUserId: p.facebook_id || null,
+          profilePictureUrl: p.avatar_url,
           status: (p.status || "active").toUpperCase(),
         })),
       });
