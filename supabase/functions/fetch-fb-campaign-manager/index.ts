@@ -211,11 +211,11 @@ Deno.serve(async (req) => {
       return out
     }
 
-    // Fetch all accounts in parallel; within each account fetch nodes, insights,
-    // and adset-budget probe (campaign level only) in parallel as well.
-    // IMPORTANT: filter by effective_status at the Graph API level. Without this,
-    // old accounts return thousands of DELETED/ARCHIVED entities which is the main
-    // cause of 30-40s loads. Default excludes DELETED + ARCHIVED.
+    // KEY OPTIMIZATION: Graph "field expansion" — nodes + insights in a SINGLE call
+    // per account. The competitor (DirectAds) does exactly this — that's why they
+    // return in <5s. Half the round-trips, no id-matching, insights nested in node.
+    // Filtering applied only on the node endpoint (effective_status is NOT a valid
+    // filter on /insights and was silently breaking the spend column).
     const ALL_VISIBLE_STATUSES = [
       'ACTIVE','PAUSED','PENDING_REVIEW','DISAPPROVED','PREAPPROVED',
       'PENDING_BILLING_INFO','CAMPAIGN_PAUSED','ADSET_PAUSED','IN_PROCESS','WITH_ISSUES',
@@ -225,32 +225,34 @@ Deno.serve(async (req) => {
       { field: 'effective_status', operator: 'IN', value: wantedStatuses },
     ]))}`
 
+    // Nested insights spec — Graph supports: insights.time_range({...}){fields}
+    const insightsExpansion = (() => {
+      const paramStr = dateFrom && dateTo
+        ? `.time_range(${JSON.stringify({ since: dateFrom, until: dateTo })})`
+        : ''
+      return `insights${paramStr}{${insightFields}}`
+    })()
+
     const perAccount = await Promise.all(allowedAccounts.map(async (acc: any) => {
       const token = acc.facebook_profiles?.access_token
       if (!token) return [] as any[]
       const actId = String(acc.account_id).replace(/^act_/, '')
 
-      const fields = level === 'campaign'
+      const baseFields = level === 'campaign'
         ? 'id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,start_time,stop_time,created_time,updated_time'
         : level === 'adset'
         ? 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,start_time,end_time,billing_event,optimization_goal,bid_strategy,created_time,updated_time'
         : 'id,name,status,effective_status,campaign_id,adset_id,creative{id,name,thumbnail_url},created_time,updated_time'
 
+      const fields = `${baseFields},${insightsExpansion}`
       const nodePath = level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'
 
-      const nodesP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${fields}&limit=500${filteringParam}&access_token=${token}`)
-      const insightsP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/insights?level=${level}&fields=${insightFields}&limit=500${timeRange}${filteringParam}&access_token=${token}`)
+      const nodesP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${encodeURIComponent(fields)}&limit=200${filteringParam}&access_token=${token}`)
       const adsetBudgetP = level === 'campaign'
         ? paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/adsets?fields=campaign_id,daily_budget,lifetime_budget&limit=500${filteringParam}&access_token=${token}`)
         : Promise.resolve([] as any[])
 
-      const [nodes, insightRaw, adsetBudgetRows] = await Promise.all([nodesP, insightsP, adsetBudgetP])
-
-      const insightMap = new Map<string, any>()
-      for (const r of insightRaw) {
-        const id = r.campaign_id || r.adset_id || r.ad_id
-        if (id) insightMap.set(id, buildInsights(r))
-      }
+      const [nodes, adsetBudgetRows] = await Promise.all([nodesP, adsetBudgetP])
 
       const adsetBudgetCampaigns = new Set<string>()
       for (const a of adsetBudgetRows) {
@@ -259,9 +261,12 @@ Deno.serve(async (req) => {
         }
       }
 
+
       const rows: any[] = []
       for (const n of nodes) {
-        const ins = insightMap.get(n.id) || {}
+        const rawIns = n.insights?.data?.[0]
+        const ins = rawIns ? buildInsights(rawIns) : {}
+
         const dailyB = n.daily_budget ? parseFloat(n.daily_budget) / 100 : null
         const lifeB = n.lifetime_budget ? parseFloat(n.lifetime_budget) / 100 : null
         const budgetSource =
