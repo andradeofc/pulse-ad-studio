@@ -629,11 +629,13 @@ async function performFullSync(
       if (error) console.error("Error upserting pixels:", error);
     }
 
+    pixelsCount = uniquePixels.length;
     console.log(`✓ STAGE 3 COMPLETE: ${uniquePixels.length} pixels synced`);
 
   } catch (error) {
     console.error("Error in Stage 3 (pixels):", error);
     await updateSyncStatus(supabase, profileId, "error");
+    await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar pixels" });
     return;
   }
 
@@ -648,6 +650,16 @@ async function performFullSync(
       sync_status: "completed",
     })
     .eq("id", profileId);
+
+  await finishTask(svcClient, taskId, "completed", {
+    result: {
+      profile_id: profileId,
+      accounts_count: accountsCount,
+      pages_count: pagesCount,
+      pixels_count: pixelsCount,
+      bms_count: bmsCount,
+    },
+  });
 
   console.log("Background sync completed successfully!");
 }
