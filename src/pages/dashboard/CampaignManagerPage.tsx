@@ -25,10 +25,13 @@ import {
   Trash2,
   Pencil,
   ExternalLink,
+  Copy,
+  Facebook,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -421,17 +424,43 @@ export default function CampaignManagerPage() {
     );
   };
 
-  const openInManager = () => {
+  const [managerDialogOpen, setManagerDialogOpen] = useState(false);
+  const buildManagerLinks = () => {
     const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
+    if (ids.length === 0) return [] as { accountName: string; accountId: string; url: string; count: number }[];
     const byId = new Map(rows.map((r) => [r.id, r] as const));
-    const first = byId.get(ids[0]);
-    if (!first) return;
-    const actId = first.account.account_id.replace(/^act_/, '');
+    const grouped = new Map<string, { accountName: string; accountId: string; ids: string[] }>();
+    for (const id of ids) {
+      const r = byId.get(id);
+      if (!r) continue;
+      const actId = r.account.account_id.replace(/^act_/, '');
+      const g = grouped.get(actId) || { accountName: r.account.name, accountId: actId, ids: [] };
+      g.ids.push(id);
+      grouped.set(actId, g);
+    }
     const param = level === 'campaign' ? 'selected_campaign_ids' : level === 'adset' ? 'selected_adset_ids' : 'selected_ad_ids';
-    const url = `https://business.facebook.com/adsmanager/manage/${level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'}?act=${actId}&${param}=${ids.join(',')}`;
-    window.open(url, '_blank', 'noopener');
+    const path = level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads';
+    return Array.from(grouped.values()).map((g) => ({
+      accountName: g.accountName,
+      accountId: g.accountId,
+      count: g.ids.length,
+      url: `https://business.facebook.com/adsmanager/manage/${path}?act=${g.accountId}&${param}=${g.ids.join(',')}`,
+    }));
   };
+
+  const openInManager = () => setManagerDialogOpen(true);
+  const copyAllLinks = async (links: { url: string }[]) => {
+    try {
+      await navigator.clipboard.writeText(links.map((l) => l.url).join('\n'));
+      toast.success('Links copiados');
+    } catch { toast.error('Falha ao copiar'); }
+  };
+  const openAllLinks = (links: { url: string }[]) => {
+    links.forEach((l) => window.open(l.url, '_blank', 'noopener'));
+    setManagerDialogOpen(false);
+  };
+
+
 
   const filterKey = useMemo(
     () => ({
@@ -709,9 +738,87 @@ export default function CampaignManagerPage() {
           Dados em cache · atualizado em {format(new Date(data.fetchedAt), 'HH:mm:ss')} (refresh a cada 2 min)
         </p>
       )}
+
+      <ManagerLinksDialog
+        open={managerDialogOpen}
+        onOpenChange={setManagerDialogOpen}
+        links={managerDialogOpen ? buildManagerLinks() : []}
+        level={level}
+        onCopyAll={copyAllLinks}
+        onOpenAll={openAllLinks}
+      />
     </div>
   );
 }
+
+function ManagerLinksDialog({
+  open, onOpenChange, links, level, onCopyAll, onOpenAll,
+}: {
+  open: boolean;
+  onOpenChange: (b: boolean) => void;
+  links: { accountName: string; accountId: string; url: string; count: number }[];
+  level: Level;
+  onCopyAll: (l: { url: string }[]) => void;
+  onOpenAll: (l: { url: string }[]) => void;
+}) {
+  const totalCount = links.reduce((s, l) => s + l.count, 0);
+  const noun = level === 'campaign' ? 'campanha(s)' : level === 'adset' ? 'conjunto(s)' : 'anúncio(s)';
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Facebook className="w-5 h-5 text-primary" />
+            Abrir no Gerenciador de Anúncios
+          </DialogTitle>
+          <DialogDescription>
+            {links.length > 1
+              ? `Um link será gerado por conta para abrir no Facebook Ads Manager.`
+              : `Um link será gerado para abrir no Facebook Ads Manager.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="text-sm text-muted-foreground">
+          {totalCount} {noun} selecionada(s){links.length > 1 ? ` em ${links.length} contas` : ''}
+        </div>
+
+        <div className="space-y-2 max-h-[320px] overflow-y-auto">
+          {links.map((l) => (
+            <div key={l.accountId} className="flex items-center gap-3 border border-border rounded-lg p-3">
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">{l.accountName}</div>
+                <div className="text-xs text-muted-foreground truncate">{l.url}</div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(l.url);
+                    toast.success('Link copiado');
+                  } catch { toast.error('Falha ao copiar'); }
+                }}
+                title="Copiar link"
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => onCopyAll(links)}>
+            <Copy className="w-4 h-4" /> Copiar {links.length > 1 ? 'links' : 'link'}
+          </Button>
+          <Button className="gap-2" onClick={() => onOpenAll(links)}>
+            <ExternalLink className="w-4 h-4" /> Abrir no navegador
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
