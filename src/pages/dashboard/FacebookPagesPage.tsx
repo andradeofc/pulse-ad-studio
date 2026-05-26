@@ -515,10 +515,38 @@ export default function FacebookPagesPage() {
               </Select>
             </span>
           </div>
-          <button className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            <Columns3 className="w-3.5 h-3.5" />
-            Colunas
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <Columns3 className="w-3.5 h-3.5" />
+                Colunas
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 max-h-[480px] overflow-y-auto">
+              <DropdownMenuLabel className="text-xs">Exibir colunas</DropdownMenuLabel>
+              <DropdownMenuItem
+                onSelect={(e) => { e.preventDefault(); toggleAllCols(!allColsOn); }}
+                className="text-xs font-medium cursor-pointer"
+              >
+                {allColsOn ? 'Desmarcar todas' : 'Marcar todas'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {COLUMNS.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.key}
+                  checked={visibleCols[c.key]}
+                  onCheckedChange={() => c.available && toggleCol(c.key)}
+                  disabled={!c.available}
+                  className="text-xs cursor-pointer"
+                >
+                  <span className="flex-1">{c.label}</span>
+                  {!c.available && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground/70">em breve</span>
+                  )}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Loading */}
