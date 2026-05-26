@@ -667,7 +667,7 @@ export default function FacebookPagesPage() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: Math.min(idx * 0.015, 0.2) }}
                       className={cn(
-                        'border-border/50 transition-colors hover:bg-muted/30',
+                        'group/row border-border/50 transition-colors hover:bg-muted/30',
                         isSelected && 'bg-primary/5 hover:bg-primary/10'
                       )}
                     >
