@@ -73,6 +73,7 @@ export default function FacebookProfilesPage() {
   const [profiles, setProfiles] = useState<FacebookProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddTokenOpen, setIsAddTokenOpen] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isUpdateTokenOpen, setIsUpdateTokenOpen] = useState(false);
   const [isProxyOpen, setIsProxyOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
