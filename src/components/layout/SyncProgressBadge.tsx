@@ -36,7 +36,7 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
   const [dismissed, setDismissed] = useState(false);
   const [currentStage, setCurrentStage] = useState<SyncStage>('idle');
 
-  const checkSyncStatus = useCallback(async () => {
+  const fetchSyncStatus = useCallback(async () => {
     if (!isAuthenticated) return;
 
     try {
@@ -50,31 +50,28 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
         return;
       }
 
-      const syncing = (data || []).filter(p => 
-        p.sync_status === 'syncing_accounts' || 
-        p.sync_status === 'syncing_pages' || 
+      const syncing = (data || []).filter(p =>
+        p.sync_status === 'syncing_accounts' ||
+        p.sync_status === 'syncing_pages' ||
         p.sync_status === 'syncing_pixels'
       ) as SyncingProfile[];
-      
-      const completed = (data || []).filter(p => 
-        p.sync_status === 'completed' || 
+
+      const completed = (data || []).filter(p =>
+        p.sync_status === 'completed' ||
         p.sync_status === 'error'
       ) as SyncingProfile[];
 
       setSyncingProfiles(syncing);
-      
-      // Get the current stage from the first syncing profile
+
       if (syncing.length > 0) {
         setCurrentStage(syncing[0].sync_status as SyncStage);
       }
-      
-      // Track recently completed for showing success message briefly
+
       if (completed.length > 0 && recentlyCompleted.length === 0) {
         setRecentlyCompleted(completed);
         setCurrentStage(completed[0].sync_status as SyncStage);
         setDismissed(false);
-        
-        // Reset status after 5 seconds
+
         setTimeout(async () => {
           for (const profile of completed) {
             await supabase
@@ -94,14 +91,29 @@ export function SyncProgressBadge({ isCollapsed = false }: SyncProgressBadgeProp
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Initial check
-    checkSyncStatus();
+    // Initial fetch on mount
+    fetchSyncStatus();
 
-    // Poll every 1.5 seconds for faster updates
-    const interval = setInterval(checkSyncStatus, 1500);
+    // Subscribe to realtime changes (RLS-scoped to the current user's profiles)
+    const channel = supabase
+      .channel('sync-progress-badge')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'facebook_profiles',
+        },
+        () => {
+          fetchSyncStatus();
+        }
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
-  }, [isAuthenticated, checkSyncStatus]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated, fetchSyncStatus]);
 
   const handleDismiss = () => {
     setDismissed(true);
