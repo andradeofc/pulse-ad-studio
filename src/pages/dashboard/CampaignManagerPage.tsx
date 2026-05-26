@@ -738,9 +738,87 @@ export default function CampaignManagerPage() {
           Dados em cache · atualizado em {format(new Date(data.fetchedAt), 'HH:mm:ss')} (refresh a cada 2 min)
         </p>
       )}
+
+      <ManagerLinksDialog
+        open={managerDialogOpen}
+        onOpenChange={setManagerDialogOpen}
+        links={managerDialogOpen ? buildManagerLinks() : []}
+        level={level}
+        onCopyAll={copyAllLinks}
+        onOpenAll={openAllLinks}
+      />
     </div>
   );
 }
+
+function ManagerLinksDialog({
+  open, onOpenChange, links, level, onCopyAll, onOpenAll,
+}: {
+  open: boolean;
+  onOpenChange: (b: boolean) => void;
+  links: { accountName: string; accountId: string; url: string; count: number }[];
+  level: Level;
+  onCopyAll: (l: { url: string }[]) => void;
+  onOpenAll: (l: { url: string }[]) => void;
+}) {
+  const totalCount = links.reduce((s, l) => s + l.count, 0);
+  const noun = level === 'campaign' ? 'campanha(s)' : level === 'adset' ? 'conjunto(s)' : 'anúncio(s)';
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Facebook className="w-5 h-5 text-primary" />
+            Abrir no Gerenciador de Anúncios
+          </DialogTitle>
+          <DialogDescription>
+            {links.length > 1
+              ? `Um link será gerado por conta para abrir no Facebook Ads Manager.`
+              : `Um link será gerado para abrir no Facebook Ads Manager.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="text-sm text-muted-foreground">
+          {totalCount} {noun} selecionada(s){links.length > 1 ? ` em ${links.length} contas` : ''}
+        </div>
+
+        <div className="space-y-2 max-h-[320px] overflow-y-auto">
+          {links.map((l) => (
+            <div key={l.accountId} className="flex items-center gap-3 border border-border rounded-lg p-3">
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">{l.accountName}</div>
+                <div className="text-xs text-muted-foreground truncate">{l.url}</div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(l.url);
+                    toast.success('Link copiado');
+                  } catch { toast.error('Falha ao copiar'); }
+                }}
+                title="Copiar link"
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => onCopyAll(links)}>
+            <Copy className="w-4 h-4" /> Copiar {links.length > 1 ? 'links' : 'link'}
+          </Button>
+          <Button className="gap-2" onClick={() => onOpenAll(links)}>
+            <ExternalLink className="w-4 h-4" /> Abrir no navegador
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
