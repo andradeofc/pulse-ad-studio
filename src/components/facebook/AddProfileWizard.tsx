@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dialog,
@@ -25,6 +26,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { WizardStepper } from '@/components/campaign/WizardStepper';
 import {
   Loader2,
+  ChevronRight,
   Shield,
   Wifi,
   WifiOff,
@@ -102,6 +104,7 @@ const STEP_KEYS_ORDER = [
 ];
 
 export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileWizardProps) {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuthStore();
 
@@ -747,8 +750,24 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
         <Alert className="border-ads-success/30 bg-ads-success/10">
           <CheckCircle2 className="h-4 w-4 text-ads-success" />
           <AlertTitle>Conexão concluída</AlertTitle>
-          <AlertDescription>
-            Todas as contas, BMs, páginas e pixels foram sincronizados com sucesso.
+          <AlertDescription className="space-y-3">
+            <p>
+              Contas, BMs e pixels foram sincronizados com sucesso. As <strong>páginas</strong> também
+              foram baixadas, mas recomendamos revisar e validar manualmente quais você quer
+              habilitar para uso em campanhas.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                onComplete?.();
+                navigate('/paginas');
+              }}
+            >
+              Ir para Páginas
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
           </AlertDescription>
         </Alert>
       )}
@@ -852,7 +871,13 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
             </Button>
           )}
           {currentStep === 3 && task?.status === 'completed' && (
-            <Button onClick={() => onOpenChange(false)} className="glow-primary">
+            <Button
+              onClick={() => {
+                onOpenChange(false);
+                onComplete?.();
+              }}
+              className="glow-primary"
+            >
               Concluir
             </Button>
           )}
