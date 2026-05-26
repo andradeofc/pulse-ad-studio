@@ -63,6 +63,7 @@ import {
   testProxyConnection,
   type FacebookProfile,
 } from '@/services/facebookService';
+import { AddProfileWizard } from '@/components/facebook/AddProfileWizard';
 
 
 export default function FacebookProfilesPage() {
