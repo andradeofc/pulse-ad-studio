@@ -871,7 +871,13 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
             </Button>
           )}
           {currentStep === 3 && task?.status === 'completed' && (
-            <Button onClick={() => onOpenChange(false)} className="glow-primary">
+            <Button
+              onClick={() => {
+                onOpenChange(false);
+                onComplete?.();
+              }}
+              className="glow-primary"
+            >
               Concluir
             </Button>
           )}
