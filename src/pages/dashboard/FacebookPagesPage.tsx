@@ -910,6 +910,92 @@ export default function FacebookPagesPage() {
           </div>
         )}
       </Card>
+
+      {/* Pool dialog */}
+      <Dialog open={!!poolDialogPage} onOpenChange={(o) => !o && setPoolDialogPage(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pools da página</DialogTitle>
+            <DialogDescription>
+              {poolDialogPage?.name} — agrupe páginas por tema (ex: nicho, oferta).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Pools atuais
+              </label>
+              {poolDialogPage && (pageIdToPools[poolDialogPage.page_id]?.length ?? 0) === 0 ? (
+                <div className="mt-2 rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-center text-sm text-muted-foreground">
+                  Nenhum pool criado ainda
+                </div>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {poolDialogPage && pageIdToPools[poolDialogPage.page_id].map((pool) => (
+                    <Badge key={pool} variant="outline" className="font-normal gap-1 bg-primary/10 text-primary border-primary/30">
+                      {pool}
+                      <button
+                        onClick={() => {
+                          if (!poolDialogPage) return;
+                          setPageIdToPools((prev) => ({
+                            ...prev,
+                            [poolDialogPage.page_id]: (prev[poolDialogPage.page_id] || []).filter((x) => x !== pool),
+                          }));
+                        }}
+                        className="hover:opacity-70"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Ex: Emagrecimento, Disfunção..."
+                value={newPoolName}
+                onChange={(e) => setNewPoolName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!poolDialogPage || !newPoolName.trim()) return;
+                    const name = newPoolName.trim();
+                    setPageIdToPools((prev) => {
+                      const cur = prev[poolDialogPage.page_id] || [];
+                      if (cur.includes(name)) return prev;
+                      return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
+                    });
+                    setNewPoolName('');
+                  }
+                }}
+              />
+              <Button
+                size="icon"
+                onClick={() => {
+                  if (!poolDialogPage || !newPoolName.trim()) return;
+                  const name = newPoolName.trim();
+                  setPageIdToPools((prev) => {
+                    const cur = prev[poolDialogPage.page_id] || [];
+                    if (cur.includes(name)) return prev;
+                    return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
+                  });
+                  setNewPoolName('');
+                }}
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPoolDialogPage(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
