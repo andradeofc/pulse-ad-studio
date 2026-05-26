@@ -20,6 +20,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
