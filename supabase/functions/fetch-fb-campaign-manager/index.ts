@@ -190,11 +190,32 @@ Deno.serve(async (req) => {
     const allowedAccounts = (accounts || []).filter((a: any) => a.facebook_profiles?.user_id)
 
     const timeRange = dateFrom && dateTo ? `&time_range=${encodeURIComponent(JSON.stringify({ since: dateFrom, until: dateTo }))}` : ''
-    const allRows: any[] = []
 
-    for (const acc of allowedAccounts) {
-      const token = (acc as any).facebook_profiles?.access_token
-      if (!token) continue
+    const insightFields = [
+      'spend','reach','impressions','clicks','ctr','cpc','frequency',
+      'inline_link_clicks','cost_per_inline_link_click','unique_clicks',
+      'outbound_clicks','cost_per_outbound_click',
+      'actions','action_values','cost_per_action_type',
+      'purchase_roas','website_purchase_roas',
+    ].join(',')
+
+    async function paginate(initialUrl: string): Promise<any[]> {
+      const out: any[] = []
+      let url: string | null = initialUrl
+      while (url) {
+        const j: any = await fbFetch(url)
+        if (j?.error) { console.warn('FB paginate error', j.error); break }
+        if (j?.data) out.push(...j.data)
+        url = j?.paging?.next || null
+      }
+      return out
+    }
+
+    // Fetch all accounts in parallel; within each account fetch nodes, insights,
+    // and adset-budget probe (campaign level only) in parallel as well.
+    const perAccount = await Promise.all(allowedAccounts.map(async (acc: any) => {
+      const token = acc.facebook_profiles?.access_token
+      if (!token) return [] as any[]
       const actId = String(acc.account_id).replace(/^act_/, '')
 
       const fields = level === 'campaign'
@@ -204,55 +225,29 @@ Deno.serve(async (req) => {
         : 'id,name,status,effective_status,campaign_id,adset_id,creative{id,name,thumbnail_url},created_time,updated_time'
 
       const nodePath = level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'
-      let nodeUrl: string | null = `https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${fields}&limit=200&access_token=${token}`
 
-      const nodes: any[] = []
-      while (nodeUrl) {
-        const j: any = await fbFetch(nodeUrl)
-        if (j?.error) { console.warn('FB error', actId, j.error); break }
-        if (j?.data) nodes.push(...j.data)
-        nodeUrl = j?.paging?.next || null
-      }
-      if (!nodes.length) continue
+      const nodesP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${fields}&limit=500&access_token=${token}`)
+      const insightsP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/insights?level=${level}&fields=${insightFields}&limit=500${timeRange}&access_token=${token}`)
+      const adsetBudgetP = level === 'campaign'
+        ? paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/adsets?fields=campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${token}`)
+        : Promise.resolve([] as any[])
 
-      const insightFields = [
-        'spend','reach','impressions','clicks','ctr','cpc','frequency',
-        'inline_link_clicks','cost_per_inline_link_click','unique_clicks',
-        'outbound_clicks','cost_per_outbound_click',
-        'actions','action_values','cost_per_action_type',
-        'purchase_roas','website_purchase_roas',
-      ].join(',')
+      const [nodes, insightRaw, adsetBudgetRows] = await Promise.all([nodesP, insightsP, adsetBudgetP])
 
-      let insightUrl: string | null = `https://graph.facebook.com/${FB_VERSION}/act_${actId}/insights?level=${level}&fields=${insightFields}&limit=500${timeRange}&access_token=${token}`
       const insightMap = new Map<string, any>()
-      while (insightUrl) {
-        const j: any = await fbFetch(insightUrl)
-        if (j?.error) { console.warn('FB insights error', actId, j.error); break }
-        for (const r of j?.data || []) {
-          const id = r.campaign_id || r.adset_id || r.ad_id
-          if (!id) continue
-          insightMap.set(id, buildInsights(r))
-        }
-        insightUrl = j?.paging?.next || null
+      for (const r of insightRaw) {
+        const id = r.campaign_id || r.adset_id || r.ad_id
+        if (id) insightMap.set(id, buildInsights(r))
       }
 
-      // For campaign level we also need to know if budget is at adset level (ABO).
-      // We do a quick HEAD-like query: count adsets per campaign that have budgets.
       const adsetBudgetCampaigns = new Set<string>()
-      if (level === 'campaign') {
-        let abUrl: string | null = `https://graph.facebook.com/${FB_VERSION}/act_${actId}/adsets?fields=campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${token}`
-        while (abUrl) {
-          const j: any = await fbFetch(abUrl)
-          if (j?.error) break
-          for (const a of j?.data || []) {
-            if ((a.daily_budget && a.daily_budget !== '0') || (a.lifetime_budget && a.lifetime_budget !== '0')) {
-              if (a.campaign_id) adsetBudgetCampaigns.add(a.campaign_id)
-            }
-          }
-          abUrl = j?.paging?.next || null
+      for (const a of adsetBudgetRows) {
+        if ((a.daily_budget && a.daily_budget !== '0') || (a.lifetime_budget && a.lifetime_budget !== '0')) {
+          if (a.campaign_id) adsetBudgetCampaigns.add(a.campaign_id)
         }
       }
 
+      const rows: any[] = []
       for (const n of nodes) {
         const ins = insightMap.get(n.id) || {}
         const dailyB = n.daily_budget ? parseFloat(n.daily_budget) / 100 : null
@@ -262,7 +257,7 @@ Deno.serve(async (req) => {
             ? 'adset'
             : 'self'
 
-        allRows.push({
+        rows.push({
           id: n.id,
           name: n.name,
           status: n.status,
@@ -283,7 +278,11 @@ Deno.serve(async (req) => {
           insights: ins,
         })
       }
-    }
+      return rows
+    }))
+
+    const allRows = perAccount.flat()
+
 
     const filtered = statuses.length
       ? allRows.filter((r) => statuses.includes(r.effective_status) || statuses.includes(r.status))
