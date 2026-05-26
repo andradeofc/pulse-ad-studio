@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
     // Load ad accounts with tokens
     const { data: accounts, error: accErr } = await svc
       .from('facebook_ad_accounts')
-      .select('id, account_id, name, currency, timezone_name, profile_id, facebook_profiles!inner(id, access_token, user_id)')
+      .select('id, account_id, name, currency, timezone, profile_id, facebook_profiles!inner(id, access_token, user_id)')
       .in('id', accountIds)
 
     if (accErr) throw accErr
