@@ -361,11 +361,13 @@ export default function FacebookPagesPage() {
   };
 
   const getStatus = (p: FacebookPage) => {
+    if (p.is_blacklisted) return { label: 'Em blacklist', tone: 'destructive' as const, Icon: Ban };
     const pct = p.ads_limit > 0 ? (p.ads_running / p.ads_limit) * 100 : 0;
     if (pct >= 100) return { label: 'Limite atingido', tone: 'destructive' as const, Icon: XCircle };
     if (pct >= 80) return { label: 'Atenção', tone: 'warning' as const, Icon: AlertTriangle };
     return { label: 'Sem problemas', tone: 'success' as const, Icon: CheckCircle2 };
   };
+
 
   const getAccessType = (p: FacebookPage) =>
     p.business_id ? { label: 'Business', color: 'bg-ads-info/10 text-ads-info border-ads-info/30' }
