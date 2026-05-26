@@ -644,7 +644,11 @@ export default function FacebookPagesPage() {
                       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Seguidores</span>
                     </TableHead>
                   )}
+                  <TableHead className="w-[140px] text-right">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ações</span>
+                  </TableHead>
                 </TableRow>
+
               </TableHeader>
               <TableBody>
                 {visiblePages.map((p, idx) => {
