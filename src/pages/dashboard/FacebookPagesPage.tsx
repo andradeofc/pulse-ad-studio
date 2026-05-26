@@ -133,10 +133,23 @@ export default function FacebookPagesPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'pools'>('all');
 
 
-  // Pools (local, em breve persistência no backend)
-  const [pageIdToPools, setPageIdToPools] = useState<Record<string, string[]>>({});
+  // Pools (real, vindo do banco)
+  const [pools, setPools] = useState<PoolWithPages[]>([]);
   const [poolDialogPage, setPoolDialogPage] = useState<FacebookPage | null>(null);
   const [newPoolName, setNewPoolName] = useState('');
+
+  // Derivado: page_id -> nomes dos pools
+  const pageIdToPools = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const pool of pools) {
+      for (const pp of pool.pages) {
+        if (!map[pp.page_id]) map[pp.page_id] = [];
+        map[pp.page_id].push(pool.name);
+      }
+    }
+    return map;
+  }, [pools]);
+
 
 
   // Column visibility
