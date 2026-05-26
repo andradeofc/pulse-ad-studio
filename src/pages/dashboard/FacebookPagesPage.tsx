@@ -73,6 +73,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FanpagePoolsView } from '@/components/facebook/FanpagePoolsView';
+import {
+  fetchPools,
+  createPool,
+  addPagesToPool,
+  removePageFromPool,
+  PoolWithPages,
+} from '@/services/fanpagePoolsService';
+import { Ban, ShieldCheck, Layers } from 'lucide-react';
+
 
 
 
