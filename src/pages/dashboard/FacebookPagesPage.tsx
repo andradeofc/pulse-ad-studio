@@ -43,6 +43,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/integrations/supabase/client';
@@ -86,6 +95,33 @@ export default function FacebookPagesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
+
+  // Column visibility
+  type ColKey =
+    | 'page' | 'slots' | 'status' | 'category' | 'access_type' | 'profile_name'
+    | 'origin' | 'pools' | 'fb_url' | 'business_manager' | 'bm_verified' | 'followers' | 'created_fb';
+  const COLUMNS: { key: ColKey; label: string; available: boolean; defaultVisible: boolean }[] = [
+    { key: 'page', label: 'Página', available: true, defaultVisible: true },
+    { key: 'slots', label: 'Slots Disponíveis', available: true, defaultVisible: true },
+    { key: 'status', label: 'Status', available: true, defaultVisible: true },
+    { key: 'category', label: 'Categoria', available: true, defaultVisible: true },
+    { key: 'access_type', label: 'Tipo de Acesso', available: true, defaultVisible: true },
+    { key: 'profile_name', label: 'Nome do Perfil', available: true, defaultVisible: true },
+    { key: 'origin', label: 'Origem', available: true, defaultVisible: true },
+    { key: 'pools', label: 'Pools', available: true, defaultVisible: true },
+    { key: 'fb_url', label: 'URL Facebook', available: true, defaultVisible: false },
+    { key: 'business_manager', label: 'Business Manager', available: true, defaultVisible: false },
+    { key: 'bm_verified', label: 'BM verificado', available: false, defaultVisible: false },
+    { key: 'followers', label: 'Seguidores', available: true, defaultVisible: false },
+    { key: 'created_fb', label: 'Criada em (FB)', available: false, defaultVisible: false },
+  ];
+  const [visibleCols, setVisibleCols] = useState<Record<ColKey, boolean>>(() =>
+    COLUMNS.reduce((acc, c) => ({ ...acc, [c.key]: c.defaultVisible }), {} as Record<ColKey, boolean>)
+  );
+  const toggleCol = (k: ColKey) => setVisibleCols(prev => ({ ...prev, [k]: !prev[k] }));
+  const toggleAllCols = (value: boolean) =>
+    setVisibleCols(COLUMNS.reduce((acc, c) => ({ ...acc, [c.key]: c.available ? value : false }), {} as Record<ColKey, boolean>));
+  const allColsOn = COLUMNS.filter(c => c.available).every(c => visibleCols[c.key]);
 
   const loadPages = useCallback(async () => {
     try {
@@ -479,10 +515,38 @@ export default function FacebookPagesPage() {
               </Select>
             </span>
           </div>
-          <button className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            <Columns3 className="w-3.5 h-3.5" />
-            Colunas
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <Columns3 className="w-3.5 h-3.5" />
+                Colunas
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 max-h-[480px] overflow-y-auto">
+              <DropdownMenuLabel className="text-xs">Exibir colunas</DropdownMenuLabel>
+              <DropdownMenuItem
+                onSelect={(e) => { e.preventDefault(); toggleAllCols(!allColsOn); }}
+                className="text-xs font-medium cursor-pointer"
+              >
+                {allColsOn ? 'Desmarcar todas' : 'Marcar todas'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {COLUMNS.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.key}
+                  checked={visibleCols[c.key]}
+                  onCheckedChange={() => c.available && toggleCol(c.key)}
+                  disabled={!c.available}
+                  className="text-xs cursor-pointer"
+                >
+                  <span className="flex-1">{c.label}</span>
+                  {!c.available && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground/70">em breve</span>
+                  )}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Loading */}
@@ -522,20 +586,41 @@ export default function FacebookPagesPage() {
                       aria-label="Selecionar todos"
                     />
                   </TableHead>
-                  <SortHeader k="name">Página</SortHeader>
-                  <SortHeader k="slots">Slots Disponíveis</SortHeader>
-                  <TableHead>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</span>
-                  </TableHead>
-                  <SortHeader k="category">Categoria</SortHeader>
-                  <SortHeader k="access_type">Tipo de Acesso</SortHeader>
-                  <SortHeader k="origin_access">Origem / Acesso</SortHeader>
-                  <TableHead>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Origem</span>
-                  </TableHead>
-                  <TableHead>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pools</span>
-                  </TableHead>
+                  {visibleCols.page && <SortHeader k="name">Página</SortHeader>}
+                  {visibleCols.slots && <SortHeader k="slots">Slots Disponíveis</SortHeader>}
+                  {visibleCols.status && (
+                    <TableHead>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</span>
+                    </TableHead>
+                  )}
+                  {visibleCols.category && <SortHeader k="category">Categoria</SortHeader>}
+                  {visibleCols.access_type && <SortHeader k="access_type">Tipo de Acesso</SortHeader>}
+                  {visibleCols.profile_name && <SortHeader k="origin_access">Nome do Perfil</SortHeader>}
+                  {visibleCols.origin && (
+                    <TableHead>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Origem</span>
+                    </TableHead>
+                  )}
+                  {visibleCols.pools && (
+                    <TableHead>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pools</span>
+                    </TableHead>
+                  )}
+                  {visibleCols.fb_url && (
+                    <TableHead>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">URL Facebook</span>
+                    </TableHead>
+                  )}
+                  {visibleCols.business_manager && (
+                    <TableHead>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Manager</span>
+                    </TableHead>
+                  )}
+                  {visibleCols.followers && (
+                    <TableHead>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Seguidores</span>
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -545,6 +630,8 @@ export default function FacebookPagesPage() {
                   const available = Math.max(0, p.ads_limit - p.ads_running);
                   const pct = p.ads_limit > 0 ? (p.ads_running / p.ads_limit) * 100 : 0;
                   const isSelected = selectedIds.has(p.id);
+                  // Stable Graph API picture URL — never expires
+                  const stablePic = `https://graph.facebook.com/${p.page_id}/picture?type=square&width=80&height=80`;
 
                   return (
                     <motion.tr
@@ -568,74 +655,131 @@ export default function FacebookPagesPage() {
                         />
                       </TableCell>
 
-                      <TableCell>
-                        <div className="flex items-center gap-3 min-w-[220px]">
-                          {p.picture_url ? (
-                            <img src={p.picture_url} alt={p.name} className="w-9 h-9 rounded-full object-cover ring-1 ring-border" />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center ring-1 ring-border">
+                      {visibleCols.page && (
+                        <TableCell>
+                          <div className="flex items-center gap-3 min-w-[220px]">
+                            <img
+                              src={p.picture_url || stablePic}
+                              alt={p.name}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.src !== stablePic) {
+                                  img.src = stablePic;
+                                } else {
+                                  img.style.display = 'none';
+                                  img.nextElementSibling?.classList.remove('hidden');
+                                }
+                              }}
+                              className="w-9 h-9 rounded-full object-cover ring-1 ring-border bg-secondary"
+                            />
+                            <div className="w-9 h-9 rounded-full bg-secondary hidden items-center justify-center ring-1 ring-border">
                               <Facebook className="w-4 h-4 text-muted-foreground" />
                             </div>
-                          )}
-                          <div className="min-w-0">
-                            <div className="font-medium text-foreground truncate">{p.name}</div>
-                            <div className="text-xs text-muted-foreground tabular-nums">ID: {p.page_id}</div>
+                            <div className="min-w-0">
+                              <div className="font-medium text-foreground truncate">{p.name}</div>
+                              <div className="text-xs text-muted-foreground tabular-nums">ID: {p.page_id}</div>
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
+                        </TableCell>
+                      )}
 
-                      <TableCell>
-                        <div className="min-w-[160px]">
-                          <Progress
-                            value={pct}
-                            className={cn('h-1.5', pct >= 100 ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-ads-warning' : '')}
-                          />
-                          <div className="mt-1 text-xs tabular-nums text-muted-foreground">
-                            <span className="text-foreground font-medium">{available}</span>
-                            <span className="opacity-60"> / {p.ads_limit}</span>
+                      {visibleCols.slots && (
+                        <TableCell>
+                          <div className="min-w-[160px]">
+                            <Progress
+                              value={pct}
+                              className={cn('h-1.5', pct >= 100 ? '[&>div]:bg-destructive' : pct >= 80 ? '[&>div]:bg-ads-warning' : '')}
+                            />
+                            <div className="mt-1 text-xs tabular-nums text-muted-foreground">
+                              <span className="text-foreground font-medium">{available}</span>
+                              <span className="opacity-60"> / {p.ads_limit}</span>
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
+                        </TableCell>
+                      )}
 
-                      <TableCell>
-                        <Badge variant="outline" className={cn('gap-1 font-normal', statusBadgeClass(status.tone))}>
-                          <status.Icon className="w-3 h-3" />
-                          {status.label}
-                        </Badge>
-                      </TableCell>
+                      {visibleCols.status && (
+                        <TableCell>
+                          <Badge variant="outline" className={cn('gap-1 font-normal', statusBadgeClass(status.tone))}>
+                            <status.Icon className="w-3 h-3" />
+                            {status.label}
+                          </Badge>
+                        </TableCell>
+                      )}
 
-                      <TableCell>
-                        <span className="text-sm text-foreground">{p.category || '—'}</span>
-                      </TableCell>
+                      {visibleCols.category && (
+                        <TableCell>
+                          <span className="text-sm text-foreground">{p.category || '—'}</span>
+                        </TableCell>
+                      )}
 
-                      <TableCell>
-                        <Badge variant="outline" className={cn('font-normal gap-1', access.color)}>
-                          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
-                          {access.label}
-                        </Badge>
-                      </TableCell>
+                      {visibleCols.access_type && (
+                        <TableCell>
+                          <Badge variant="outline" className={cn('font-normal gap-1', access.color)}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+                            {access.label}
+                          </Badge>
+                        </TableCell>
+                      )}
 
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-sm">
-                          <div className="w-5 h-5 rounded-full bg-ads-info/20 flex items-center justify-center">
-                            <Facebook className="w-3 h-3 text-ads-info" />
+                      {visibleCols.profile_name && (
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-sm">
+                            <div className="w-5 h-5 rounded-full bg-ads-info/20 flex items-center justify-center">
+                              <Facebook className="w-3 h-3 text-ads-info" />
+                            </div>
+                            <span className="text-foreground truncate max-w-[160px]">
+                              {p.profile_name || '—'}
+                            </span>
                           </div>
-                          <span className="text-foreground truncate max-w-[160px]">
-                            {p.profile_name || '—'}
+                        </TableCell>
+                      )}
+
+                      {visibleCols.origin && (
+                        <TableCell>
+                          <Badge variant="outline" className="font-normal gap-1 bg-purple-500/10 text-purple-500 border-purple-500/30">
+                            <Puzzle className="w-3 h-3" />
+                            API
+                          </Badge>
+                        </TableCell>
+                      )}
+
+                      {visibleCols.pools && (
+                        <TableCell>
+                          <span className="text-sm text-muted-foreground">—</span>
+                        </TableCell>
+                      )}
+
+                      {visibleCols.fb_url && (
+                        <TableCell>
+                          <a
+                            href={`https://facebook.com/${p.page_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-primary hover:underline"
+                          >
+                            Abrir
+                          </a>
+                        </TableCell>
+                      )}
+
+                      {visibleCols.business_manager && (
+                        <TableCell>
+                          <span className="text-sm text-foreground truncate max-w-[180px] inline-block">
+                            {p.business_name || '—'}
                           </span>
-                        </div>
-                      </TableCell>
+                        </TableCell>
+                      )}
 
-                      <TableCell>
-                        <Badge variant="outline" className="font-normal gap-1 bg-purple-500/10 text-purple-500 border-purple-500/30">
-                          <Puzzle className="w-3 h-3" />
-                          API
-                        </Badge>
-                      </TableCell>
-
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">—</span>
-                      </TableCell>
+                      {visibleCols.followers && (
+                        <TableCell>
+                          <span className="text-sm tabular-nums text-foreground">
+                            {p.followers_count > 0 ? p.followers_count.toLocaleString('pt-BR') : '—'}
+                          </span>
+                        </TableCell>
+                      )}
                     </motion.tr>
                   );
                 })}
