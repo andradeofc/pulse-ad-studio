@@ -749,8 +749,24 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
         <Alert className="border-ads-success/30 bg-ads-success/10">
           <CheckCircle2 className="h-4 w-4 text-ads-success" />
           <AlertTitle>Conexão concluída</AlertTitle>
-          <AlertDescription>
-            Todas as contas, BMs, páginas e pixels foram sincronizados com sucesso.
+          <AlertDescription className="space-y-3">
+            <p>
+              Contas, BMs e pixels foram sincronizados com sucesso. As <strong>páginas</strong> também
+              foram baixadas, mas recomendamos revisar e validar manualmente quais você quer
+              habilitar para uso em campanhas.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                onComplete?.();
+                navigate('/paginas');
+              }}
+            >
+              Ir para Páginas
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
           </AlertDescription>
         </Alert>
       )}
