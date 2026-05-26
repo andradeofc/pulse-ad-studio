@@ -40,6 +40,7 @@ import CatalogMonitorPage from "@/pages/dashboard/CatalogMonitorPage";
 import SettingsPage from "@/pages/dashboard/SettingsPage";
 import HelpPage from "@/pages/dashboard/HelpPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
+import CampaignManagerPage from "@/pages/dashboard/CampaignManagerPage";
 import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
 import CampaignSchedulerPage from "@/pages/dashboard/CampaignSchedulerPage";
 import AdCleanupPage from "@/pages/dashboard/AdCleanupPage";
