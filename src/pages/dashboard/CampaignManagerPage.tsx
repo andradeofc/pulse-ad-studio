@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -329,6 +331,37 @@ export default function CampaignManagerPage() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleCols)); } catch {}
   }, [visibleCols]);
 
+  // Optimistic toggle state: id -> 'ACTIVE' | 'PAUSED'
+  const [statusOverride, setStatusOverride] = useState<Record<string, 'ACTIVE' | 'PAUSED'>>({});
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+
+  const handleToggleStatus = async (r: Row, next: boolean) => {
+    const newStatus: 'ACTIVE' | 'PAUSED' = next ? 'ACTIVE' : 'PAUSED';
+    setStatusOverride((s) => ({ ...s, [r.id]: newStatus }));
+    setTogglingIds((s) => new Set(s).add(r.id));
+    try {
+      const { data, error } = await supabase.functions.invoke('update-fb-entity-status', {
+        body: { accountId: r.account.id, entityId: r.id, level, status: newStatus },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(newStatus === 'ACTIVE' ? 'Ativado' : 'Pausado');
+    } catch (e: any) {
+      setStatusOverride((s) => {
+        const cp = { ...s };
+        delete cp[r.id];
+        return cp;
+      });
+      toast.error(e?.message || 'Falha ao atualizar status');
+    } finally {
+      setTogglingIds((s) => {
+        const cp = new Set(s);
+        cp.delete(r.id);
+        return cp;
+      });
+    }
+  };
+
   const filterKey = useMemo(
     () => ({
       accountIds, level,
@@ -450,7 +483,8 @@ export default function CampaignManagerPage() {
   const colCount = visibleColumnDefs.length + 1;
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 min-w-0 max-w-full">
+
       <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -501,18 +535,19 @@ export default function CampaignManagerPage() {
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl overflow-hidden w-full max-w-full min-w-0">
         <div className="flex justify-end p-3 border-b border-border">
           <ColumnsMenu visible={visibleCols} onChange={setVisibleCols} />
         </div>
 
         <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="w-full max-w-full overflow-x-auto">
+          <table className="text-sm" style={{ minWidth: 'max-content' }}>
             <thead className="bg-muted/30 border-y border-border text-muted-foreground">
               <tr>
                 <th className="w-10 p-3"><Checkbox /></th>
+                <th className="w-14 p-3 text-left text-xs font-medium"></th>
                 {visibleColumnDefs.map((c) => (
                   <Th key={c.id}>
                     {c.id === 'name'
@@ -524,27 +559,41 @@ export default function CampaignManagerPage() {
             </thead>
             <tbody>
               {isLoading && accountIds.length > 0 && (
-                <tr><td colSpan={colCount} className="p-10 text-center text-muted-foreground">
+                <tr><td colSpan={colCount + 1} className="p-10 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Carregando...
                 </td></tr>
               )}
               {!isLoading && accountIds.length === 0 && (
-                <tr><td colSpan={colCount} className="p-12 text-center text-muted-foreground">
+                <tr><td colSpan={colCount + 1} className="p-12 text-center text-muted-foreground">
                   Selecione uma ou mais contas de anúncio para carregar campanhas.
                 </td></tr>
               )}
               {!isLoading && accountIds.length > 0 && visible.length === 0 && (
-                <tr><td colSpan={colCount} className="p-12 text-center text-muted-foreground">Nenhum registro encontrado.</td></tr>
+                <tr><td colSpan={colCount + 1} className="p-12 text-center text-muted-foreground">Nenhum registro encontrado.</td></tr>
               )}
-              {visible.map((r) => (
-                <tr key={r.id} className="border-b border-border hover:bg-accent/20">
-                  <td className="p-3"><Checkbox /></td>
-                  {visibleColumnDefs.map((c) => renderCell(c.id, r))}
-                </tr>
-              ))}
+              {visible.map((r) => {
+                const eff = statusOverride[r.id] || r.effective_status;
+                const isActive = eff === 'ACTIVE';
+                const canToggle = ['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED'].includes(eff);
+                const rowOverride = { ...r, effective_status: eff } as Row;
+                return (
+                  <tr key={r.id} className="border-b border-border hover:bg-accent/20">
+                    <td className="p-3"><Checkbox /></td>
+                    <td className="p-3">
+                      <Switch
+                        checked={isActive}
+                        disabled={!canToggle || togglingIds.has(r.id)}
+                        onCheckedChange={(c) => handleToggleStatus(r, c)}
+                      />
+                    </td>
+                    {visibleColumnDefs.map((c) => renderCell(c.id, rowOverride))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+
 
         <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
       </div>
