@@ -264,7 +264,9 @@ Deno.serve(async (req) => {
 
       const rows: any[] = []
       for (const n of nodes) {
-        const ins = insightMap.get(n.id) || {}
+        const rawIns = n.insights?.data?.[0]
+        const ins = rawIns ? buildInsights(rawIns) : {}
+
         const dailyB = n.daily_budget ? parseFloat(n.daily_budget) / 100 : null
         const lifeB = n.lifetime_budget ? parseFloat(n.lifetime_budget) / 100 : null
         const budgetSource =
