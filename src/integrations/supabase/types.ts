@@ -1309,6 +1309,65 @@ export type Database = {
         }
         Relationships: []
       }
+      fanpage_pool_pages: {
+        Row: {
+          created_at: string
+          id: string
+          page_id: string
+          pool_id: string
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          page_id: string
+          pool_id: string
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          page_id?: string
+          pool_id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fanpage_pool_pages_pool_id_fkey"
+            columns: ["pool_id"]
+            isOneToOne: false
+            referencedRelation: "fanpage_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fanpage_pools: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       naming_presets: {
         Row: {
           context: string
