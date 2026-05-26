@@ -361,7 +361,11 @@ function PoolDetailsSheet({
     }
     try {
       setSaving(true);
-      await renamePool(pool.id, name.trim(), color);
+      await updatePool(pool.id, {
+        name: name.trim(),
+        color,
+        creator_profile_id: creatorProfileId || null,
+      });
       toast.success('Pool atualizado');
       onChanged();
     } catch (e) {
