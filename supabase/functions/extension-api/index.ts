@@ -274,7 +274,9 @@ Deno.serve(async (req) => {
           name: (a.name || "").slice(0, 400) || "Unknown",
           ads_running: Number(a.adsRunningOrInReview) || 0,
           ads_limit: Number(a.futureLimit) || 250,
+          source: "extension",
         }));
+
 
       const CHUNK = 500;
       for (let i = 0; i < rows.length; i += CHUNK) {
