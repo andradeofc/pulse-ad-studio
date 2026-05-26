@@ -1270,16 +1270,76 @@ export type Database = {
           },
         ]
       }
+      facebook_profile_tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_step: number
+          current_step_key: string | null
+          error: string | null
+          id: string
+          profile_id: string | null
+          progress: Json
+          result: Json | null
+          started_at: string | null
+          status: string
+          task_type: string
+          total_steps: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: number
+          current_step_key?: string | null
+          error?: string | null
+          id?: string
+          profile_id?: string | null
+          progress?: Json
+          result?: Json | null
+          started_at?: string | null
+          status?: string
+          task_type?: string
+          total_steps?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: number
+          current_step_key?: string | null
+          error?: string | null
+          id?: string
+          profile_id?: string | null
+          progress?: Json
+          result?: Json | null
+          started_at?: string | null
+          status?: string
+          task_type?: string
+          total_steps?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       facebook_profiles: {
         Row: {
           access_token: string
+          app_id: string | null
+          app_name: string | null
+          app_secret: string | null
+          auth_method: string
           avatar_url: string | null
           created_at: string
           email: string | null
           facebook_id: string
           id: string
+          is_long_lived: boolean
           is_primary: boolean
           last_synced_at: string | null
+          last_token_check_at: string | null
           name: string
           page_token_valid: boolean | null
           permissions: string[] | null
@@ -1288,21 +1348,32 @@ export type Database = {
           proxy_port: number | null
           proxy_protocol: string | null
           proxy_username: string | null
+          rate_limit_count: number
+          rate_limited_until: string | null
           status: string
           sync_status: string | null
+          token_check_error: string | null
+          token_check_error_code: string | null
           token_expires_at: string | null
+          token_status: string
           updated_at: string
           user_id: string
         }
         Insert: {
           access_token: string
+          app_id?: string | null
+          app_name?: string | null
+          app_secret?: string | null
+          auth_method?: string
           avatar_url?: string | null
           created_at?: string
           email?: string | null
           facebook_id: string
           id?: string
+          is_long_lived?: boolean
           is_primary?: boolean
           last_synced_at?: string | null
+          last_token_check_at?: string | null
           name: string
           page_token_valid?: boolean | null
           permissions?: string[] | null
@@ -1311,21 +1382,32 @@ export type Database = {
           proxy_port?: number | null
           proxy_protocol?: string | null
           proxy_username?: string | null
+          rate_limit_count?: number
+          rate_limited_until?: string | null
           status?: string
           sync_status?: string | null
+          token_check_error?: string | null
+          token_check_error_code?: string | null
           token_expires_at?: string | null
+          token_status?: string
           updated_at?: string
           user_id: string
         }
         Update: {
           access_token?: string
+          app_id?: string | null
+          app_name?: string | null
+          app_secret?: string | null
+          auth_method?: string
           avatar_url?: string | null
           created_at?: string
           email?: string | null
           facebook_id?: string
           id?: string
+          is_long_lived?: boolean
           is_primary?: boolean
           last_synced_at?: string | null
+          last_token_check_at?: string | null
           name?: string
           page_token_valid?: boolean | null
           permissions?: string[] | null
@@ -1334,9 +1416,14 @@ export type Database = {
           proxy_port?: number | null
           proxy_protocol?: string | null
           proxy_username?: string | null
+          rate_limit_count?: number
+          rate_limited_until?: string | null
           status?: string
           sync_status?: string | null
+          token_check_error?: string | null
+          token_check_error_code?: string | null
           token_expires_at?: string | null
+          token_status?: string
           updated_at?: string
           user_id?: string
         }

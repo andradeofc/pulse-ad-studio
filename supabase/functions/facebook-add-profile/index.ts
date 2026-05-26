@@ -109,20 +109,97 @@ async function updateSyncStatus(supabase: any, profileId: string, status: string
   }
 }
 
+// Append a progress event to facebook_profile_tasks (no-op if no taskId).
+// Uses service-role client to bypass RLS for reliable background writes.
+async function reportTaskStep(
+  svcClient: any,
+  taskId: string | null,
+  step: number,
+  stepKey: string,
+  message: string,
+  detail?: Record<string, unknown>
+) {
+  if (!taskId || !svcClient) return;
+  try {
+    const { data: current } = await svcClient
+      .from("facebook_profile_tasks")
+      .select("progress")
+      .eq("id", taskId)
+      .maybeSingle();
+
+    const prev = Array.isArray(current?.progress) ? current!.progress : [];
+    const next = [
+      ...prev,
+      {
+        step,
+        step_key: stepKey,
+        message,
+        detail: detail ?? null,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    await svcClient
+      .from("facebook_profile_tasks")
+      .update({
+        progress: next,
+        current_step: step,
+        current_step_key: stepKey,
+        status: "running",
+        started_at: prev.length === 0 ? new Date().toISOString() : undefined,
+      })
+      .eq("id", taskId);
+  } catch (e) {
+    console.error("[reportTaskStep] failed:", e);
+  }
+}
+
+async function finishTask(
+  svcClient: any,
+  taskId: string | null,
+  status: "completed" | "failed",
+  payload: { result?: Record<string, unknown>; error?: string }
+) {
+  if (!taskId || !svcClient) return;
+  try {
+    await svcClient
+      .from("facebook_profile_tasks")
+      .update({
+        status,
+        result: payload.result ?? null,
+        error: payload.error ?? null,
+        completed_at: new Date().toISOString(),
+        current_step_key: status === "completed" ? "completed" : "failed",
+      })
+      .eq("id", taskId);
+  } catch (e) {
+    console.error("[finishTask] failed:", e);
+  }
+}
+
 // Background sync function - STAGED approach
 async function performFullSync(
   supabaseUrl: string,
   supabaseKey: string,
   authHeader: string,
   profileId: string,
-  accessToken: string
+  accessToken: string,
+  taskId: string | null = null,
+  svcClient: any = null
 ) {
   const supabase = createClient(supabaseUrl, supabaseKey, {
     global: { headers: { Authorization: authHeader } },
   });
 
+  // Counters for final task summary
+  let accountsCount = 0;
+  let pagesCount = 0;
+  let pixelsCount = 0;
+  let bmsCount = 0;
+
   console.log("=== STAGE 1: SYNCING ACCOUNTS ===");
   await updateSyncStatus(supabase, profileId, "syncing_accounts");
+  await reportTaskStep(svcClient, taskId, 5, "fetchingAdAccounts", "Buscando contas de anúncio...");
 
   let allBusinesses: any[] = [];
 
@@ -243,17 +320,25 @@ async function performFullSync(
       if (error) console.error("Error upserting accounts:", error);
     }
 
+    accountsCount = finalAccounts.length;
+    bmsCount = allBusinesses.length;
     console.log(`✓ STAGE 1 COMPLETE: ${finalAccounts.length} accounts synced`);
+    await reportTaskStep(svcClient, taskId, 6, "savingAccounts", `Salvas ${finalAccounts.length} contas de anúncio (${bmsCount} BMs)`, {
+      accountsCount: finalAccounts.length,
+      bmsCount,
+    });
 
   } catch (error) {
     console.error("Error in Stage 1 (accounts):", error);
     await updateSyncStatus(supabase, profileId, "error");
+    await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar contas" });
     return;
   }
 
   // ========== STAGE 2: SYNC PAGES ==========
   console.log("=== STAGE 2: SYNCING PAGES ===");
   await updateSyncStatus(supabase, profileId, "syncing_pages");
+  await reportTaskStep(svcClient, taskId, 7, "syncingPages", "Sincronizando páginas do Facebook...");
 
   try {
     const pagesMap = new Map<string, any>(); // Deduplicate by page_id
@@ -443,17 +528,23 @@ async function performFullSync(
       if (error) console.error("Error upserting pages:", error);
     }
 
+    pagesCount = finalPages.length;
     console.log(`✓ STAGE 2 COMPLETE: ${finalPages.length} pages synced`);
+    await reportTaskStep(svcClient, taskId, 7, "syncingPages", `Sincronizadas ${finalPages.length} páginas`, {
+      pagesCount: finalPages.length,
+    });
 
   } catch (error) {
     console.error("Error in Stage 2 (pages):", error);
     await updateSyncStatus(supabase, profileId, "error");
+    await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar páginas" });
     return;
   }
 
   // ========== STAGE 3: SYNC PIXELS ==========
   console.log("=== STAGE 3: SYNCING PIXELS ===");
   await updateSyncStatus(supabase, profileId, "syncing_pixels");
+  await reportTaskStep(svcClient, taskId, 8, "syncingPixels", "Sincronizando pixels...");
 
   try {
     const pixelsMap = new Map<string, any>(); // Deduplicate by pixel_id
@@ -538,11 +629,13 @@ async function performFullSync(
       if (error) console.error("Error upserting pixels:", error);
     }
 
+    pixelsCount = uniquePixels.length;
     console.log(`✓ STAGE 3 COMPLETE: ${uniquePixels.length} pixels synced`);
 
   } catch (error) {
     console.error("Error in Stage 3 (pixels):", error);
     await updateSyncStatus(supabase, profileId, "error");
+    await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar pixels" });
     return;
   }
 
@@ -557,6 +650,16 @@ async function performFullSync(
       sync_status: "completed",
     })
     .eq("id", profileId);
+
+  await finishTask(svcClient, taskId, "completed", {
+    result: {
+      profile_id: profileId,
+      accounts_count: accountsCount,
+      pages_count: pagesCount,
+      pixels_count: pixelsCount,
+      bms_count: bmsCount,
+    },
+  });
 
   console.log("Background sync completed successfully!");
 }
@@ -612,7 +715,15 @@ Deno.serve(async (req) => {
       console.log(`Collaborator detected. Using owner ID: ${userId}`);
     }
 
-    const { accessToken } = await req.json();
+    const body = await req.json();
+    const accessToken: string | undefined = body?.accessToken;
+    // NEW optional fields (Wizard flow). All optional; behavior unchanged when omitted.
+    const taskId: string | null = body?.taskId || null;
+    const appId: string | null = body?.appId || null;
+    const appSecret: string | null = body?.appSecret || null;
+    const authMethod: string = body?.authMethod || (appId && appSecret ? "facebook_app" : "token_only");
+    const isLongLived: boolean = !!body?.isLongLived;
+    const proxyConfig: any = body?.proxyConfig || null;
 
     if (!accessToken) {
       return new Response(
@@ -685,6 +796,24 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseService = createClient(supabaseUrl, serviceRoleKey);
 
+    // Initial task progress (no-op if no taskId)
+    await reportTaskStep(supabaseService, taskId, 1, "validatingToken", "Token validado com sucesso", { userName: userData.name });
+    await reportTaskStep(supabaseService, taskId, 2, "verifyingAccount", existingProfile ? "Reconectando perfil existente..." : "Verificando duplicidade...");
+
+    // Build optional credential fields (only set when provided)
+    const credentialFields: Record<string, unknown> = {};
+    if (appId) credentialFields.app_id = appId;
+    if (appSecret) credentialFields.app_secret = appSecret;
+    if (authMethod) credentialFields.auth_method = authMethod;
+    credentialFields.is_long_lived = isLongLived;
+    credentialFields.token_status = "VALID";
+    credentialFields.token_check_error = null;
+    credentialFields.token_check_error_code = null;
+    credentialFields.last_token_check_at = new Date().toISOString();
+    if (proxyConfig && typeof proxyConfig === "object") {
+      credentialFields.proxy_config = proxyConfig;
+    }
+
     if (existingProfile) {
       // Update existing profile (may be reconnecting a disconnected profile)
       console.log("Updating existing profile:", existingProfile.id);
@@ -699,6 +828,7 @@ Deno.serve(async (req) => {
           permissions,
           token_expires_at: expiresAt,
           sync_status: "syncing_accounts",
+          ...credentialFields,
         })
         .eq("id", existingProfile.id)
         .select()
@@ -759,11 +889,12 @@ Deno.serve(async (req) => {
           name: userData.name,
           email: userData.email || null,
           avatar_url: userData.picture?.data?.url || null,
-          access_token: accessToken, // Keep for backward compatibility during migration
+          access_token: accessToken,
           status: "active",
           permissions,
           token_expires_at: expiresAt,
           sync_status: "syncing_accounts",
+          ...credentialFields,
         })
         .select()
         .single();
@@ -774,29 +905,36 @@ Deno.serve(async (req) => {
       }
       profile = data;
 
-      // Store token securely in facebook_credentials (service role bypasses RLS)
       const { error: credError } = await supabaseService
         .from("facebook_credentials")
-        .insert({
-          profile_id: profile.id,
-          access_token: accessToken,
-        });
+        .insert({ profile_id: profile.id, access_token: accessToken });
 
-      if (credError) {
-        console.error("Error storing secure credentials:", credError);
-        // Don't throw - backward compatible via facebook_profiles.access_token
-      } else {
-        console.log("Secure credentials stored successfully");
-      }
+      if (credError) console.error("Error storing secure credentials:", credError);
     }
 
     console.log("Profile saved successfully:", profile.id);
 
-    // 4. Start background sync (non-blocking)
+    // Link task to profile + report next step
+    if (taskId) {
+      try {
+        await supabaseService
+          .from("facebook_profile_tasks")
+          .update({ profile_id: profile.id })
+          .eq("id", taskId);
+      } catch (e) {
+        console.error("Failed to link task to profile:", e);
+      }
+      await reportTaskStep(supabaseService, taskId, 4, "creatingAccount", "Perfil salvo no banco de dados", {
+        profileId: profile.id,
+        facebookId: profile.facebook_id,
+      });
+    }
+
+    // 4. Start background sync (non-blocking) — pass taskId/svcClient so progress is reported
     console.log("Starting staged background sync...");
     // @ts-ignore: EdgeRuntime is available in Supabase Edge Functions
     EdgeRuntime.waitUntil(
-      performFullSync(supabaseUrl, supabaseKey, authHeader, profile.id, accessToken)
+      performFullSync(supabaseUrl, supabaseKey, authHeader, profile.id, accessToken, taskId, supabaseService)
     );
 
     return new Response(
