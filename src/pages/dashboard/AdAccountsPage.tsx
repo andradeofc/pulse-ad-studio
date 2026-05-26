@@ -256,20 +256,28 @@ export default function AdAccountsPage() {
         <Card className="glass-card overflow-hidden">
           <div className="h-1 bg-gradient-to-r from-ads-success to-ads-success/50" />
           <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm text-muted-foreground flex items-center gap-1.5">
                   <TrendingUp className="w-3.5 h-3.5" />
-                  Gasto Total (Lifetime)
+                  Gasto Total
                 </p>
-                <p className="text-3xl font-bold text-ads-success mt-1">
-                  {formatCurrency(totalSpend, 'BRL')}
+                <p className="text-3xl font-bold text-ads-success mt-1 truncate">
+                  {formatCurrencyCompact(totalSpendBRL, 'BRL')}
                 </p>
+                {spendBreakdown.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1.5 truncate">
+                    {spendBreakdown
+                      .map(([curr, val]) => formatCurrencyCompact(val, curr))
+                      .join(' • ')}
+                  </p>
+                )}
               </div>
-              <DollarSign className="w-8 h-8 text-ads-success/20" />
+              <DollarSign className="w-8 h-8 text-ads-success/20 shrink-0" />
             </div>
           </CardContent>
         </Card>
+
       </div>
 
       {/* Filters */}
