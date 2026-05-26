@@ -390,7 +390,9 @@ export default function FacebookPagesPage() {
         if (statusFilter === 'ok' && s !== 'Sem problemas') return false;
         if (statusFilter === 'warn' && s !== 'Atenção') return false;
         if (statusFilter === 'block' && s !== 'Limite atingido') return false;
+        if (statusFilter === 'blacklist' && !p.is_blacklisted) return false;
       }
+
       if (accessFilter !== 'all') {
         const at = getAccessType(p).label.toLowerCase();
         if (at !== accessFilter) return false;
