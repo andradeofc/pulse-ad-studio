@@ -30,7 +30,7 @@ export async function validateFacebookCredentials(input: {
 
 export interface ExchangeTokenResult {
   success: boolean;
-  longLivedToken?: string;
+  accessToken?: string;
   expiresAt?: string;
   expiresIn?: number;
   isLongLived?: boolean;
