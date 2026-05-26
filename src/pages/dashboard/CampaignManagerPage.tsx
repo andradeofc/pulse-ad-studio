@@ -20,6 +20,11 @@ import {
   ChevronsRight,
   ArrowUpDown,
   Loader2,
+  Play,
+  Pause,
+  Trash2,
+  Pencil,
+  ExternalLink,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -362,6 +367,72 @@ export default function CampaignManagerPage() {
     }
   };
 
+  // ---- Bulk selection ----
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  useEffect(() => { setSelectedIds(new Set()); }, [accountIds, level, datePreset, dateRange.from, dateRange.to, statuses]);
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((s) => {
+      const cp = new Set(s);
+      if (checked) cp.add(id); else cp.delete(id);
+      return cp;
+    });
+  };
+  const toggleAllVisible = (checked: boolean) => {
+    setSelectedIds((s) => {
+      const cp = new Set(s);
+      if (checked) visible.forEach((r) => cp.add(r.id));
+      else visible.forEach((r) => cp.delete(r.id));
+      return cp;
+    });
+  };
+
+  const runBulk = async (status: 'ACTIVE' | 'PAUSED' | 'DELETED') => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (status === 'DELETED' && !confirm(`Excluir ${ids.length} ${level === 'campaign' ? 'campanha(s)' : level === 'adset' ? 'conjunto(s)' : 'anúncio(s)'}? Esta ação não pode ser desfeita.`)) return;
+    setBulkBusy(true);
+    let ok = 0, fail = 0;
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    for (const id of ids) {
+      const r = byId.get(id);
+      if (!r) { fail++; continue; }
+      try {
+        const { data, error } = await supabase.functions.invoke('update-fb-entity-status', {
+          body: { accountId: r.account.id, entityId: id, level, status },
+        });
+        if (error || (data as any)?.error) throw new Error((data as any)?.error || error?.message);
+        if (status !== 'DELETED') {
+          setStatusOverride((s) => ({ ...s, [id]: status }));
+        }
+        ok++;
+      } catch (e: any) {
+        fail++;
+      }
+    }
+    setBulkBusy(false);
+    if (status === 'DELETED') {
+      setSelectedIds(new Set());
+      refetch();
+    }
+    toast[fail === 0 ? 'success' : 'warning'](
+      `${ok} concluído(s)${fail ? `, ${fail} falha(s)` : ''}`
+    );
+  };
+
+  const openInManager = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    const first = byId.get(ids[0]);
+    if (!first) return;
+    const actId = first.account.account_id.replace(/^act_/, '');
+    const param = level === 'campaign' ? 'selected_campaign_ids' : level === 'adset' ? 'selected_adset_ids' : 'selected_ad_ids';
+    const url = `https://business.facebook.com/adsmanager/manage/${level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'}?act=${actId}&${param}=${ids.join(',')}`;
+    window.open(url, '_blank', 'noopener');
+  };
+
   const filterKey = useMemo(
     () => ({
       accountIds, level,
@@ -536,8 +607,33 @@ export default function CampaignManagerPage() {
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden w-full max-w-full min-w-0">
-        <div className="flex justify-end p-3 border-b border-border">
-          <ColumnsMenu visible={visibleCols} onChange={setVisibleCols} />
+        <div className="flex items-center gap-2 p-3 border-b border-border">
+          {selectedIds.size > 0 ? (
+            <>
+              <span className="text-sm font-medium text-primary px-2">{selectedIds.size} selecionados</span>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Limpar</Button>
+              <div className="h-6 w-px bg-border mx-1" />
+              <Button variant="outline" size="sm" className="gap-2" disabled={bulkBusy} onClick={() => runBulk('ACTIVE')}>
+                <Play className="w-4 h-4" /> Ativar
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2" disabled={bulkBusy} onClick={() => runBulk('PAUSED')}>
+                <Pause className="w-4 h-4" /> Pausar
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" disabled={bulkBusy} onClick={() => runBulk('DELETED')}>
+                <Trash2 className="w-4 h-4" /> Excluir
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2" disabled onClick={() => toast.info('Em breve')}>
+                <Pencil className="w-4 h-4" /> Editar em massa
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2 text-primary" onClick={openInManager}>
+                <ExternalLink className="w-4 h-4" /> Abrir no gerenciador
+              </Button>
+              {bulkBusy && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+              <div className="ml-auto"><ColumnsMenu visible={visibleCols} onChange={setVisibleCols} /></div>
+            </>
+          ) : (
+            <div className="ml-auto"><ColumnsMenu visible={visibleCols} onChange={setVisibleCols} /></div>
+          )}
         </div>
 
         <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
@@ -546,7 +642,12 @@ export default function CampaignManagerPage() {
           <table className="text-sm" style={{ minWidth: 'max-content' }}>
             <thead className="bg-muted/30 border-y border-border text-muted-foreground">
               <tr>
-                <th className="w-10 p-3"><Checkbox /></th>
+                <th className="w-10 p-3">
+                  <Checkbox
+                    checked={visible.length > 0 && visible.every((r) => selectedIds.has(r.id))}
+                    onCheckedChange={(c) => toggleAllVisible(!!c)}
+                  />
+                </th>
                 <th className="w-14 p-3 text-left text-xs font-medium"></th>
                 {visibleColumnDefs.map((c) => (
                   <Th key={c.id}>
@@ -578,7 +679,12 @@ export default function CampaignManagerPage() {
                 const rowOverride = { ...r, effective_status: eff } as Row;
                 return (
                   <tr key={r.id} className="border-b border-border hover:bg-accent/20">
-                    <td className="p-3"><Checkbox /></td>
+                    <td className="p-3">
+                      <Checkbox
+                        checked={selectedIds.has(r.id)}
+                        onCheckedChange={(c) => toggleOne(r.id, !!c)}
+                      />
+                    </td>
                     <td className="p-3">
                       <Switch
                         checked={isActive}
