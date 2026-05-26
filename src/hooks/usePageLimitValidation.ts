@@ -63,7 +63,8 @@ export function usePageLimitValidation({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('facebook_pages')
-        .select('page_id, name, ads_running, ads_limit');
+        .select('page_id, name, ads_running, ads_limit')
+        .eq('is_blacklisted', false);
       
       if (error) throw error;
       return data || [];
