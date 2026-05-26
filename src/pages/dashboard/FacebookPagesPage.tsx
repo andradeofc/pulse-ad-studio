@@ -278,9 +278,12 @@ export default function FacebookPagesPage() {
         const at = getAccessType(p).label.toLowerCase();
         if (at !== accessFilter) return false;
       }
-      // originFilter: 'all' | 'api' (we currently only track API source)
-      if (originFilter !== 'all' && originFilter !== 'api') return false;
+      if (originFilter !== 'all') {
+        if (originFilter === 'api' && p.source !== 'api') return false;
+        if (originFilter === 'extension' && p.source !== 'extension') return false;
+      }
       return true;
+
     });
   }, [pages, searchQuery, statusFilter, accessFilter, originFilter]);
 
