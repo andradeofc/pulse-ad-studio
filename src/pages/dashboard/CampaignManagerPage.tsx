@@ -691,9 +691,17 @@ export default function CampaignManagerPage() {
             </thead>
             <tbody>
               {isLoading && accountIds.length > 0 && (
-                <tr><td colSpan={colCount + 1} className="p-10 text-center text-muted-foreground">
-                  <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Carregando...
-                </td></tr>
+                Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={`sk-${i}`} className="border-b border-border">
+                    <td className="p-3"><div className="h-4 w-4 rounded bg-muted animate-pulse" /></td>
+                    <td className="p-3"><div className="h-4 w-8 rounded bg-muted animate-pulse" /></td>
+                    {visibleColumnDefs.map((c) => (
+                      <td className="p-3" key={c.id}>
+                        <div className="h-3 rounded bg-muted animate-pulse" style={{ width: c.id === 'name' ? 220 : 80 }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
               )}
               {!isLoading && accountIds.length === 0 && (
                 <tr><td colSpan={colCount + 1} className="p-12 text-center text-muted-foreground">
