@@ -1062,7 +1062,10 @@ export default function FacebookPagesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </div>
+
   );
 }
 
