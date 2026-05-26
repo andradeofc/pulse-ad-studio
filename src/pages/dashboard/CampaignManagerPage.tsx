@@ -25,10 +25,13 @@ import {
   Trash2,
   Pencil,
   ExternalLink,
+  Copy,
+  Facebook,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
