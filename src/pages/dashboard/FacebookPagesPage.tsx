@@ -852,16 +852,23 @@ export default function FacebookPagesPage() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
+                                  asChild
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8 text-muted-foreground hover:text-primary"
-                                  onClick={() => window.open(`https://business.facebook.com/latest/home?asset_id=${p.page_id}`, '_blank', 'noopener,noreferrer')}
                                 >
-                                  <Eye className="w-4 h-4" />
+                                  <a
+                                    href={`https://business.facebook.com/latest/home?asset_id=${p.page_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </a>
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Abrir no Meta Business</TooltipContent>
                             </Tooltip>
+
 
                             <Tooltip>
                               <TooltipTrigger asChild>
