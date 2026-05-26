@@ -73,6 +73,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FanpagePoolsView } from '@/components/facebook/FanpagePoolsView';
+import { BulkPoolsButton } from '@/components/facebook/BulkPoolsButton';
+
 import {
   fetchPools,
   createPool,
