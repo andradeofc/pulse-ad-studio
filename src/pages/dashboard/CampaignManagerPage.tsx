@@ -19,6 +19,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Loader2,
   Play,
   Pause,
