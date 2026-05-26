@@ -483,7 +483,8 @@ export default function CampaignManagerPage() {
   const colCount = visibleColumnDefs.length + 1;
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 min-w-0 max-w-full">
+
       <div className="bg-card border border-border rounded-xl p-5 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
