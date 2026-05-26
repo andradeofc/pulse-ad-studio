@@ -82,16 +82,28 @@ export function FanpagePoolsView({ pages }: Props) {
     return map;
   }, [pages]);
 
+  // All unique profiles available from pages list (for selector)
+  const profiles = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of pages) {
+      if (!map.has(p.profile_id)) map.set(p.profile_id, p.profile_name ?? 'Sem nome');
+    }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [pages]);
+
   const enriched: EnrichedPool[] = useMemo(() => {
     return pools.map((pool) => {
-      // creator profile = profile of first linked page (earliest created_at)
-      const sorted = [...pool.pages].sort((a, b) =>
-        a.created_at.localeCompare(b.created_at)
-      );
-      const first = sorted[0];
-      const creatorPage = first ? pageById.get(first.page_id) : undefined;
-      const creatorProfileId = first?.profile_id ?? null;
-      const creatorProfileName = creatorPage?.profile_name ?? null;
+      // Use stored creator_profile_id; fallback to first linked page's profile
+      let creatorProfileId: string | null = pool.creator_profile_id ?? null;
+      if (!creatorProfileId) {
+        const sorted = [...pool.pages].sort((a, b) =>
+          a.created_at.localeCompare(b.created_at)
+        );
+        creatorProfileId = sorted[0]?.profile_id ?? null;
+      }
+      const creatorProfileName = creatorProfileId
+        ? profiles.find((pr) => pr.id === creatorProfileId)?.name ?? null
+        : null;
 
       let compatible = 0;
       for (const link of pool.pages) {
@@ -111,7 +123,7 @@ export function FanpagePoolsView({ pages }: Props) {
         compatibleCount: compatible,
       };
     });
-  }, [pools, pageById]);
+  }, [pools, pageById, profiles]);
 
   const selectedPool = useMemo(
     () => enriched.find((p) => p.id === detailsPoolId) ?? null,
