@@ -117,6 +117,8 @@ export default function FacebookPagesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
+  const [activeTab, setActiveTab] = useState<'all' | 'pools'>('all');
+
 
   // Pools (local, em breve persistência no backend)
   const [pageIdToPools, setPageIdToPools] = useState<Record<string, string[]>>({});
