@@ -213,6 +213,7 @@ export function FanpagePoolsView({ pages }: Props) {
       <PoolDetailsSheet
         pool={selectedPool}
         pages={pages}
+        profiles={profiles}
         open={!!selectedPool}
         onOpenChange={(o) => { if (!o) setDetailsPoolId(null); }}
         onChanged={load}
