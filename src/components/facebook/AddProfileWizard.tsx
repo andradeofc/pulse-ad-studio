@@ -778,7 +778,7 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
             Conectar Perfil do Facebook
           </DialogTitle>
           <DialogDescription>
-            Configure proxy (opcional), valide credenciais e acompanhe a sincronização em tempo real.
+            Configure proxy (opcional), valide credenciais e acompanhe a sincronização. Você pode fechar a aba — o processo continua em segundo plano.
           </DialogDescription>
         </DialogHeader>
 
