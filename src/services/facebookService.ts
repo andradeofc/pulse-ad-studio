@@ -204,3 +204,16 @@ export async function syncBusinessManagers(profileId?: string) {
 
   return data;
 }
+
+// Refresh / re-check token health for a single profile (Etapa 4)
+export async function refreshFacebookProfileToken(profileId: string) {
+  const { data, error } = await supabase.functions.invoke('facebook-refresh-token', {
+    body: { profileId },
+  });
+  if (error) throw error;
+  return data as {
+    success: boolean;
+    summary: { refreshed: number; healthy: number; expired: number; blocked: number };
+    results: Array<{ profileId: string; action: string; error?: string; expiresAt?: string | null }>;
+  };
+}
