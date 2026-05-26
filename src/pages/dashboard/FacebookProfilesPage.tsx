@@ -16,6 +16,7 @@ import {
   WifiOff,
   Globe,
   Shield,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,6 +64,7 @@ import {
   testProxyConnection,
   type FacebookProfile,
 } from '@/services/facebookService';
+import { AddProfileWizard } from '@/components/facebook/AddProfileWizard';
 
 
 export default function FacebookProfilesPage() {
@@ -72,6 +74,7 @@ export default function FacebookProfilesPage() {
   const [profiles, setProfiles] = useState<FacebookProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddTokenOpen, setIsAddTokenOpen] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isUpdateTokenOpen, setIsUpdateTokenOpen] = useState(false);
   const [isProxyOpen, setIsProxyOpen] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -518,12 +521,17 @@ export default function FacebookProfilesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Button className="glow-primary" onClick={() => setIsWizardOpen(true)}>
+            <Sparkles className="w-4 h-4 mr-2" />
+            Conectar Perfil
+            <Badge variant="outline" className="ml-2 text-xs">Recomendado</Badge>
+          </Button>
+
           <Dialog open={isAddTokenOpen} onOpenChange={setIsAddTokenOpen}>
             <DialogTrigger asChild>
-              <Button className="glow-primary">
+              <Button variant="outline">
                 <Plus className="w-4 h-4 mr-2" />
-                Adicionar Token Manual
-                <Badge variant="outline" className="ml-2 text-xs">Recomendado</Badge>
+                Token Manual
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
@@ -580,14 +588,15 @@ export default function FacebookProfilesPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-
-          <Button variant="outline" disabled>
-            <Facebook className="w-4 h-4 mr-2" />
-            Conectar Facebook
-            <Badge variant="secondary" className="ml-2 text-xs">Em breve</Badge>
-          </Button>
         </div>
       </div>
+
+      <AddProfileWizard
+        open={isWizardOpen}
+        onOpenChange={setIsWizardOpen}
+        onComplete={loadProfiles}
+      />
+
 
       {/* Loading State */}
       {isLoading && (
