@@ -673,7 +673,39 @@ export default function FacebookPagesPage() {
                 <SelectItem value="business">Business</SelectItem>
               </SelectContent>
             </Select>
+
+            {selectedIds.size > 0 && (
+              <>
+                <BulkPoolsButton
+                  selectedCount={selectedIds.size}
+                  pools={pools}
+                  selectedPageIds={pages.filter(p => selectedIds.has(p.id)).map(p => p.page_id)}
+                  onAdd={handleBulkAddToPool}
+                  onRemove={handleBulkRemoveFromPool}
+                  onCreate={handleCreatePoolFromSelection}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkBlacklist(true)}
+                  className="h-9 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Ban className="w-4 h-4 mr-1.5" />
+                  Blacklist
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkBlacklist(false)}
+                  className="h-9 border-ads-success/30 text-ads-success hover:bg-ads-success/10 hover:text-ads-success"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-1.5" />
+                  Remover Blacklist
+                </Button>
+              </>
+            )}
           </div>
+
 
           <div className="lg:ml-auto relative w-full lg:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
