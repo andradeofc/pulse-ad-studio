@@ -426,6 +426,7 @@ export default function CampaignManagerPage() {
   };
 
   const [managerDialogOpen, setManagerDialogOpen] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const buildManagerLinks = () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return [] as { accountName: string; accountId: string; url: string; count: number }[];
