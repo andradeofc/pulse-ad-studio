@@ -458,11 +458,22 @@ function PoolDetailsSheet({
           {/* Creator profile */}
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="font-semibold mb-3">Perfil criador</h3>
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
-              {pool.creatorProfileName ?? '—'}
-            </div>
+            <Select
+              value={creatorProfileId || '__none__'}
+              onValueChange={(v) => setCreatorProfileId(v === '__none__' ? '' : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o perfil criador" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Nenhum</SelectItem>
+                {profiles.map((pr) => (
+                  <SelectItem key={pr.id} value={pr.id}>{pr.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-              O perfil criador é usado como referência visual do pool. Se ele for removido, o pool continua existindo.
+              O perfil criador define a referência de compatibilidade do pool. Clique em <strong>Salvar</strong> para aplicar.
             </p>
           </div>
 
