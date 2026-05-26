@@ -645,7 +645,9 @@ export default function FacebookPagesPage() {
                 <SelectItem value="ok">Sem problemas</SelectItem>
                 <SelectItem value="warn">Atenção</SelectItem>
                 <SelectItem value="block">Limite atingido</SelectItem>
+                <SelectItem value="blacklist">Em blacklist</SelectItem>
               </SelectContent>
+
             </Select>
 
             <Select value={originFilter} onValueChange={setOriginFilter}>
