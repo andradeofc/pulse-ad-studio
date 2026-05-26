@@ -1092,12 +1092,15 @@ export type Database = {
           access_token: string | null
           ads_limit: number | null
           ads_running: number | null
+          blacklist_reason: string | null
+          blacklisted_at: string | null
           business_id: string | null
           business_name: string | null
           category: string | null
           created_at: string
           followers_count: number | null
           id: string
+          is_blacklisted: boolean
           is_published: boolean | null
           name: string
           page_id: string
@@ -1111,12 +1114,15 @@ export type Database = {
           access_token?: string | null
           ads_limit?: number | null
           ads_running?: number | null
+          blacklist_reason?: string | null
+          blacklisted_at?: string | null
           business_id?: string | null
           business_name?: string | null
           category?: string | null
           created_at?: string
           followers_count?: number | null
           id?: string
+          is_blacklisted?: boolean
           is_published?: boolean | null
           name: string
           page_id: string
@@ -1130,12 +1136,15 @@ export type Database = {
           access_token?: string | null
           ads_limit?: number | null
           ads_running?: number | null
+          blacklist_reason?: string | null
+          blacklisted_at?: string | null
           business_id?: string | null
           business_name?: string | null
           category?: string | null
           created_at?: string
           followers_count?: number | null
           id?: string
+          is_blacklisted?: boolean
           is_published?: boolean | null
           name?: string
           page_id?: string
