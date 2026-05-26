@@ -1029,12 +1029,17 @@ export default function FacebookPagesPage() {
                     <Badge key={pool} variant="outline" className="font-normal gap-1 bg-primary/10 text-primary border-primary/30">
                       {pool}
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (!poolDialogPage) return;
-                          setPageIdToPools((prev) => ({
-                            ...prev,
-                            [poolDialogPage.page_id]: (prev[poolDialogPage.page_id] || []).filter((x) => x !== pool),
-                          }));
+                          const target = pools.find((p) => p.name === pool);
+                          if (!target) return;
+                          try {
+                            await removePageFromPool(target.id, poolDialogPage.page_id);
+                            await loadPools();
+                          } catch (e) {
+                            console.error(e);
+                            toast.error('Erro ao remover');
+                          }
                         }}
                         className="hover:opacity-70"
                       >
@@ -1051,36 +1056,34 @@ export default function FacebookPagesPage() {
                 placeholder="Ex: Emagrecimento, Disfunção..."
                 value={newPoolName}
                 onChange={(e) => setNewPoolName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (!poolDialogPage || !newPoolName.trim()) return;
-                    const name = newPoolName.trim();
-                    setPageIdToPools((prev) => {
-                      const cur = prev[poolDialogPage.page_id] || [];
-                      if (cur.includes(name)) return prev;
-                      return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
-                    });
-                    setNewPoolName('');
-                  }
-                }}
               />
               <Button
                 size="icon"
-                onClick={() => {
+                onClick={async () => {
                   if (!poolDialogPage || !newPoolName.trim()) return;
                   const name = newPoolName.trim();
-                  setPageIdToPools((prev) => {
-                    const cur = prev[poolDialogPage.page_id] || [];
-                    if (cur.includes(name)) return prev;
-                    return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
-                  });
-                  setNewPoolName('');
+                  try {
+                    let pool = pools.find((p) => p.name.toLowerCase() === name.toLowerCase());
+                    if (!pool) {
+                      const created = await createPool(name, '#10b981');
+                      pool = { ...created, pages: [] };
+                    }
+                    await addPagesToPool(pool.id, [{
+                      page_id: poolDialogPage.page_id,
+                      profile_id: poolDialogPage.profile_id,
+                    }]);
+                    setNewPoolName('');
+                    await loadPools();
+                  } catch (e) {
+                    console.error(e);
+                    toast.error('Erro ao adicionar ao pool');
+                  }
                 }}
               >
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
+
           </div>
 
           <DialogFooter>
