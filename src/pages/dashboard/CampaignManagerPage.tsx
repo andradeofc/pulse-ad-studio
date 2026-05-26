@@ -421,17 +421,42 @@ export default function CampaignManagerPage() {
     );
   };
 
-  const openInManager = () => {
+  const [managerDialogOpen, setManagerDialogOpen] = useState(false);
+  const managerLinks = useMemo(() => {
     const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
+    if (ids.length === 0) return [] as { accountName: string; accountId: string; url: string; count: number }[];
     const byId = new Map(rows.map((r) => [r.id, r] as const));
-    const first = byId.get(ids[0]);
-    if (!first) return;
-    const actId = first.account.account_id.replace(/^act_/, '');
+    const grouped = new Map<string, { accountName: string; accountId: string; ids: string[] }>();
+    for (const id of ids) {
+      const r = byId.get(id);
+      if (!r) continue;
+      const actId = r.account.account_id.replace(/^act_/, '');
+      const g = grouped.get(actId) || { accountName: r.account.name, accountId: actId, ids: [] };
+      g.ids.push(id);
+      grouped.set(actId, g);
+    }
     const param = level === 'campaign' ? 'selected_campaign_ids' : level === 'adset' ? 'selected_adset_ids' : 'selected_ad_ids';
-    const url = `https://business.facebook.com/adsmanager/manage/${level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'}?act=${actId}&${param}=${ids.join(',')}`;
-    window.open(url, '_blank', 'noopener');
+    const path = level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads';
+    return Array.from(grouped.values()).map((g) => ({
+      accountName: g.accountName,
+      accountId: g.accountId,
+      count: g.ids.length,
+      url: `https://business.facebook.com/adsmanager/manage/${path}?act=${g.accountId}&${param}=${g.ids.join(',')}`,
+    }));
+  }, [selectedIds, rows, level]);
+
+  const openInManager = () => setManagerDialogOpen(true);
+  const copyAllLinks = async () => {
+    try {
+      await navigator.clipboard.writeText(managerLinks.map((l) => l.url).join('\n'));
+      toast.success('Links copiados');
+    } catch { toast.error('Falha ao copiar'); }
   };
+  const openAllLinks = () => {
+    managerLinks.forEach((l) => window.open(l.url, '_blank', 'noopener'));
+    setManagerDialogOpen(false);
+  };
+
 
   const filterKey = useMemo(
     () => ({
