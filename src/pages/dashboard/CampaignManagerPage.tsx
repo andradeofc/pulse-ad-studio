@@ -331,6 +331,37 @@ export default function CampaignManagerPage() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleCols)); } catch {}
   }, [visibleCols]);
 
+  // Optimistic toggle state: id -> 'ACTIVE' | 'PAUSED'
+  const [statusOverride, setStatusOverride] = useState<Record<string, 'ACTIVE' | 'PAUSED'>>({});
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+
+  const handleToggleStatus = async (r: Row, next: boolean) => {
+    const newStatus: 'ACTIVE' | 'PAUSED' = next ? 'ACTIVE' : 'PAUSED';
+    setStatusOverride((s) => ({ ...s, [r.id]: newStatus }));
+    setTogglingIds((s) => new Set(s).add(r.id));
+    try {
+      const { data, error } = await supabase.functions.invoke('update-fb-entity-status', {
+        body: { accountId: r.account.id, entityId: r.id, level, status: newStatus },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(newStatus === 'ACTIVE' ? 'Ativado' : 'Pausado');
+    } catch (e: any) {
+      setStatusOverride((s) => {
+        const cp = { ...s };
+        delete cp[r.id];
+        return cp;
+      });
+      toast.error(e?.message || 'Falha ao atualizar status');
+    } finally {
+      setTogglingIds((s) => {
+        const cp = new Set(s);
+        cp.delete(r.id);
+        return cp;
+      });
+    }
+  };
+
   const filterKey = useMemo(
     () => ({
       accountIds, level,
