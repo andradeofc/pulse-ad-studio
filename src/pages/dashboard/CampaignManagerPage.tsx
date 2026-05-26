@@ -642,7 +642,12 @@ export default function CampaignManagerPage() {
           <table className="text-sm" style={{ minWidth: 'max-content' }}>
             <thead className="bg-muted/30 border-y border-border text-muted-foreground">
               <tr>
-                <th className="w-10 p-3"><Checkbox /></th>
+                <th className="w-10 p-3">
+                  <Checkbox
+                    checked={visible.length > 0 && visible.every((r) => selectedIds.has(r.id))}
+                    onCheckedChange={(c) => toggleAllVisible(!!c)}
+                  />
+                </th>
                 <th className="w-14 p-3 text-left text-xs font-medium"></th>
                 {visibleColumnDefs.map((c) => (
                   <Th key={c.id}>
