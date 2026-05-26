@@ -715,7 +715,15 @@ Deno.serve(async (req) => {
       console.log(`Collaborator detected. Using owner ID: ${userId}`);
     }
 
-    const { accessToken } = await req.json();
+    const body = await req.json();
+    const accessToken: string | undefined = body?.accessToken;
+    // NEW optional fields (Wizard flow). All optional; behavior unchanged when omitted.
+    const taskId: string | null = body?.taskId || null;
+    const appId: string | null = body?.appId || null;
+    const appSecret: string | null = body?.appSecret || null;
+    const authMethod: string = body?.authMethod || (appId && appSecret ? "facebook_app" : "token_only");
+    const isLongLived: boolean = !!body?.isLongLived;
+    const proxyConfig: any = body?.proxyConfig || null;
 
     if (!accessToken) {
       return new Response(
