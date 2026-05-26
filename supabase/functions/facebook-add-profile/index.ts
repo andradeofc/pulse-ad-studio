@@ -320,17 +320,25 @@ async function performFullSync(
       if (error) console.error("Error upserting accounts:", error);
     }
 
+    accountsCount = finalAccounts.length;
+    bmsCount = allBusinesses.length;
     console.log(`✓ STAGE 1 COMPLETE: ${finalAccounts.length} accounts synced`);
+    await reportTaskStep(svcClient, taskId, 6, "savingAccounts", `Salvas ${finalAccounts.length} contas de anúncio (${bmsCount} BMs)`, {
+      accountsCount: finalAccounts.length,
+      bmsCount,
+    });
 
   } catch (error) {
     console.error("Error in Stage 1 (accounts):", error);
     await updateSyncStatus(supabase, profileId, "error");
+    await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar contas" });
     return;
   }
 
   // ========== STAGE 2: SYNC PAGES ==========
   console.log("=== STAGE 2: SYNCING PAGES ===");
   await updateSyncStatus(supabase, profileId, "syncing_pages");
+  await reportTaskStep(svcClient, taskId, 7, "syncingPages", "Sincronizando páginas do Facebook...");
 
   try {
     const pagesMap = new Map<string, any>(); // Deduplicate by page_id
