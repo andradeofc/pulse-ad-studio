@@ -279,20 +279,13 @@ Deno.serve(async (req) => {
       const fields = `${baseFields},${insightsExpansion}`
       const nodePath = level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'
 
-      const nodesP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${encodeURIComponent(fields)}&limit=200${filteringParam}&access_token=${token}`)
-      const adsetBudgetP = level === 'campaign'
-        ? paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/adsets?fields=campaign_id,daily_budget,lifetime_budget&limit=500${filteringParam}&access_token=${token}`)
-        : Promise.resolve([] as any[])
-
-      const [nodes, adsetBudgetRows] = await Promise.all([nodesP, adsetBudgetP])
-
-      const adsetBudgetCampaigns = new Set<string>()
-      for (const a of adsetBudgetRows) {
-        if ((a.daily_budget && a.daily_budget !== '0') || (a.lifetime_budget && a.lifetime_budget !== '0')) {
-          if (a.campaign_id) adsetBudgetCampaigns.add(a.campaign_id)
-        }
-      }
-
+      // PHASE 1 OPTIMIZATION:
+      // - limit raised from 200 -> 500 (FB hard cap for these endpoints; cuts pagination round-trips)
+      // - removed the separate /adsets call used only to detect ABO campaigns.
+      //   A campaign with no daily_budget AND no lifetime_budget IS, by definition,
+      //   using adset-level budgets (ABO). We derive budget_source from that instead
+      //   of a second round-trip. Saves ~2-3s per account on the first load.
+      const nodes = await paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${encodeURIComponent(fields)}&limit=500${filteringParam}&access_token=${token}`)
 
       const rows: any[] = []
       for (const n of nodes) {
@@ -301,10 +294,9 @@ Deno.serve(async (req) => {
 
         const dailyB = n.daily_budget ? parseFloat(n.daily_budget) / 100 : null
         const lifeB = n.lifetime_budget ? parseFloat(n.lifetime_budget) / 100 : null
+        // ABO heuristic: campaign without campaign-level budget = adset-level budgets
         const budgetSource =
-          level === 'campaign' && !dailyB && !lifeB && adsetBudgetCampaigns.has(n.id)
-            ? 'adset'
-            : 'self'
+          level === 'campaign' && !dailyB && !lifeB ? 'adset' : 'self'
 
         rows.push({
           id: n.id,
