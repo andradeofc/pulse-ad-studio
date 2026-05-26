@@ -109,6 +109,74 @@ async function updateSyncStatus(supabase: any, profileId: string, status: string
   }
 }
 
+// Append a progress event to facebook_profile_tasks (no-op if no taskId).
+// Uses service-role client to bypass RLS for reliable background writes.
+async function reportTaskStep(
+  svcClient: any,
+  taskId: string | null,
+  step: number,
+  stepKey: string,
+  message: string,
+  detail?: Record<string, unknown>
+) {
+  if (!taskId || !svcClient) return;
+  try {
+    const { data: current } = await svcClient
+      .from("facebook_profile_tasks")
+      .select("progress")
+      .eq("id", taskId)
+      .maybeSingle();
+
+    const prev = Array.isArray(current?.progress) ? current!.progress : [];
+    const next = [
+      ...prev,
+      {
+        step,
+        step_key: stepKey,
+        message,
+        detail: detail ?? null,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    await svcClient
+      .from("facebook_profile_tasks")
+      .update({
+        progress: next,
+        current_step: step,
+        current_step_key: stepKey,
+        status: "running",
+        started_at: prev.length === 0 ? new Date().toISOString() : undefined,
+      })
+      .eq("id", taskId);
+  } catch (e) {
+    console.error("[reportTaskStep] failed:", e);
+  }
+}
+
+async function finishTask(
+  svcClient: any,
+  taskId: string | null,
+  status: "completed" | "failed",
+  payload: { result?: Record<string, unknown>; error?: string }
+) {
+  if (!taskId || !svcClient) return;
+  try {
+    await svcClient
+      .from("facebook_profile_tasks")
+      .update({
+        status,
+        result: payload.result ?? null,
+        error: payload.error ?? null,
+        completed_at: new Date().toISOString(),
+        current_step_key: status === "completed" ? "completed" : "failed",
+      })
+      .eq("id", taskId);
+  } catch (e) {
+    console.error("[finishTask] failed:", e);
+  }
+}
+
 // Background sync function - STAGED approach
 async function performFullSync(
   supabaseUrl: string,
