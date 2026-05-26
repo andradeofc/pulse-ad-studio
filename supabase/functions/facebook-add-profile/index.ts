@@ -796,6 +796,24 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseService = createClient(supabaseUrl, serviceRoleKey);
 
+    // Initial task progress (no-op if no taskId)
+    await reportTaskStep(supabaseService, taskId, 1, "validatingToken", "Token validado com sucesso", { userName: userData.name });
+    await reportTaskStep(supabaseService, taskId, 2, "verifyingAccount", existingProfile ? "Reconectando perfil existente..." : "Verificando duplicidade...");
+
+    // Build optional credential fields (only set when provided)
+    const credentialFields: Record<string, unknown> = {};
+    if (appId) credentialFields.app_id = appId;
+    if (appSecret) credentialFields.app_secret = appSecret;
+    if (authMethod) credentialFields.auth_method = authMethod;
+    credentialFields.is_long_lived = isLongLived;
+    credentialFields.token_status = "VALID";
+    credentialFields.token_check_error = null;
+    credentialFields.token_check_error_code = null;
+    credentialFields.last_token_check_at = new Date().toISOString();
+    if (proxyConfig && typeof proxyConfig === "object") {
+      credentialFields.proxy_config = proxyConfig;
+    }
+
     if (existingProfile) {
       // Update existing profile (may be reconnecting a disconnected profile)
       console.log("Updating existing profile:", existingProfile.id);
@@ -810,6 +828,7 @@ Deno.serve(async (req) => {
           permissions,
           token_expires_at: expiresAt,
           sync_status: "syncing_accounts",
+          ...credentialFields,
         })
         .eq("id", existingProfile.id)
         .select()
