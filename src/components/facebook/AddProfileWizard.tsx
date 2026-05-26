@@ -103,6 +103,7 @@ const STEP_KEYS_ORDER = [
 ];
 
 export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileWizardProps) {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuthStore();
 
