@@ -209,9 +209,11 @@ async function performFullSync(
     const accountsMap = new Map<string, any>();
 
     console.log("Fetching all accessible ad accounts (/me/adaccounts)...");
-    const adAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&limit=500&access_token=${accessToken}`;
+    const adAccountsUrl = `${FACEBOOK_GRAPH_API}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status,amount_spent&limit=500&access_token=${accessToken}`;
     const rawAccounts = await fetchAllPaginated(adAccountsUrl);
     console.log(`Found ${rawAccounts.length} ad accounts (raw)`);
+
+    const nowIso = new Date().toISOString();
 
     for (const account of rawAccounts) {
       const accountId = normalizeAdAccountId(account);
@@ -219,6 +221,9 @@ async function performFullSync(
 
       const key = String(accountId);
       const existing = accountsMap.get(key);
+
+      // Facebook returns amount_spent in cents for most currencies
+      const amountSpent = account.amount_spent ? parseFloat(account.amount_spent) / 100 : 0;
 
       accountsMap.set(key, {
         profile_id: profileId,
@@ -229,8 +234,11 @@ async function performFullSync(
         status: account.account_status === 1 ? "active" : "inactive",
         business_id: existing?.business_id ?? null,
         business_name: existing?.business_name ?? null,
+        amount_spent: amountSpent,
+        spend_updated_at: nowIso,
       });
     }
+
 
     // Fetch all Business Managers (used in Stage 2 pages sync)
     console.log("Fetching Business Managers (/me/businesses)...");
