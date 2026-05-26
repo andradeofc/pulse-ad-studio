@@ -62,9 +62,11 @@ import {
   validateFacebookToken,
   updateFacebookToken,
   testProxyConnection,
+  refreshFacebookProfileToken,
   type FacebookProfile,
 } from '@/services/facebookService';
 import { AddProfileWizard } from '@/components/facebook/AddProfileWizard';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 export default function FacebookProfilesPage() {
@@ -85,6 +87,31 @@ export default function FacebookProfilesPage() {
   const [isValidating, setIsValidating] = useState(false);
   const [isUpdatingToken, setIsUpdatingToken] = useState(false);
   const [isSyncing, setSyncing] = useState<string | null>(null);
+  const [refreshingTokenId, setRefreshingTokenId] = useState<string | null>(null);
+
+  const handleRefreshToken = async (profile: FacebookProfile) => {
+    setRefreshingTokenId(profile.id);
+    try {
+      const res = await refreshFacebookProfileToken(profile.id);
+      const r = res.results?.[0];
+      if (r?.action === 'refreshed') {
+        toast({ title: 'Token renovado', description: 'Validade estendida por ~60 dias.' });
+      } else if (r?.action === 'checked_ok') {
+        toast({ title: 'Token saudável', description: 'Nenhuma renovação necessária.' });
+      } else if (r?.action === 'marked_expired') {
+        toast({ title: 'Token expirado', description: r.error || 'Atualize o token manualmente.', variant: 'destructive' });
+      } else if (r?.action === 'marked_blocked') {
+        toast({ title: 'App bloqueado pelo Facebook', description: r.error || 'Rate limit ou bloqueio.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Não foi possível renovar', description: r?.error || 'Tente novamente.', variant: 'destructive' });
+      }
+      await loadProfiles();
+    } catch (e: any) {
+      toast({ title: 'Erro ao renovar', description: e?.message || 'Erro desconhecido', variant: 'destructive' });
+    } finally {
+      setRefreshingTokenId(null);
+    }
+  };
   
   const [proxyForm, setProxyForm] = useState({
     protocol: 'http',
@@ -649,16 +676,87 @@ export default function FacebookProfilesPage() {
                     </div>
                   </div>
 
-                  {/* Token Expiration */}
-                  <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Token expira em:</span>
-                    </div>
-                    <span className="text-sm font-medium text-foreground">
-                      {profile.token_expires_at ? formatDate(profile.token_expires_at) : 'Não definido'}
-                    </span>
-                  </div>
+                  {/* Token Health */}
+                  {(() => {
+                    const status = profile.token_status || 'unknown';
+                    const isApp = profile.auth_method === 'facebook_app';
+                    const statusMap: Record<string, { label: string; cls: string; icon: any }> = {
+                      VALID: { label: 'Saudável', cls: 'bg-ads-success/15 text-ads-success border-ads-success/30', icon: CheckCircle },
+                      EXPIRING_SOON: { label: 'Expira em breve', cls: 'bg-amber-500/15 text-amber-500 border-amber-500/30', icon: Clock },
+                      EXPIRED: { label: 'Expirado', cls: 'bg-destructive/15 text-destructive border-destructive/30', icon: AlertCircle },
+                      INVALID: { label: 'Inválido', cls: 'bg-destructive/15 text-destructive border-destructive/30', icon: AlertCircle },
+                      API_BLOCKED: { label: 'App bloqueado', cls: 'bg-destructive/15 text-destructive border-destructive/30', icon: Shield },
+                      unknown: { label: 'Não verificado', cls: 'bg-muted text-muted-foreground border-border', icon: Clock },
+                    };
+                    const s = statusMap[status] || statusMap.unknown;
+                    const StatusIcon = s.icon;
+                    return (
+                      <div className="space-y-2 p-3 bg-secondary/50 rounded-lg">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Token:</span>
+                            <TooltipProvider delayDuration={200}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="outline" className={`text-xs gap-1 ${s.cls}`}>
+                                    <StatusIcon className="w-3 h-3" />
+                                    {s.label}
+                                  </Badge>
+                                </TooltipTrigger>
+                                {profile.token_check_error && (
+                                  <TooltipContent className="max-w-xs">
+                                    <p className="text-xs">{profile.token_check_error}</p>
+                                    {profile.token_check_error_code && (
+                                      <p className="text-xs text-muted-foreground mt-1">Código: {profile.token_check_error_code}</p>
+                                    )}
+                                  </TooltipContent>
+                                )}
+                              </Tooltip>
+                            </TooltipProvider>
+                            {profile.is_long_lived ? (
+                              <Badge variant="outline" className="text-xs gap-1 bg-primary/10 text-primary border-primary/30">
+                                <Sparkles className="w-3 h-3" />
+                                60 dias
+                              </Badge>
+                            ) : profile.auth_method === 'token_only' ? (
+                              <Badge variant="outline" className="text-xs gap-1 bg-amber-500/10 text-amber-500 border-amber-500/30">
+                                Curta duração
+                              </Badge>
+                            ) : null}
+                          </div>
+                          {isApp && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-primary"
+                              onClick={() => handleRefreshToken(profile)}
+                              disabled={refreshingTokenId === profile.id}
+                            >
+                              {refreshingTokenId === profile.id ? (
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-3 h-3 mr-1" />
+                              )}
+                              Renovar
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Expira em:</span>
+                          <span className="font-medium text-foreground">
+                            {profile.token_expires_at ? formatDate(profile.token_expires_at) : 'Não definido'}
+                          </span>
+                        </div>
+                        {profile.last_token_check_at && (
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Última verificação:</span>
+                            <span>{formatDate(profile.last_token_check_at)}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Permissions */}
                   {profile.permissions && profile.permissions.length > 0 && (

@@ -19,6 +19,15 @@ export interface FacebookProfile {
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+  // Etapa 1+4 — token health fields (all optional / safe defaults)
+  auth_method?: 'token_only' | 'facebook_app' | null;
+  app_id?: string | null;
+  app_name?: string | null;
+  is_long_lived?: boolean | null;
+  token_status?: 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'INVALID' | 'API_BLOCKED' | 'unknown' | null;
+  token_check_error?: string | null;
+  token_check_error_code?: string | null;
+  last_token_check_at?: string | null;
 }
 
 export interface FacebookAdAccount {
@@ -194,4 +203,17 @@ export async function syncBusinessManagers(profileId?: string) {
   }
 
   return data;
+}
+
+// Refresh / re-check token health for a single profile (Etapa 4)
+export async function refreshFacebookProfileToken(profileId: string) {
+  const { data, error } = await supabase.functions.invoke('facebook-refresh-token', {
+    body: { profileId },
+  });
+  if (error) throw error;
+  return data as {
+    success: boolean;
+    summary: { refreshed: number; healthy: number; expired: number; blocked: number };
+    results: Array<{ profileId: string; action: string; error?: string; expiresAt?: string | null }>;
+  };
 }

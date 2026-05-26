@@ -304,8 +304,8 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
           appSecret: creds.appSecret.trim(),
           shortToken: finalToken,
         });
-        if (ex.success && ex.longLivedToken) {
-          finalToken = ex.longLivedToken;
+        if (ex.success && ex.accessToken) {
+          finalToken = ex.accessToken;
           isLongLived = true;
         } else {
           console.warn('Token exchange failed, continuing with short-lived:', ex.error);
