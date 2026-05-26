@@ -26,10 +26,17 @@ import { toast } from 'sonner';
 import {
   fetchPools,
   PoolWithPages,
-  renamePool,
+  updatePool,
   deletePool,
 } from '@/services/fanpagePoolsService';
 import { ManagePoolsModal, PageForPool } from './ManagePoolsModal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Props {
   pages: PageForPool[];
