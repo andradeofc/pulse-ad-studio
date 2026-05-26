@@ -179,11 +179,34 @@ export default function AdAccountsPage() {
   // Reset to page 1 when filters change
   useEffect(() => { setPage(1); }, [searchQuery, statusFilter, currencyFilter, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredAccounts.length / pageSize));
+  const sortedAccounts = useMemo(() => {
+    const arr = [...filteredAccounts];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const getVal = (a: FacebookAdAccount): string | number => {
+      switch (sortKey) {
+        case 'name': return (a.name || '').toLowerCase();
+        case 'account_id': return (a.account_id || '').toLowerCase();
+        case 'nickname': return (a.nickname || '').toLowerCase();
+        case 'status': return (a.status || '').toLowerCase();
+        case 'currency': return (a.currency || '').toLowerCase();
+        case 'timezone': return tzToOffset(a.timezone).toLowerCase();
+        case 'amount_spent': return a.amount_spent || 0;
+        case 'spend_updated_at': return a.spend_updated_at ? new Date(a.spend_updated_at).getTime() : 0;
+      }
+    };
+    arr.sort((a, b) => {
+      const va = getVal(a); const vb = getVal(b);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), 'pt-BR') * dir;
+    });
+    return arr;
+  }, [filteredAccounts, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedAccounts.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const startIdx = (currentPage - 1) * pageSize;
-  const endIdx = Math.min(startIdx + pageSize, filteredAccounts.length);
-  const pagedAccounts = filteredAccounts.slice(startIdx, endIdx);
+  const endIdx = Math.min(startIdx + pageSize, sortedAccounts.length);
+  const pagedAccounts = sortedAccounts.slice(startIdx, endIdx);
 
   const activeCount = accounts.filter((a) => a.status === 'active').length;
 
