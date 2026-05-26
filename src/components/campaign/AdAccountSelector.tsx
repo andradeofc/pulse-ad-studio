@@ -254,9 +254,11 @@ export function AdAccountSelector({
       )}
 
       {/* Account count info */}
-      <p className="text-xs text-muted-foreground">
-        {accounts.length} conta(s) disponível(is) · {selectedAccounts.length} selecionada(s)
-      </p>
+      {!hideCount && (
+        <p className="text-xs text-muted-foreground">
+          {accounts.length} conta(s) disponível(is) · {selectedAccounts.length} selecionada(s)
+        </p>
+      )}
     </div>
   );
 }
