@@ -38,12 +38,14 @@ interface AdAccountSelectorProps {
   multiSelect: boolean;
   selectedAccounts: string[];
   onSelectionChange: (accountIds: string[]) => void;
+  hideCount?: boolean;
 }
 
 export function AdAccountSelector({
   multiSelect,
   selectedAccounts,
   onSelectionChange,
+  hideCount = false,
 }: AdAccountSelectorProps) {
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
