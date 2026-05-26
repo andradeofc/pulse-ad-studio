@@ -183,14 +183,23 @@ async function performFullSync(
   supabaseKey: string,
   authHeader: string,
   profileId: string,
-  accessToken: string
+  accessToken: string,
+  taskId: string | null = null,
+  svcClient: any = null
 ) {
   const supabase = createClient(supabaseUrl, supabaseKey, {
     global: { headers: { Authorization: authHeader } },
   });
 
+  // Counters for final task summary
+  let accountsCount = 0;
+  let pagesCount = 0;
+  let pixelsCount = 0;
+  let bmsCount = 0;
+
   console.log("=== STAGE 1: SYNCING ACCOUNTS ===");
   await updateSyncStatus(supabase, profileId, "syncing_accounts");
+  await reportTaskStep(svcClient, taskId, 5, "fetchingAdAccounts", "Buscando contas de anúncio...");
 
   let allBusinesses: any[] = [];
 
