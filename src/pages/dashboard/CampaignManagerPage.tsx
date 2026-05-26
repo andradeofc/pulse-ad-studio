@@ -749,6 +749,17 @@ export default function CampaignManagerPage() {
         onCopyAll={copyAllLinks}
         onOpenAll={openAllLinks}
       />
+
+      <BulkEditDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        level={level}
+        items={Array.from(selectedIds).map((id) => {
+          const r = rows.find((x) => x.id === id);
+          return r ? { accountId: r.account.id, entityId: id, name: r.name } : null;
+        }).filter(Boolean) as { accountId: string; entityId: string; name?: string }[]}
+        onDone={() => { setSelectedIds(new Set()); refetch(); }}
+      />
     </div>
   );
 }
