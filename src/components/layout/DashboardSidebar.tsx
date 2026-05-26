@@ -30,6 +30,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
 import { SyncProgressBadge } from './SyncProgressBadge';
+import { SidebarExtensionPairing } from './SidebarExtensionPairing';
 import logoImage from '@/assets/logo.png';
 
 interface NavItem {
@@ -197,6 +198,9 @@ export function DashboardSidebar() {
 
       {/* Sync Progress Badge */}
       <SyncProgressBadge isCollapsed={isCollapsed} />
+
+      {/* Extension Pairing */}
+      <SidebarExtensionPairing isCollapsed={isCollapsed} />
 
       {/* Bottom Section */}
       <div className="border-t border-border px-3 py-4 space-y-1">
