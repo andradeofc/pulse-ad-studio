@@ -92,6 +92,7 @@ export function PageSelector({
         .from('facebook_pages')
         .select('*, facebook_profiles!inner(status)')
         .neq('facebook_profiles.status', 'disconnected')
+        .eq('is_blacklisted', false)
         .order('name');
 
       if (error) throw error;
