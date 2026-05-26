@@ -113,6 +113,12 @@ export default function FacebookPagesPage() {
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
 
+  // Pools (local, em breve persistência no backend)
+  const [pageIdToPools, setPageIdToPools] = useState<Record<string, string[]>>({});
+  const [poolDialogPage, setPoolDialogPage] = useState<FacebookPage | null>(null);
+  const [newPoolName, setNewPoolName] = useState('');
+
+
   // Column visibility
   type ColKey =
     | 'page' | 'slots' | 'status' | 'category' | 'access_type' | 'profile_name'
