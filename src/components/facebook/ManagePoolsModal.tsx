@@ -40,6 +40,7 @@ export interface PageForPool {
   profile_id: string;
   profile_name: string | null;
   picture_url: string | null;
+  is_blacklisted?: boolean;
 }
 
 interface Props {
