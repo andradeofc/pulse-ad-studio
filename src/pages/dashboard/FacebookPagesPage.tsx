@@ -771,12 +771,20 @@ export default function FacebookPagesPage() {
 
                       {visibleCols.origin && (
                         <TableCell>
-                          <Badge variant="outline" className="font-normal gap-1 bg-purple-500/10 text-purple-500 border-purple-500/30">
-                            <Puzzle className="w-3 h-3" />
-                            API
-                          </Badge>
+                          {p.source === 'extension' ? (
+                            <Badge variant="outline" className="font-normal gap-1 bg-purple-500/10 text-purple-500 border-purple-500/30">
+                              <Puzzle className="w-3 h-3" />
+                              Extensão
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="font-normal gap-1 bg-ads-info/10 text-ads-info border-ads-info/30">
+                              <Cloud className="w-3 h-3" />
+                              API
+                            </Badge>
+                          )}
                         </TableCell>
                       )}
+
 
                       {visibleCols.pools && (
                         <TableCell>
