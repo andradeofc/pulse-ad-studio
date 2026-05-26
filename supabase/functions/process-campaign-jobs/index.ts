@@ -2511,8 +2511,9 @@ Deno.serve(async (req) => {
         if (isUuid) {
           const { data } = await supabase
             .from('facebook_pages')
-            .select('page_id, access_token, ads_running, ads_limit')
+            .select('page_id, access_token, ads_running, ads_limit, is_blacklisted')
             .eq('id', selectedPageValue)
+            .eq('is_blacklisted', false)
             .maybeSingle();
           page = data;
         }
@@ -2521,9 +2522,10 @@ Deno.serve(async (req) => {
         if (!page) {
           const { data: pageByProfile } = await supabase
             .from('facebook_pages')
-            .select('page_id, access_token, ads_running, ads_limit')
+            .select('page_id, access_token, ads_running, ads_limit, is_blacklisted')
             .eq('page_id', selectedPageValue)
             .eq('profile_id', profileId)
+            .eq('is_blacklisted', false)
             .maybeSingle();
           page = pageByProfile;
 
@@ -2531,8 +2533,9 @@ Deno.serve(async (req) => {
           if (!page) {
             const { data: pageByFbId } = await supabase
               .from('facebook_pages')
-              .select('page_id, access_token, ads_running, ads_limit')
+              .select('page_id, access_token, ads_running, ads_limit, is_blacklisted')
               .eq('page_id', selectedPageValue)
+              .eq('is_blacklisted', false)
               .limit(1);
             page = pageByFbId?.[0] || null;
           }
