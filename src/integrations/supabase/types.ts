@@ -1354,6 +1354,7 @@ export type Database = {
         Row: {
           color: string
           created_at: string
+          creator_profile_id: string | null
           id: string
           name: string
           updated_at: string
@@ -1362,6 +1363,7 @@ export type Database = {
         Insert: {
           color?: string
           created_at?: string
+          creator_profile_id?: string | null
           id?: string
           name: string
           updated_at?: string
@@ -1370,12 +1372,21 @@ export type Database = {
         Update: {
           color?: string
           created_at?: string
+          creator_profile_id?: string | null
           id?: string
           name?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fanpage_pools_creator_profile_id_fkey"
+            columns: ["creator_profile_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       naming_presets: {
         Row: {
