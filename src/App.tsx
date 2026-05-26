@@ -40,6 +40,7 @@ import CatalogMonitorPage from "@/pages/dashboard/CatalogMonitorPage";
 import SettingsPage from "@/pages/dashboard/SettingsPage";
 import HelpPage from "@/pages/dashboard/HelpPage";
 import CampaignsPage from "@/pages/dashboard/CampaignsPage";
+import CampaignManagerPage from "@/pages/dashboard/CampaignManagerPage";
 import CampaignDetailsPage from "@/pages/dashboard/CampaignDetailsPage";
 import CampaignSchedulerPage from "@/pages/dashboard/CampaignSchedulerPage";
 import AdCleanupPage from "@/pages/dashboard/AdCleanupPage";
@@ -102,9 +103,10 @@ const App = () => {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/perfis-facebook" element={<FacebookProfilesPage />} />
             <Route path="/contas-anuncio" element={<AdAccountsPage />} />
-            <Route path="/campanhas" element={<CampaignsPage />} />
-            <Route path="/campanhas/:id" element={<CampaignDetailsPage />} />
+            <Route path="/campanhas" element={<CampaignManagerPage />} />
+            <Route path="/campanhas/historico" element={<CampaignsPage />} />
             <Route path="/campanhas/criar" element={<CreateCampaignPage />} />
+            <Route path="/campanhas/:id" element={<CampaignDetailsPage />} />
             <Route path="/paginas" element={<FacebookPagesPage />} />
             <Route path="/fila-processamento" element={<ProcessingQueuePage />} />
             <Route path="/biblioteca-midia" element={<MediaLibraryPage />} />
