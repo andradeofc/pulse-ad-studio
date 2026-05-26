@@ -367,6 +367,72 @@ export default function CampaignManagerPage() {
     }
   };
 
+  // ---- Bulk selection ----
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  useEffect(() => { setSelectedIds(new Set()); }, [accountIds, level, datePreset, dateRange.from, dateRange.to, statuses]);
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((s) => {
+      const cp = new Set(s);
+      if (checked) cp.add(id); else cp.delete(id);
+      return cp;
+    });
+  };
+  const toggleAllVisible = (checked: boolean) => {
+    setSelectedIds((s) => {
+      const cp = new Set(s);
+      if (checked) visible.forEach((r) => cp.add(r.id));
+      else visible.forEach((r) => cp.delete(r.id));
+      return cp;
+    });
+  };
+
+  const runBulk = async (status: 'ACTIVE' | 'PAUSED' | 'DELETED') => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (status === 'DELETED' && !confirm(`Excluir ${ids.length} ${level === 'campaign' ? 'campanha(s)' : level === 'adset' ? 'conjunto(s)' : 'anúncio(s)'}? Esta ação não pode ser desfeita.`)) return;
+    setBulkBusy(true);
+    let ok = 0, fail = 0;
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    for (const id of ids) {
+      const r = byId.get(id);
+      if (!r) { fail++; continue; }
+      try {
+        const { data, error } = await supabase.functions.invoke('update-fb-entity-status', {
+          body: { accountId: r.account.id, entityId: id, level, status },
+        });
+        if (error || (data as any)?.error) throw new Error((data as any)?.error || error?.message);
+        if (status !== 'DELETED') {
+          setStatusOverride((s) => ({ ...s, [id]: status }));
+        }
+        ok++;
+      } catch (e: any) {
+        fail++;
+      }
+    }
+    setBulkBusy(false);
+    if (status === 'DELETED') {
+      setSelectedIds(new Set());
+      refetch();
+    }
+    toast[fail === 0 ? 'success' : 'warning'](
+      `${ok} concluído(s)${fail ? `, ${fail} falha(s)` : ''}`
+    );
+  };
+
+  const openInManager = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    const first = byId.get(ids[0]);
+    if (!first) return;
+    const actId = first.account.account_id.replace(/^act_/, '');
+    const param = level === 'campaign' ? 'selected_campaign_ids' : level === 'adset' ? 'selected_adset_ids' : 'selected_ad_ids';
+    const url = `https://business.facebook.com/adsmanager/manage/${level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'}?act=${actId}&${param}=${ids.join(',')}`;
+    window.open(url, '_blank', 'noopener');
+  };
+
   const filterKey = useMemo(
     () => ({
       accountIds, level,
