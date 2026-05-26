@@ -19,6 +19,15 @@ export interface FacebookProfile {
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+  // Etapa 1+4 — token health fields (all optional / safe defaults)
+  auth_method?: 'token_only' | 'facebook_app' | null;
+  app_id?: string | null;
+  app_name?: string | null;
+  is_long_lived?: boolean | null;
+  token_status?: 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'INVALID' | 'API_BLOCKED' | 'unknown' | null;
+  token_check_error?: string | null;
+  token_check_error_code?: string | null;
+  last_token_check_at?: string | null;
 }
 
 export interface FacebookAdAccount {
