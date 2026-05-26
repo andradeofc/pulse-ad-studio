@@ -213,6 +213,18 @@ Deno.serve(async (req) => {
 
     // Fetch all accounts in parallel; within each account fetch nodes, insights,
     // and adset-budget probe (campaign level only) in parallel as well.
+    // IMPORTANT: filter by effective_status at the Graph API level. Without this,
+    // old accounts return thousands of DELETED/ARCHIVED entities which is the main
+    // cause of 30-40s loads. Default excludes DELETED + ARCHIVED.
+    const ALL_VISIBLE_STATUSES = [
+      'ACTIVE','PAUSED','PENDING_REVIEW','DISAPPROVED','PREAPPROVED',
+      'PENDING_BILLING_INFO','CAMPAIGN_PAUSED','ADSET_PAUSED','IN_PROCESS','WITH_ISSUES',
+    ]
+    const wantedStatuses = statuses.length ? statuses : ALL_VISIBLE_STATUSES
+    const filteringParam = `&filtering=${encodeURIComponent(JSON.stringify([
+      { field: 'effective_status', operator: 'IN', value: wantedStatuses },
+    ]))}`
+
     const perAccount = await Promise.all(allowedAccounts.map(async (acc: any) => {
       const token = acc.facebook_profiles?.access_token
       if (!token) return [] as any[]
@@ -226,10 +238,10 @@ Deno.serve(async (req) => {
 
       const nodePath = level === 'campaign' ? 'campaigns' : level === 'adset' ? 'adsets' : 'ads'
 
-      const nodesP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${fields}&limit=500&access_token=${token}`)
-      const insightsP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/insights?level=${level}&fields=${insightFields}&limit=500${timeRange}&access_token=${token}`)
+      const nodesP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/${nodePath}?fields=${fields}&limit=500${filteringParam}&access_token=${token}`)
+      const insightsP = paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/insights?level=${level}&fields=${insightFields}&limit=500${timeRange}${filteringParam}&access_token=${token}`)
       const adsetBudgetP = level === 'campaign'
-        ? paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/adsets?fields=campaign_id,daily_budget,lifetime_budget&limit=500&access_token=${token}`)
+        ? paginate(`https://graph.facebook.com/${FB_VERSION}/act_${actId}/adsets?fields=campaign_id,daily_budget,lifetime_budget&limit=500${filteringParam}&access_token=${token}`)
         : Promise.resolve([] as any[])
 
       const [nodes, insightRaw, adsetBudgetRows] = await Promise.all([nodesP, insightsP, adsetBudgetP])
