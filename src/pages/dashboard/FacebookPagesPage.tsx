@@ -775,7 +775,17 @@ export default function FacebookPagesPage() {
 
                       {visibleCols.pools && (
                         <TableCell>
-                          <span className="text-sm text-muted-foreground">—</span>
+                          {(pageIdToPools[p.page_id]?.length ?? 0) === 0 ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {pageIdToPools[p.page_id].map((pool) => (
+                                <Badge key={pool} variant="outline" className="font-normal bg-primary/10 text-primary border-primary/30">
+                                  {pool}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </TableCell>
                       )}
 
@@ -807,6 +817,65 @@ export default function FacebookPagesPage() {
                           </span>
                         </TableCell>
                       )}
+
+                      <TableCell className="text-right">
+                        <TooltipProvider delayDuration={150}>
+                          <div className="inline-flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                                  <Facebook className="w-4 h-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent align="end" className="w-48 p-1">
+                                <button
+                                  onClick={() => window.open(`https://facebook.com/${p.page_id}`, '_blank', 'noopener,noreferrer')}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent text-left"
+                                >
+                                  <ExternalLink className="w-4 h-4" /> Abrir página
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`https://facebook.com/${p.page_id}`);
+                                    toast.success('URL copiada');
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent text-left"
+                                >
+                                  <Copy className="w-4 h-4" /> Copiar URL
+                                </button>
+                              </PopoverContent>
+                            </Popover>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                  onClick={() => window.open(`https://business.facebook.com/latest/home?asset_id=${p.page_id}`, '_blank', 'noopener,noreferrer')}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Abrir no Meta Business</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                  onClick={() => { setPoolDialogPage(p); setNewPoolName(''); }}
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Adicionar a um pool</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                      </TableCell>
                     </motion.tr>
                   );
                 })}
