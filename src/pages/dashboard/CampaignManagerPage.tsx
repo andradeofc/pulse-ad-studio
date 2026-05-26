@@ -55,6 +55,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { AdAccountSelector } from '@/components/campaign/AdAccountSelector';
+import { BulkEditDialog } from '@/components/campaign/BulkEditDialog';
 
 type Level = 'campaign' | 'adset' | 'ad';
 
@@ -425,6 +426,7 @@ export default function CampaignManagerPage() {
   };
 
   const [managerDialogOpen, setManagerDialogOpen] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const buildManagerLinks = () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return [] as { accountName: string; accountId: string; url: string; count: number }[];
@@ -651,7 +653,7 @@ export default function CampaignManagerPage() {
               <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" disabled={bulkBusy} onClick={() => runBulk('DELETED')}>
                 <Trash2 className="w-4 h-4" /> Excluir
               </Button>
-              <Button variant="outline" size="sm" className="gap-2" disabled onClick={() => toast.info('Em breve')}>
+              <Button variant="outline" size="sm" className="gap-2" disabled={bulkBusy} onClick={() => setBulkEditOpen(true)}>
                 <Pencil className="w-4 h-4" /> Editar em massa
               </Button>
               <Button variant="outline" size="sm" className="gap-2 text-primary" onClick={openInManager}>
@@ -746,6 +748,17 @@ export default function CampaignManagerPage() {
         level={level}
         onCopyAll={copyAllLinks}
         onOpenAll={openAllLinks}
+      />
+
+      <BulkEditDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        level={level}
+        items={Array.from(selectedIds).map((id) => {
+          const r = rows.find((x) => x.id === id);
+          return r ? { accountId: r.account.id, entityId: id, name: r.name } : null;
+        }).filter(Boolean) as { accountId: string; entityId: string; name?: string }[]}
+        onDone={() => { setSelectedIds(new Set()); refetch(); }}
       />
     </div>
   );
