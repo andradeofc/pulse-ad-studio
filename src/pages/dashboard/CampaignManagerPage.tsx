@@ -607,8 +607,34 @@ export default function CampaignManagerPage() {
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden w-full max-w-full min-w-0">
-        <div className="flex justify-end p-3 border-b border-border">
-          <ColumnsMenu visible={visibleCols} onChange={setVisibleCols} />
+        <div className="flex items-center gap-2 p-3 border-b border-border">
+          {selectedIds.size > 0 ? (
+            <>
+              <span className="text-sm font-medium text-primary px-2">{selectedIds.size} selecionados</span>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Limpar</Button>
+              <div className="h-6 w-px bg-border mx-1" />
+              <Button variant="outline" size="sm" className="gap-2" disabled={bulkBusy} onClick={() => runBulk('ACTIVE')}>
+                <Play className="w-4 h-4" /> Ativar
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2" disabled={bulkBusy} onClick={() => runBulk('PAUSED')}>
+                <Pause className="w-4 h-4" /> Pausar
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive" disabled={bulkBusy} onClick={() => runBulk('DELETED')}>
+                <Trash2 className="w-4 h-4" /> Excluir
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2" disabled onClick={() => toast.info('Em breve')}>
+                <Pencil className="w-4 h-4" /> Editar em massa
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2 text-primary" onClick={openInManager}>
+                <ExternalLink className="w-4 h-4" /> Abrir no gerenciador
+              </Button>
+              {bulkBusy && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+              <div className="ml-auto"><ColumnsMenu visible={visibleCols} onChange={setVisibleCols} /></div>
+            </>
+          ) : (
+            <div className="ml-auto"><ColumnsMenu visible={visibleCols} onChange={setVisibleCols} /></div>
+          )}
+        </div>
         </div>
 
         <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
