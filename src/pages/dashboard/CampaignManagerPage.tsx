@@ -535,18 +535,19 @@ export default function CampaignManagerPage() {
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl overflow-hidden w-full max-w-full min-w-0">
         <div className="flex justify-end p-3 border-b border-border">
           <ColumnsMenu visible={visibleCols} onChange={setVisibleCols} />
         </div>
 
         <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="w-full max-w-full overflow-x-auto">
+          <table className="text-sm" style={{ minWidth: 'max-content' }}>
             <thead className="bg-muted/30 border-y border-border text-muted-foreground">
               <tr>
                 <th className="w-10 p-3"><Checkbox /></th>
+                <th className="w-14 p-3 text-left text-xs font-medium"></th>
                 {visibleColumnDefs.map((c) => (
                   <Th key={c.id}>
                     {c.id === 'name'
@@ -558,27 +559,41 @@ export default function CampaignManagerPage() {
             </thead>
             <tbody>
               {isLoading && accountIds.length > 0 && (
-                <tr><td colSpan={colCount} className="p-10 text-center text-muted-foreground">
+                <tr><td colSpan={colCount + 1} className="p-10 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Carregando...
                 </td></tr>
               )}
               {!isLoading && accountIds.length === 0 && (
-                <tr><td colSpan={colCount} className="p-12 text-center text-muted-foreground">
+                <tr><td colSpan={colCount + 1} className="p-12 text-center text-muted-foreground">
                   Selecione uma ou mais contas de anúncio para carregar campanhas.
                 </td></tr>
               )}
               {!isLoading && accountIds.length > 0 && visible.length === 0 && (
-                <tr><td colSpan={colCount} className="p-12 text-center text-muted-foreground">Nenhum registro encontrado.</td></tr>
+                <tr><td colSpan={colCount + 1} className="p-12 text-center text-muted-foreground">Nenhum registro encontrado.</td></tr>
               )}
-              {visible.map((r) => (
-                <tr key={r.id} className="border-b border-border hover:bg-accent/20">
-                  <td className="p-3"><Checkbox /></td>
-                  {visibleColumnDefs.map((c) => renderCell(c.id, r))}
-                </tr>
-              ))}
+              {visible.map((r) => {
+                const eff = statusOverride[r.id] || r.effective_status;
+                const isActive = eff === 'ACTIVE';
+                const canToggle = ['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED'].includes(eff);
+                const rowOverride = { ...r, effective_status: eff } as Row;
+                return (
+                  <tr key={r.id} className="border-b border-border hover:bg-accent/20">
+                    <td className="p-3"><Checkbox /></td>
+                    <td className="p-3">
+                      <Switch
+                        checked={isActive}
+                        disabled={!canToggle || togglingIds.has(r.id)}
+                        onCheckedChange={(c) => handleToggleStatus(r, c)}
+                      />
+                    </td>
+                    {visibleColumnDefs.map((c) => renderCell(c.id, rowOverride))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+
 
         <PaginationBar total={filtered.length} page={page} pageSize={pageSize} setPage={setPage} setPageSize={setPageSize} />
       </div>
