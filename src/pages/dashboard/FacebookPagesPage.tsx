@@ -117,7 +117,7 @@ type SortKey = 'name' | 'slots' | 'category' | 'access_type' | 'origin_access';
 type SortDir = 'asc' | 'desc';
 
 export default function FacebookPagesPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
 
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -239,6 +239,10 @@ export default function FacebookPagesPage() {
   const handleBulkBlacklist = async (blacklist: boolean) => {
     if (selectedIds.size === 0) return;
     try {
+      const selectedPages = pages.filter((p) => selectedIds.has(p.id));
+      const pageIds = Array.from(new Set(selectedPages.map((p) => p.page_id)));
+      const userId = user?.id;
+
       const payload = blacklist
         ? { is_blacklisted: true, blacklist_reason: 'Manual bulk blacklist', blacklisted_at: new Date().toISOString() }
         : { is_blacklisted: false, blacklist_reason: null, blacklisted_at: null };
@@ -247,6 +251,27 @@ export default function FacebookPagesPage() {
         .update(payload)
         .in('id', Array.from(selectedIds));
       if (error) throw error;
+
+      // Persist to facebook_page_blacklist so it survives delete + resync
+      if (userId && pageIds.length > 0) {
+        if (blacklist) {
+          const rows = pageIds.map((pid) => ({
+            user_id: userId,
+            page_id: pid,
+            reason: 'Manual bulk blacklist',
+          }));
+          await supabase
+            .from('facebook_page_blacklist')
+            .upsert(rows, { onConflict: 'user_id,page_id' });
+        } else {
+          await supabase
+            .from('facebook_page_blacklist')
+            .delete()
+            .eq('user_id', userId)
+            .in('page_id', pageIds);
+        }
+      }
+
       toast.success(blacklist
         ? `${selectedIds.size} página(s) adicionada(s) à blacklist`
         : `${selectedIds.size} página(s) removida(s) da blacklist`);
