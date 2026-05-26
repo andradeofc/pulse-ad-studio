@@ -63,6 +63,7 @@ import {
   testProxyConnection,
   type FacebookProfile,
 } from '@/services/facebookService';
+import { ExtensionPairingCard } from '@/components/facebook/ExtensionPairingCard';
 
 export default function FacebookProfilesPage() {
   const { toast } = useToast();
