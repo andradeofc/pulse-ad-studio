@@ -117,7 +117,7 @@ type SortKey = 'name' | 'slots' | 'category' | 'access_type' | 'origin_access';
 type SortDir = 'asc' | 'desc';
 
 export default function FacebookPagesPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
 
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
