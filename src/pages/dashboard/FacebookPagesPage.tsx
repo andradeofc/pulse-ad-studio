@@ -21,7 +21,13 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsRight,
+  Eye,
+  Plus,
+  ExternalLink,
+  Copy,
+  X,
 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +62,17 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+
 
 interface FacebookPage {
   id: string;
@@ -95,6 +112,12 @@ export default function FacebookPagesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
+
+  // Pools (local, em breve persistência no backend)
+  const [pageIdToPools, setPageIdToPools] = useState<Record<string, string[]>>({});
+  const [poolDialogPage, setPoolDialogPage] = useState<FacebookPage | null>(null);
+  const [newPoolName, setNewPoolName] = useState('');
+
 
   // Column visibility
   type ColKey =
@@ -621,7 +644,11 @@ export default function FacebookPagesPage() {
                       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Seguidores</span>
                     </TableHead>
                   )}
+                  <TableHead className="w-[140px] text-right">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ações</span>
+                  </TableHead>
                 </TableRow>
+
               </TableHeader>
               <TableBody>
                 {visiblePages.map((p, idx) => {
@@ -640,7 +667,7 @@ export default function FacebookPagesPage() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: Math.min(idx * 0.015, 0.2) }}
                       className={cn(
-                        'border-border/50 transition-colors hover:bg-muted/30',
+                        'group/row border-border/50 transition-colors hover:bg-muted/30',
                         isSelected && 'bg-primary/5 hover:bg-primary/10'
                       )}
                     >
@@ -748,7 +775,17 @@ export default function FacebookPagesPage() {
 
                       {visibleCols.pools && (
                         <TableCell>
-                          <span className="text-sm text-muted-foreground">—</span>
+                          {(pageIdToPools[p.page_id]?.length ?? 0) === 0 ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {pageIdToPools[p.page_id].map((pool) => (
+                                <Badge key={pool} variant="outline" className="font-normal bg-primary/10 text-primary border-primary/30">
+                                  {pool}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </TableCell>
                       )}
 
@@ -780,6 +817,65 @@ export default function FacebookPagesPage() {
                           </span>
                         </TableCell>
                       )}
+
+                      <TableCell className="text-right">
+                        <TooltipProvider delayDuration={150}>
+                          <div className="inline-flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                                  <Facebook className="w-4 h-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent align="end" className="w-48 p-1">
+                                <button
+                                  onClick={() => window.open(`https://facebook.com/${p.page_id}`, '_blank', 'noopener,noreferrer')}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent text-left"
+                                >
+                                  <ExternalLink className="w-4 h-4" /> Abrir página
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`https://facebook.com/${p.page_id}`);
+                                    toast.success('URL copiada');
+                                  }}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent text-left"
+                                >
+                                  <Copy className="w-4 h-4" /> Copiar URL
+                                </button>
+                              </PopoverContent>
+                            </Popover>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                  onClick={() => window.open(`https://business.facebook.com/latest/home?asset_id=${p.page_id}`, '_blank', 'noopener,noreferrer')}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Abrir no Meta Business</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                  onClick={() => { setPoolDialogPage(p); setNewPoolName(''); }}
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Adicionar a um pool</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                      </TableCell>
                     </motion.tr>
                   );
                 })}
@@ -814,6 +910,92 @@ export default function FacebookPagesPage() {
           </div>
         )}
       </Card>
+
+      {/* Pool dialog */}
+      <Dialog open={!!poolDialogPage} onOpenChange={(o) => !o && setPoolDialogPage(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pools da página</DialogTitle>
+            <DialogDescription>
+              {poolDialogPage?.name} — agrupe páginas por tema (ex: nicho, oferta).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Pools atuais
+              </label>
+              {poolDialogPage && (pageIdToPools[poolDialogPage.page_id]?.length ?? 0) === 0 ? (
+                <div className="mt-2 rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-center text-sm text-muted-foreground">
+                  Nenhum pool criado ainda
+                </div>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {poolDialogPage && pageIdToPools[poolDialogPage.page_id].map((pool) => (
+                    <Badge key={pool} variant="outline" className="font-normal gap-1 bg-primary/10 text-primary border-primary/30">
+                      {pool}
+                      <button
+                        onClick={() => {
+                          if (!poolDialogPage) return;
+                          setPageIdToPools((prev) => ({
+                            ...prev,
+                            [poolDialogPage.page_id]: (prev[poolDialogPage.page_id] || []).filter((x) => x !== pool),
+                          }));
+                        }}
+                        className="hover:opacity-70"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Ex: Emagrecimento, Disfunção..."
+                value={newPoolName}
+                onChange={(e) => setNewPoolName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!poolDialogPage || !newPoolName.trim()) return;
+                    const name = newPoolName.trim();
+                    setPageIdToPools((prev) => {
+                      const cur = prev[poolDialogPage.page_id] || [];
+                      if (cur.includes(name)) return prev;
+                      return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
+                    });
+                    setNewPoolName('');
+                  }
+                }}
+              />
+              <Button
+                size="icon"
+                onClick={() => {
+                  if (!poolDialogPage || !newPoolName.trim()) return;
+                  const name = newPoolName.trim();
+                  setPageIdToPools((prev) => {
+                    const cur = prev[poolDialogPage.page_id] || [];
+                    if (cur.includes(name)) return prev;
+                    return { ...prev, [poolDialogPage.page_id]: [...cur, name] };
+                  });
+                  setNewPoolName('');
+                }}
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPoolDialogPage(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
