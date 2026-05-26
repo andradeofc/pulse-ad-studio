@@ -828,12 +828,14 @@ export default function FacebookPagesPage() {
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent align="end" className="w-48 p-1">
-                                <button
-                                  onClick={() => window.open(`https://facebook.com/${p.page_id}`, '_blank', 'noopener,noreferrer')}
+                                <a
+                                  href={`https://facebook.com/${p.page_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent text-left"
                                 >
                                   <ExternalLink className="w-4 h-4" /> Abrir página
-                                </button>
+                                </a>
                                 <button
                                   onClick={() => {
                                     navigator.clipboard.writeText(`https://facebook.com/${p.page_id}`);
@@ -844,21 +846,29 @@ export default function FacebookPagesPage() {
                                   <Copy className="w-4 h-4" /> Copiar URL
                                 </button>
                               </PopoverContent>
+
                             </Popover>
 
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
+                                  asChild
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8 text-muted-foreground hover:text-primary"
-                                  onClick={() => window.open(`https://business.facebook.com/latest/home?asset_id=${p.page_id}`, '_blank', 'noopener,noreferrer')}
                                 >
-                                  <Eye className="w-4 h-4" />
+                                  <a
+                                    href={`https://business.facebook.com/latest/home?asset_id=${p.page_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </a>
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Abrir no Meta Business</TooltipContent>
                             </Tooltip>
+
 
                             <Tooltip>
                               <TooltipTrigger asChild>
