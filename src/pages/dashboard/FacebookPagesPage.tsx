@@ -535,6 +535,7 @@ export default function FacebookPagesPage() {
             profile_id: p.profile_id,
             profile_name: p.profile_name ?? null,
             picture_url: p.picture_url,
+            is_blacklisted: p.is_blacklisted,
           }))}
         />
       ) : (
