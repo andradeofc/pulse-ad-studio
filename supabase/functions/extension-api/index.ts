@@ -220,7 +220,9 @@ Deno.serve(async (req) => {
           page_id: String(p.id),
           name: String(p.name || "").slice(0, 400) || "Unknown",
           category: p.category || null,
+          source: "extension",
         }));
+
 
       let created = 0, updated = 0;
       const CHUNK = 500;
