@@ -778,7 +778,7 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
             Conectar Perfil do Facebook
           </DialogTitle>
           <DialogDescription>
-            Configure proxy (opcional), valide credenciais e acompanhe a sincronização em tempo real.
+            Configure proxy (opcional), valide credenciais e acompanhe a sincronização. Você pode fechar a aba — o processo continua em segundo plano.
           </DialogDescription>
         </DialogHeader>
 
@@ -839,6 +839,17 @@ export function AddProfileWizard({ open, onOpenChange, onComplete }: AddProfileW
                 )}
               </Button>
             </>
+          )}
+          {currentStep === 3 && (task?.status === 'pending' || task?.status === 'running') && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                onComplete?.();
+              }}
+            >
+              Fechar e continuar em segundo plano
+            </Button>
           )}
           {currentStep === 3 && task?.status === 'completed' && (
             <Button onClick={() => onOpenChange(false)} className="glow-primary">
