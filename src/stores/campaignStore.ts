@@ -45,6 +45,7 @@ export interface CampaignConfig {
   specialAdCategoryCountry: string[]; // ISO country codes for political ad authorization
   useCBO: boolean; // true = Campaign Budget Optimization, false = Ad Set Budget
   useCatalog: boolean; // true = Dynamic Ads with product catalog
+  catalogScope: 'campaign' | 'ad'; // Where product_set_id lives: adset (campaign-level) or adcreative only (ad-level)
   budget: number;
   budgetByCurrency: Record<string, number>; // e.g., { USD: 50, BRL: 200 }
   budgetPeriod: 'daily' | 'lifetime';
@@ -163,6 +164,7 @@ const defaultConfig: CampaignConfig = {
   specialAdCategoryCountry: [],
   useCBO: true,
   useCatalog: false,
+  catalogScope: 'campaign',
   budget: 50,
   budgetByCurrency: {},
   budgetPeriod: 'daily',

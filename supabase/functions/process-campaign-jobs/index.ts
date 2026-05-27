@@ -839,8 +839,15 @@ function buildAdsetParams(
     promotedObject.custom_event_type = 'PURCHASE';
   }
 
-  if (config.useCatalog && config.productSetId) {
+  // Catalog scope:
+  // - 'campaign' (default/legacy): product_set_id goes in adset's promoted_object (and also in adcreative)
+  // - 'ad': product_set_id ONLY in adcreative; adset's promoted_object carries product_catalog_id only
+  //   so the Ads Manager shows the catalog config as "disabled" at the adset level.
+  if (config.useCatalog && config.productSetId && (config.catalogScope ?? 'campaign') === 'campaign') {
     promotedObject.product_set_id = config.productSetId;
+  }
+  if (config.useCatalog && config.catalogId && (config.catalogScope ?? 'campaign') === 'ad') {
+    promotedObject.product_catalog_id = config.catalogId;
   }
 
   if (Object.keys(promotedObject).length > 0) {
