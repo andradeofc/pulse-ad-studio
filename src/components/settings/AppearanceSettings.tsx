@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useAccentColor, accentPalettes, type AccentColorId } from '@/hooks/useAccentColor';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -17,31 +18,26 @@ const themes: { id: Theme; label: string; icon: React.ComponentType<{ className?
   { id: 'system', label: 'Sistema', icon: Monitor },
 ];
 
-const accentColors = [
-  { id: 'purple', name: 'Roxo', color: 'hsl(262, 83%, 58%)' },
-  { id: 'blue', name: 'Azul', color: 'hsl(217, 91%, 60%)' },
-  { id: 'green', name: 'Verde', color: 'hsl(142, 76%, 36%)' },
-  { id: 'orange', name: 'Laranja', color: 'hsl(25, 95%, 53%)' },
-  { id: 'pink', name: 'Rosa', color: 'hsl(330, 81%, 60%)' },
-  { id: 'cyan', name: 'Ciano', color: 'hsl(189, 94%, 43%)' },
-];
+const accentColorList = Object.entries(accentPalettes).map(([id, palette]) => ({
+  id: id as AccentColorId,
+  name: palette.name,
+  color: palette.color,
+}));
 
 export function AppearanceSettings() {
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = localStorage.getItem('theme') as Theme | null;
     if (stored) return stored;
-    return 'dark'; // Default to dark
+    return 'dark';
   });
-  const [accentColor, setAccentColor] = useState('green');
+  const { accentColor, setAccentColor } = useAccentColor();
   const [compactMode, setCompactMode] = useState(false);
   const [animations, setAnimations] = useState(true);
 
-  // Apply theme on mount and when it changes
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
 
-  // Listen for system preference changes
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
@@ -49,14 +45,12 @@ export function AppearanceSettings() {
         applyTheme('system');
       }
     };
-    
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
   const applyTheme = (newTheme: Theme) => {
     const root = document.documentElement;
-    
     if (newTheme === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       root.classList.toggle('dark', prefersDark);
@@ -73,9 +67,9 @@ export function AppearanceSettings() {
     toast.success(`Tema alterado para ${themes.find(t => t.id === newTheme)?.label}`);
   };
 
-  const handleAccentColorChange = (colorId: string) => {
+  const handleAccentColorChange = (colorId: AccentColorId) => {
     setAccentColor(colorId);
-    toast.success('Cor de destaque atualizada');
+    toast.success(`Cor de destaque alterada para ${accentPalettes[colorId].name}`);
   };
 
   return (
@@ -139,8 +133,8 @@ export function AppearanceSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-            {accentColors.map((color) => (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-3">
+            {accentColorList.map((color) => (
               <button
                 key={color.id}
                 onClick={() => handleAccentColorChange(color.id)}
@@ -152,8 +146,11 @@ export function AppearanceSettings() {
                 )}
               >
                 <div
-                  className="w-8 h-8 rounded-full"
-                  style={{ backgroundColor: color.color }}
+                  className="w-8 h-8 rounded-full ring-2 ring-offset-2 ring-offset-background transition-transform hover:scale-110"
+                  style={{
+                    backgroundColor: color.color,
+                    ringColor: accentColor === color.id ? color.color : 'transparent',
+                  }}
                 />
                 {accentColor === color.id && (
                   <div className="absolute top-1 right-1">
@@ -164,9 +161,6 @@ export function AppearanceSettings() {
               </button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground mt-4">
-            * Alteração de cor será implementada em breve
-          </p>
         </CardContent>
       </Card>
 
@@ -193,9 +187,9 @@ export function AppearanceSettings() {
               onCheckedChange={setCompactMode}
             />
           </div>
-          
+
           <Separator />
-          
+
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-sm font-medium text-foreground">
@@ -224,7 +218,9 @@ export function AppearanceSettings() {
         <CardContent>
           <div className="p-6 rounded-xl bg-secondary/50 border border-border">
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-10 h-10 rounded-full bg-primary/20" />
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Palette className="w-5 h-5 text-primary" />
+              </div>
               <div>
                 <div className="h-4 w-24 bg-foreground/20 rounded" />
                 <div className="h-3 w-16 bg-muted-foreground/20 rounded mt-2" />
