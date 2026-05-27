@@ -434,11 +434,14 @@ async function resolveInstagramActorIdForPage(params: {
       }
     } catch (e) { /* continue */ }
 
-    // Step 3: Create PBIA — try with each available token
-    for (const token of tokensToTry) {
+    // Step 3: Create PBIA — REQUIRES a Page Access Token (FB error #190 with user token).
+    // OPT-B: Skip PBIA creation entirely when no Page Access Token is available.
+    // Without a page token, the POST always fails with "(#190) This method must be called
+    // with a Page Access Token" — wasting ~1-2s per page + rate-limit budget.
+    if (pageAccessToken) {
       try {
         console.log(`[process-jobs] Creating PBIA for page ${pageId}...`);
-        const createUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${token}`;
+        const createUrl = `${GRAPH_BASE_URL}/${pageId}/page_backed_instagram_accounts?access_token=${pageAccessToken}`;
         const createRes = await proxyFetch(createUrl, { method: 'POST', client: httpClient });
         const createJson = await createRes.json();
 
@@ -461,6 +464,8 @@ async function resolveInstagramActorIdForPage(params: {
       } catch (e) {
         console.warn(`[process-jobs] PBIA creation exception for page ${pageId}:`, e);
       }
+    } else {
+      console.log(`[process-jobs] Skipping PBIA creation for page ${pageId}: no Page Access Token (would fail with #190)`);
     }
 
     // Step 4: After creating PBIA, re-check if it now exists (some APIs have eventual consistency)
@@ -2707,7 +2712,32 @@ Deno.serve(async (req) => {
         })
         .eq('id', jobId);
 
-      console.log(`[process-jobs] Job ${jobId} yielded at ${progress}% progress, will resume automatically`);
+      console.log(`[process-jobs] Job ${jobId} yielded at ${progress}% progress, auto-reinvoking immediately`);
+
+      // OPT-A: Auto-reinvoke ourselves immediately instead of waiting for the cron
+      // (which runs every 60s). Uses EdgeRuntime.waitUntil so the fetch survives
+      // after we return the response. Same internal auth as queue-processor.
+      try {
+        const selfInvoke = fetch(`${supabaseUrl}/functions/v1/process-campaign-jobs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'apikey': supabaseServiceKey,
+            'x-internal-call': supabaseServiceKey,
+          },
+          body: JSON.stringify({ job_id: jobId, batch_mode: true, auto_resume: true }),
+        }).catch((err) => {
+          console.warn(`[process-jobs] Auto-reinvoke fetch failed (cron will retry):`, err);
+        });
+        // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions runtime
+        if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(selfInvoke);
+        }
+      } catch (reinvokeErr) {
+        console.warn(`[process-jobs] Auto-reinvoke setup failed (cron will retry):`, reinvokeErr);
+      }
 
       return new Response(JSON.stringify({
         success: true,
@@ -3607,7 +3637,30 @@ Deno.serve(async (req) => {
           })
           .eq('id', jobId);
 
-        console.log(`[process-jobs] Job ${jobId} re-queued at ${progress}% progress, will resume automatically`);
+        console.log(`[process-jobs] Job ${jobId} re-queued at ${progress}% progress, auto-reinvoking immediately`);
+
+        // OPT-A: Auto-reinvoke immediately instead of waiting for cron (60s)
+        try {
+          const selfInvoke = fetch(`${supabaseUrl}/functions/v1/process-campaign-jobs`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'apikey': supabaseServiceKey,
+              'x-internal-call': supabaseServiceKey,
+            },
+            body: JSON.stringify({ job_id: jobId, batch_mode: true, auto_resume: true }),
+          }).catch((err) => {
+            console.warn(`[process-jobs] Auto-reinvoke fetch failed (cron will retry):`, err);
+          });
+          // @ts-ignore
+          if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+            // @ts-ignore
+            EdgeRuntime.waitUntil(selfInvoke);
+          }
+        } catch (reinvokeErr) {
+          console.warn(`[process-jobs] Auto-reinvoke setup failed (cron will retry):`, reinvokeErr);
+        }
 
         return new Response(
           JSON.stringify({
