@@ -146,11 +146,11 @@ export function AppearanceSettings() {
                 )}
               >
                 <div
-                  className="w-8 h-8 rounded-full ring-2 ring-offset-2 ring-offset-background transition-transform hover:scale-110"
-                  style={{
-                    backgroundColor: color.color,
-                    ringColor: accentColor === color.id ? color.color : 'transparent',
-                  }}
+                  className={cn(
+                    'w-8 h-8 rounded-full ring-offset-2 ring-offset-background transition-transform hover:scale-110',
+                    accentColor === color.id ? 'ring-2 ring-primary' : 'ring-0'
+                  )}
+                  style={{ backgroundColor: color.color }}
                 />
                 {accentColor === color.id && (
                   <div className="absolute top-1 right-1">
