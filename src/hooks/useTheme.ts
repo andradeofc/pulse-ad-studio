@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { initAccentColor } from './useAccentColor';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -17,5 +18,8 @@ export function useThemeInitializer() {
     } else {
       root.classList.remove('dark');
     }
+
+    // Initialize accent color from localStorage
+    initAccentColor();
   }, []);
 }
