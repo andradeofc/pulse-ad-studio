@@ -379,7 +379,17 @@ export function PageSelector({
               </Badge>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button
+              variant={allSelected ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={allSelected ? handleClearAll : handleSelectAll}
+              disabled={allSelectableIds.length === 0}
+              className="gap-2"
+            >
+              {allSelected ? <Square className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
+              {allSelected ? 'Limpar' : `Selecionar todas (${allSelectableIds.length})`}
+            </Button>
             {selectedPages.length > 1 && (
               <Button
                 variant="outline"
@@ -403,6 +413,50 @@ export function PageSelector({
             </Button>
           </div>
         </div>
+
+        {/* Pool selector */}
+        {onPoolChange && (
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-border bg-secondary/30">
+            <Layers className="w-4 h-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <Label className="text-xs text-muted-foreground">Filtrar por pool de fanpages</Label>
+              <p className="text-[11px] text-muted-foreground/80">
+                Quando uma pool é selecionada, apenas as páginas dela ficam disponíveis para randomização.
+              </p>
+            </div>
+            <Select
+              value={selectedPoolId ?? 'none'}
+              onValueChange={(v) => {
+                const next = v === 'none' ? null : v;
+                onPoolChange(next);
+                // Drop any selected pages no longer allowed by the new pool
+                if (next) {
+                  const pool = pools.find((p) => p.id === next);
+                  if (pool) {
+                    const allowed = new Set(pool.pages.map((p) => p.page_id));
+                    const kept = selectedPages.filter((id) => allowed.has(id));
+                    const keptNames = kept.map((id) => pages.find((p) => p.page_id === id)?.name || '');
+                    if (kept.length !== selectedPages.length) {
+                      onSelectionChange(kept, keptNames);
+                    }
+                  }
+                }
+              }}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Sem pool (todas)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sem pool (todas as páginas)</SelectItem>
+                {pools.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} · {p.pages.length} páginas
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Capacity info bar */}
         {selectedPages.length > 0 && (
