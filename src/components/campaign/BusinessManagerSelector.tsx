@@ -42,11 +42,20 @@ export function BusinessManagerSelector({
         .order('name');
 
       if (error) throw error;
-      setBusinessManagers(data || []);
+
+      // Deduplicate by business_id (same BM pode existir em múltiplos perfis do usuário)
+      const seen = new Set<string>();
+      const unique: BusinessManager[] = [];
+      for (const bm of data || []) {
+        if (!bm.business_id || seen.has(bm.business_id)) continue;
+        seen.add(bm.business_id);
+        unique.push(bm);
+      }
+      setBusinessManagers(unique);
 
       // Auto-select if only one BM and none selected
-      if (data && data.length === 1 && !value) {
-        onChange(data[0].business_id, data[0].name);
+      if (unique.length === 1 && !value) {
+        onChange(unique[0].business_id, unique[0].name);
       }
     } catch (err) {
       console.error('Error fetching business managers:', err);
