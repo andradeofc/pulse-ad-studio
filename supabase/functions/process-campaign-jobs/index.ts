@@ -2571,11 +2571,8 @@ Deno.serve(async (req) => {
         };
       }));
 
-      for (const r of results) {
-        if (r) result.push(r);
-      }
-
-      return result;
+      // Preserve original order (Promise.all keeps array order) and drop nulls
+      return results.filter((r): r is NonNullable<typeof r> => r !== null);
     }
 
     // These will be set per-account inside the loop
