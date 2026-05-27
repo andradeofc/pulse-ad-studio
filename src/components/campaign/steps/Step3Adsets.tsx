@@ -1,10 +1,8 @@
 import { useState } from 'react';
-import { Edit3, Sparkles, Layers, Megaphone, Target } from 'lucide-react';
+import { Edit3, Sparkles, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { NamingModal } from '../NamingModal';
 import { PixelSelector } from '../PixelSelector';
