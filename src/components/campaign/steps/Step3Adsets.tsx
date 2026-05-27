@@ -1,10 +1,8 @@
 import { useState } from 'react';
-import { Edit3, Sparkles, Layers, Megaphone, Target } from 'lucide-react';
+import { Edit3, Sparkles, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
 import { useCampaignStore } from '@/stores/campaignStore';
 import { NamingModal } from '../NamingModal';
 import { PixelSelector } from '../PixelSelector';
@@ -121,58 +119,7 @@ export function Step3Adsets() {
                   <span>Catálogo selecionado: <strong className="text-foreground">{config.catalogId}</strong></span>
                 </div>
 
-                {/* Catalog Scope: Campaign-level vs Ad-level */}
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Como configurar o catálogo
-                  </p>
-                  <RadioGroup
-                    value={config.catalogScope}
-                    onValueChange={(v) => updateConfig({ catalogScope: v as 'campaign' | 'ad' })}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-3"
-                  >
-                    <label
-                      htmlFor="catalog-scope-campaign"
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        config.catalogScope === 'campaign'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:bg-secondary/50'
-                      }`}
-                    >
-                      <RadioGroupItem value="campaign" id="catalog-scope-campaign" className="mt-0.5" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Megaphone className="w-4 h-4 text-primary" />
-                          <span className="text-sm font-medium text-foreground">Nível de Campanha</span>
-                          <Badge variant="secondary" className="text-[10px]">Padrão</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Catálogo e conjunto de produtos configurados no conjunto de anúncios. Todos os anúncios herdam o mesmo product set.
-                        </p>
-                      </div>
-                    </label>
 
-                    <label
-                      htmlFor="catalog-scope-ad"
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        config.catalogScope === 'ad'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:bg-secondary/50'
-                      }`}
-                    >
-                      <RadioGroupItem value="ad" id="catalog-scope-ad" className="mt-0.5" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Target className="w-4 h-4 text-primary" />
-                          <span className="text-sm font-medium text-foreground">Nível de Anúncio</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          O <code className="px-1 bg-secondary rounded">product_set_id</code> é definido apenas no anúncio. No Gerenciador, a aba "Catálogo" do conjunto aparece desativada.
-                        </p>
-                      </div>
-                    </label>
-                  </RadioGroup>
-                </div>
 
                 <ProductSetSelector
                   catalogDbId={config.catalogDbId}
