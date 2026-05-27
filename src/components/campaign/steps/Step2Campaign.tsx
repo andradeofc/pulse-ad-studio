@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Layers, Grid3X3, Edit3, AlertCircle, Package } from 'lucide-react';
+import { Sparkles, Layers, Grid3X3, Edit3, AlertCircle, Package, Megaphone, Target } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -410,6 +411,61 @@ export function Step2Campaign() {
             />
           </div>
         </div>
+
+        {/* Catalog Scope: Campaign-level vs Ad-level — only visible when Dynamic Ads is on */}
+        {config.useCatalog && (
+          <div className="space-y-3">
+            <Label className="text-foreground text-sm">Nível do Catálogo</Label>
+            <RadioGroup
+              value={config.catalogScope}
+              onValueChange={(v) => updateConfig({ catalogScope: v as 'campaign' | 'ad' })}
+              className="grid grid-cols-1 md:grid-cols-2 gap-3"
+            >
+              <label
+                htmlFor="catalog-scope-campaign"
+                className={cn(
+                  "flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
+                  config.catalogScope === 'campaign'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:bg-secondary/50'
+                )}
+              >
+                <RadioGroupItem value="campaign" id="catalog-scope-campaign" className="mt-0.5" />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Megaphone className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-foreground">Nível de Campanha</span>
+                    <Badge variant="secondary" className="text-[10px]">Padrão</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Catálogo configurado dentro da campanha (conjunto de anúncios).
+                  </p>
+                </div>
+              </label>
+
+              <label
+                htmlFor="catalog-scope-ad"
+                className={cn(
+                  "flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
+                  config.catalogScope === 'ad'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:bg-secondary/50'
+                )}
+              >
+                <RadioGroupItem value="ad" id="catalog-scope-ad" className="mt-0.5" />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Target className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-foreground">Nível de Anúncio</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Catálogo configurado dentro de cada anúncio. No Gerenciador, a aba "Catálogo" do conjunto aparece desativada.
+                  </p>
+                </div>
+              </label>
+            </RadioGroup>
+          </div>
+        )}
 
         {/* Business Manager & Catalog Selector - Shown when Dynamic Ads is enabled */}
         {config.useCatalog && (
