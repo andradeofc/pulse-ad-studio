@@ -3637,7 +3637,30 @@ Deno.serve(async (req) => {
           })
           .eq('id', jobId);
 
-        console.log(`[process-jobs] Job ${jobId} re-queued at ${progress}% progress, will resume automatically`);
+        console.log(`[process-jobs] Job ${jobId} re-queued at ${progress}% progress, auto-reinvoking immediately`);
+
+        // OPT-A: Auto-reinvoke immediately instead of waiting for cron (60s)
+        try {
+          const selfInvoke = fetch(`${supabaseUrl}/functions/v1/process-campaign-jobs`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'apikey': supabaseServiceKey,
+              'x-internal-call': supabaseServiceKey,
+            },
+            body: JSON.stringify({ job_id: jobId, batch_mode: true, auto_resume: true }),
+          }).catch((err) => {
+            console.warn(`[process-jobs] Auto-reinvoke fetch failed (cron will retry):`, err);
+          });
+          // @ts-ignore
+          if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+            // @ts-ignore
+            EdgeRuntime.waitUntil(selfInvoke);
+          }
+        } catch (reinvokeErr) {
+          console.warn(`[process-jobs] Auto-reinvoke setup failed (cron will retry):`, reinvokeErr);
+        }
 
         return new Response(
           JSON.stringify({
