@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Sparkles, Shield, Edit3, AlertTriangle } from 'lucide-react';
+import { Sparkles, Shield, Edit3, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -119,6 +119,8 @@ export function Step4Ads() {
                     multiSelect={true}
                     totalAdsToCreate={totalAdsAllAccounts}
                     onValidationChange={handlePageValidation}
+                    selectedPoolId={config.selectedPoolId}
+                    onPoolChange={(poolId) => updateConfig({ selectedPoolId: poolId })}
                   />
                 </div>
               ) : (
@@ -144,6 +146,29 @@ export function Step4Ads() {
                   />
                 </div>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Auto-Retry on Failure */}
+        <Card className={config.autoRetryOnFailure ? 'border-primary/50 bg-primary/5' : 'border-border'}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <Label className="text-foreground">Auto-Retry em Falha</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Se um anúncio falhar na página selecionada, o sistema tentará automaticamente em outra página disponível.
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={config.autoRetryOnFailure}
+                onCheckedChange={(checked) => updateConfig({ autoRetryOnFailure: checked })}
+              />
             </div>
           </CardContent>
         </Card>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Check, ChevronsUpDown, RefreshCw, Facebook, ExternalLink, AlertTriangle, Shuffle, Users, Shield, Info } from 'lucide-react';
+import { Check, ChevronsUpDown, RefreshCw, Facebook, ExternalLink, AlertTriangle, Shuffle, Users, Shield, Info, CheckSquare, Square, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,10 +18,19 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { fetchPools, type PoolWithPages } from '@/services/fanpagePoolsService';
 
 export interface FacebookPage {
   id: string;
@@ -45,6 +54,8 @@ interface PageSelectorProps {
   multiSelect?: boolean;
   totalAdsToCreate: number;
   onValidationChange?: (isValid: boolean, error?: string) => void;
+  selectedPoolId?: string | null;
+  onPoolChange?: (poolId: string | null) => void;
 }
 
 interface PageDistribution {
@@ -63,6 +74,8 @@ export function PageSelector({
   multiSelect = false,
   totalAdsToCreate,
   onValidationChange,
+  selectedPoolId = null,
+  onPoolChange,
 }: PageSelectorProps) {
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,6 +83,26 @@ export function PageSelector({
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [distribution, setDistribution] = useState<PageDistribution[]>([]);
+
+  // Pools for AntiSpy filtering
+  const { data: pools = [] } = useQuery({
+    queryKey: ['fanpage-pools'],
+    queryFn: fetchPools,
+    enabled: multiSelect,
+    staleTime: 60_000,
+  });
+
+  const activePool = useMemo<PoolWithPages | null>(
+    () => pools.find((p) => p.id === selectedPoolId) ?? null,
+    [pools, selectedPoolId],
+  );
+
+  // Pages allowed by the current pool filter (when set)
+  const poolFilteredPages = useMemo(() => {
+    if (!activePool) return pages;
+    const allowed = new Set(activePool.pages.map((p) => p.page_id));
+    return pages.filter((p) => allowed.has(p.page_id));
+  }, [pages, activePool]);
 
   // Fetch pages on mount
   useEffect(() => {
@@ -263,14 +296,35 @@ export function PageSelector({
   };
 
   const filteredPages = useMemo(() => {
-    if (!searchQuery) return pages;
+    const base = poolFilteredPages;
+    if (!searchQuery) return base;
     const query = searchQuery.toLowerCase();
-    return pages.filter(
+    return base.filter(
       p => p.name.toLowerCase().includes(query) ||
            p.business_name?.toLowerCase().includes(query) ||
            p.category?.toLowerCase().includes(query)
     );
-  }, [pages, searchQuery]);
+  }, [poolFilteredPages, searchQuery]);
+
+  // Select-all / clear handlers (respects current pool filter)
+  const allSelectableIds = useMemo(
+    () => poolFilteredPages.map((p) => p.page_id),
+    [poolFilteredPages],
+  );
+  const allSelected =
+    allSelectableIds.length > 0 &&
+    allSelectableIds.every((id) => selectedPages.includes(id));
+
+  const handleSelectAll = () => {
+    const names = poolFilteredPages.map((p) => p.name);
+    onSelectionChange(allSelectableIds, names);
+    toast.success(
+      activePool
+        ? `${allSelectableIds.length} páginas da pool "${activePool.name}" selecionadas`
+        : `${allSelectableIds.length} páginas selecionadas`,
+    );
+  };
+  const handleClearAll = () => onSelectionChange([], []);
 
   // Group pages by business
   const groupedPages = useMemo(() => {
@@ -325,7 +379,17 @@ export function PageSelector({
               </Badge>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button
+              variant={allSelected ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={allSelected ? handleClearAll : handleSelectAll}
+              disabled={allSelectableIds.length === 0}
+              className="gap-2"
+            >
+              {allSelected ? <Square className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
+              {allSelected ? 'Limpar' : `Selecionar todas (${allSelectableIds.length})`}
+            </Button>
             {selectedPages.length > 1 && (
               <Button
                 variant="outline"
@@ -349,6 +413,50 @@ export function PageSelector({
             </Button>
           </div>
         </div>
+
+        {/* Pool selector */}
+        {onPoolChange && (
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-border bg-secondary/30">
+            <Layers className="w-4 h-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <Label className="text-xs text-muted-foreground">Filtrar por pool de fanpages</Label>
+              <p className="text-[11px] text-muted-foreground/80">
+                Quando uma pool é selecionada, apenas as páginas dela ficam disponíveis para randomização.
+              </p>
+            </div>
+            <Select
+              value={selectedPoolId ?? 'none'}
+              onValueChange={(v) => {
+                const next = v === 'none' ? null : v;
+                onPoolChange(next);
+                // Drop any selected pages no longer allowed by the new pool
+                if (next) {
+                  const pool = pools.find((p) => p.id === next);
+                  if (pool) {
+                    const allowed = new Set(pool.pages.map((p) => p.page_id));
+                    const kept = selectedPages.filter((id) => allowed.has(id));
+                    const keptNames = kept.map((id) => pages.find((p) => p.page_id === id)?.name || '');
+                    if (kept.length !== selectedPages.length) {
+                      onSelectionChange(kept, keptNames);
+                    }
+                  }
+                }
+              }}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Sem pool (todas)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sem pool (todas as páginas)</SelectItem>
+                {pools.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} · {p.pages.length} páginas
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Capacity info bar */}
         {selectedPages.length > 0 && (
