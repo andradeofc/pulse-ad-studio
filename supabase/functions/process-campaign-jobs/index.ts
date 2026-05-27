@@ -18,7 +18,7 @@ const BATCH_CONFIG = {
   CAMPAIGN_BATCH_SIZE: 15, // Campaigns are heavier ops
   ADSET_BATCH_SIZE: 30, // Reduced to avoid timeouts  
   AD_BATCH_SIZE: 30, // Reduced to avoid timeouts
-  CREATIVE_BATCH_SIZE: 20, // Reduced for catalog creatives (heavy operations)
+  CREATIVE_BATCH_SIZE: 50, // OPT-5: FB Batch API max (50). Was 20 — caused more round-trips.
   BATCH_DELAY_MS: 50, // Minimal delay (QPS allows 100/s)
   DYNAMIC_DELAY_ENABLED: true, // Enable adaptive delays based on usage
 };
@@ -3000,17 +3000,18 @@ Deno.serve(async (req) => {
         }
         console.log(`[process-jobs] Created ${newAdsetIdMap.size}/${adsetsWithNames.length} new adsets`);
         
-        // ============= VERIFICATION: Query Facebook to confirm adset counts =============
-        console.log(`\n[VERIFICATION] Checking adset counts in Facebook...`);
-        for (const [parentId, expectedCount] of parentDistribution) {
-          const fbCampaignId = campaignIdMap.get(parentId);
-          if (fbCampaignId) {
+        // ============= OPT-1: VERIFICATION (fire-and-forget, log-only) =============
+        // The batch API already returns the IDs on creation. This read-back is purely
+        // for observability — fire it without await so it never blocks the loop.
+        (async () => {
+          for (const [parentId, expectedCount] of parentDistribution) {
+            const fbCampaignId = campaignIdMap.get(parentId);
+            if (!fbCampaignId) continue;
             try {
               const verifyUrl = `${GRAPH_BASE_URL}/${fbCampaignId}/adsets?fields=id,name&limit=500&access_token=${accessToken}`;
               const verifyResp = await fetch(verifyUrl);
               const verifyData = await verifyResp.json();
               const actualCount = verifyData.data?.length || 0;
-              
               if (actualCount !== expectedCount) {
                 console.error(`[VERIFICATION ERROR] Campaign ${fbCampaignId}: Expected ${expectedCount} adsets, found ${actualCount}`);
               } else {
@@ -3020,8 +3021,7 @@ Deno.serve(async (req) => {
               console.error(`[VERIFICATION] Failed to verify campaign ${fbCampaignId}:`, verifyErr.message);
             }
           }
-        }
-        console.log(`[VERIFICATION] Adset verification complete\n`);
+        })().catch((e) => console.error('[VERIFICATION] background error:', e?.message));
       } else {
         console.log(`[process-jobs] No new adsets to create (all already processed)`);
       }
@@ -3108,19 +3108,19 @@ Deno.serve(async (req) => {
           return yieldChunk(`Partial ads: ${adsCreated}/${adsWithNames.length} for account ${accountIndex + 1}`);
         }
         
-        // ============= VERIFICATION: Query Facebook to confirm ad counts =============
-        console.log(`\n[VERIFICATION] Checking ad counts in Facebook (sampling first 3 adsets)...`);
-        let sampleCount = 0;
-        for (const [parentId, expectedCount] of adParentDistribution) {
-          if (sampleCount >= 3) break;
-          const fbAdsetId = adsetIdMap.get(parentId);
-          if (fbAdsetId) {
+        // ============= OPT-1: VERIFICATION (fire-and-forget, log-only) =============
+        // Same as above — the batch response already confirms creation. Don't block.
+        (async () => {
+          let sampleCount = 0;
+          for (const [parentId, expectedCount] of adParentDistribution) {
+            if (sampleCount >= 3) break;
+            const fbAdsetId = adsetIdMap.get(parentId);
+            if (!fbAdsetId) continue;
             try {
               const verifyUrl = `${GRAPH_BASE_URL}/${fbAdsetId}/ads?fields=id,name&limit=100&access_token=${accessToken}`;
               const verifyResp = await fetch(verifyUrl);
               const verifyData = await verifyResp.json();
               const actualCount = verifyData.data?.length || 0;
-              
               if (actualCount !== expectedCount) {
                 console.error(`[VERIFICATION ERROR] Adset ${fbAdsetId}: Expected ${expectedCount} ads, found ${actualCount}`);
               } else {
@@ -3131,8 +3131,7 @@ Deno.serve(async (req) => {
               console.error(`[VERIFICATION] Failed to verify adset ${fbAdsetId}:`, verifyErr.message);
             }
           }
-        }
-        console.log(`[VERIFICATION] Ad verification complete\n`);
+        })().catch((e) => console.error('[VERIFICATION] background error:', e?.message));
       } else if (adsWithNames.length > 0) {
         // Non-catalog ads
         const selectedCreatives = config.selectedCreatives || [];
@@ -3291,8 +3290,9 @@ Deno.serve(async (req) => {
                   .eq('id', ad.id);
               }
 
-              // Small delay between ads
-              await sleep(500);
+              // OPT-3: Reduced from 500ms to 50ms — FB QPS allows 100/s per account
+              // and rate-limit safety is already handled by getAdaptiveBatchSize / X-Ad-Account-Usage.
+              await sleep(50);
             }
 
             console.log(`[DLO] Created ${totalAdsCreated} ads using shared creative ${dloCreativeId}`);
