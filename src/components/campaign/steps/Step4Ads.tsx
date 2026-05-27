@@ -119,6 +119,8 @@ export function Step4Ads() {
                     multiSelect={true}
                     totalAdsToCreate={totalAdsAllAccounts}
                     onValidationChange={handlePageValidation}
+                    selectedPoolId={config.selectedPoolId}
+                    onPoolChange={(poolId) => updateConfig({ selectedPoolId: poolId })}
                   />
                 </div>
               ) : (
