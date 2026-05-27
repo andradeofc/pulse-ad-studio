@@ -74,6 +74,8 @@ export function PageSelector({
   multiSelect = false,
   totalAdsToCreate,
   onValidationChange,
+  selectedPoolId = null,
+  onPoolChange,
 }: PageSelectorProps) {
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [loading, setLoading] = useState(false);
