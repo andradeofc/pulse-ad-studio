@@ -2712,7 +2712,32 @@ Deno.serve(async (req) => {
         })
         .eq('id', jobId);
 
-      console.log(`[process-jobs] Job ${jobId} yielded at ${progress}% progress, will resume automatically`);
+      console.log(`[process-jobs] Job ${jobId} yielded at ${progress}% progress, auto-reinvoking immediately`);
+
+      // OPT-A: Auto-reinvoke ourselves immediately instead of waiting for the cron
+      // (which runs every 60s). Uses EdgeRuntime.waitUntil so the fetch survives
+      // after we return the response. Same internal auth as queue-processor.
+      try {
+        const selfInvoke = fetch(`${supabaseUrl}/functions/v1/process-campaign-jobs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'apikey': supabaseServiceKey,
+            'x-internal-call': supabaseServiceKey,
+          },
+          body: JSON.stringify({ job_id: jobId, batch_mode: true, auto_resume: true }),
+        }).catch((err) => {
+          console.warn(`[process-jobs] Auto-reinvoke fetch failed (cron will retry):`, err);
+        });
+        // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions runtime
+        if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(selfInvoke);
+        }
+      } catch (reinvokeErr) {
+        console.warn(`[process-jobs] Auto-reinvoke setup failed (cron will retry):`, reinvokeErr);
+      }
 
       return new Response(JSON.stringify({
         success: true,
