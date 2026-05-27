@@ -375,7 +375,33 @@ export default function CreateCampaignPage() {
       {/* Stepper */}
       <Card className="glass-card">
         <CardContent className="p-6">
-          <WizardStepper currentStep={currentStep} steps={steps} />
+          <WizardStepper
+            currentStep={currentStep}
+            steps={steps}
+            canNavigateToStep={(target) => target < currentStep || validation.canProceedToStep(target)}
+            onStepClick={(target) => {
+              if (target === currentStep) return;
+              if (target < currentStep) {
+                setStep(target);
+                return;
+              }
+              if (validation.canProceedToStep(target)) {
+                setStep(target);
+              } else {
+                const firstBlocked = [1, 2, 3, 4].find(
+                  (s) => s < target && !validation.getStepValidation(s).isValid
+                );
+                const firstError = firstBlocked
+                  ? validation.getStepValidation(firstBlocked).errors[0]
+                  : undefined;
+                toast({
+                  title: 'Complete a configuração desta etapa antes de avançar',
+                  description: firstError,
+                  variant: 'destructive',
+                });
+              }
+            }}
+          />
         </CardContent>
       </Card>
 
