@@ -114,6 +114,8 @@ export interface CampaignConfig {
   
   // Step 4 - Ads
   antiSpyEnabled: boolean;
+  autoRetryOnFailure: boolean;
+  selectedPoolId: string | null;
   selectedPages: string[];
   adName: string;
   multiAdvertiser: boolean;
