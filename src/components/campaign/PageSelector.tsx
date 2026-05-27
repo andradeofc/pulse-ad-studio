@@ -296,14 +296,35 @@ export function PageSelector({
   };
 
   const filteredPages = useMemo(() => {
-    if (!searchQuery) return pages;
+    const base = poolFilteredPages;
+    if (!searchQuery) return base;
     const query = searchQuery.toLowerCase();
-    return pages.filter(
+    return base.filter(
       p => p.name.toLowerCase().includes(query) ||
            p.business_name?.toLowerCase().includes(query) ||
            p.category?.toLowerCase().includes(query)
     );
-  }, [pages, searchQuery]);
+  }, [poolFilteredPages, searchQuery]);
+
+  // Select-all / clear handlers (respects current pool filter)
+  const allSelectableIds = useMemo(
+    () => poolFilteredPages.map((p) => p.page_id),
+    [poolFilteredPages],
+  );
+  const allSelected =
+    allSelectableIds.length > 0 &&
+    allSelectableIds.every((id) => selectedPages.includes(id));
+
+  const handleSelectAll = () => {
+    const names = poolFilteredPages.map((p) => p.name);
+    onSelectionChange(allSelectableIds, names);
+    toast.success(
+      activePool
+        ? `${allSelectableIds.length} páginas da pool "${activePool.name}" selecionadas`
+        : `${allSelectableIds.length} páginas selecionadas`,
+    );
+  };
+  const handleClearAll = () => onSelectionChange([], []);
 
   // Group pages by business
   const groupedPages = useMemo(() => {
