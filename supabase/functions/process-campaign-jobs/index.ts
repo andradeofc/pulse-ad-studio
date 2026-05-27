@@ -2751,10 +2751,24 @@ Deno.serve(async (req) => {
       });
     };
 
-    // Process each account
-    for (let accountIndex = 0; accountIndex < allAdAccounts.length; accountIndex++) {
+    // ============= PARALLEL ACCOUNT PROCESSING =============
+    const ACCOUNT_CONCURRENCY = Math.max(1, parseInt(Deno.env.get("ACCOUNT_CONCURRENCY") ?? "1", 10));
+    console.log(`[process-jobs] Account concurrency: ${ACCOUNT_CONCURRENCY} (total accounts: ${allAdAccounts.length})`);
+
+    type AccountResult = { adsCreated: number; error?: string; yieldRequested?: { reason: string } };
+
+    const processAccount = async (accountIndex: number): Promise<AccountResult> => {
       const currentAccount = allAdAccounts[accountIndex];
+      try {
       console.log(`[process-jobs] Processing account ${accountIndex + 1}/${allAdAccounts.length}: ${currentAccount.name}`);
+      // ===== LOCALIZED STATE (parallel-safe) =====
+      let localAdsCreated = 0;
+      let localError: string | null = null;
+      let resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null; adsRunning: number; adsLimit: number; availableSlots: number }> = [];
+      let defaultPageId = "";
+      let defaultInstagramUserId: string | null = null;
+      const __accountStartTime = Date.now();
+      console.log(`[ACCOUNT-PAR ${accountIndex + 1}/${allAdAccounts.length}] START ${currentAccount.name}`);
 
       // Get access token
       const { data: accCredentials } = await supabase
@@ -2775,9 +2789,8 @@ Deno.serve(async (req) => {
 
       if (!accessToken) {
         console.error(`[process-jobs] No access token for account ${currentAccount.name}`);
-        hasError = true;
-        lastError = `No access token for ${currentAccount.name}`;
-        continue;
+        localError = `No access token for ${currentAccount.name}`;
+        return { adsCreated: localAdsCreated, error: localError || undefined };
       }
 
       // ============= PROXY SETUP PER ACCOUNT =============
@@ -2967,15 +2980,14 @@ Deno.serve(async (req) => {
             console.log(`[process-jobs] Marked ${remainingItemIds.length} items as failed (disabled account)`);
           }
 
-          hasError = true;
-          lastError = errorMsg;
-          continue; // Skip to next account
+          localError = errorMsg;
+          return { adsCreated: localAdsCreated, error: localError || undefined };
         }
       }
 
       // CHUNK CHECK: yield after campaigns if time is running out
       if (shouldYield()) {
-        return yieldChunk(`Completed campaigns for account ${accountIndex + 1}/${allAdAccounts.length}`);
+        return { adsCreated: localAdsCreated, error: localError || undefined, yieldRequested: { reason: `Completed campaigns for account ${accountIndex + 1}/${allAdAccounts.length}` } };
       }
 
       // CRITICAL: Include facebook_id so batch functions can detect already-created items
@@ -3060,7 +3072,7 @@ Deno.serve(async (req) => {
 
       // CHUNK CHECK: yield after adsets if time is running out
       if (shouldYield()) {
-        return yieldChunk(`Completed adsets for account ${accountIndex + 1}/${allAdAccounts.length}`);
+        return { adsCreated: localAdsCreated, error: localError || undefined, yieldRequested: { reason: `Completed adsets for account ${accountIndex + 1}/${allAdAccounts.length}` } };
       }
 
       // Prepare ads with resolved names
@@ -3112,7 +3124,7 @@ Deno.serve(async (req) => {
         // YIELD CHECK: if creatives batch was partial, yield before attempting ads
         if (shouldYield() && creativeIdMap.size < adsWithNames.length) {
           console.log(`[process-jobs] Yielding after partial creatives (${creativeIdMap.size}/${adsWithNames.length})`);
-          return yieldChunk(`Partial creatives: ${creativeIdMap.size}/${adsWithNames.length} for account ${accountIndex + 1}`);
+          return { adsCreated: localAdsCreated, error: localError || undefined, yieldRequested: { reason: `Partial creatives: ${creativeIdMap.size}/${adsWithNames.length} for account ${accountIndex + 1}` } };
         }
 
         console.log(`[process-jobs] Creating ${adsWithNames.length} NEW ads via batch API...`);
@@ -3131,13 +3143,13 @@ Deno.serve(async (req) => {
           shouldYield,
           config.specialAdCategory,
         );
-        totalAdsCreated += adsCreated;
+        localAdsCreated += adsCreated;
         console.log(`[process-jobs] Created ${adsCreated}/${adsWithNames.length} new ads`);
 
         // YIELD CHECK: if ads batch was partial, yield before verification/completion
         if (shouldYield() && adsCreated < adsWithNames.length) {
           console.log(`[process-jobs] Yielding after partial ads (${adsCreated}/${adsWithNames.length})`);
-          return yieldChunk(`Partial ads: ${adsCreated}/${adsWithNames.length} for account ${accountIndex + 1}`);
+          return { adsCreated: localAdsCreated, error: localError || undefined, yieldRequested: { reason: `Partial ads: ${adsCreated}/${adsWithNames.length} for account ${accountIndex + 1}` } };
         }
         
         // ============= OPT-1: VERIFICATION (fire-and-forget, log-only) =============
@@ -3209,7 +3221,7 @@ Deno.serve(async (req) => {
 
             // YIELD CHECK after media upload
             if (shouldYield()) {
-              return yieldChunk(`DLO media uploaded for account ${accountIndex + 1}`);
+              return { adsCreated: localAdsCreated, error: localError || undefined, yieldRequested: { reason: `DLO media uploaded for account ${accountIndex + 1}` } };
             }
 
             // Phase 2: Create 1 shared creative (1x per account)
@@ -3249,7 +3261,7 @@ Deno.serve(async (req) => {
               // Idempotency: already created?
               if (ad.facebook_id || (ad.config as any)?.savedAdId) {
                 if (ad.status === 'completed') {
-                  totalAdsCreated++;
+                  localAdsCreated++;
                 }
                 continue;
               }
@@ -3263,7 +3275,7 @@ Deno.serve(async (req) => {
               }
 
               if (shouldYield()) {
-                return yieldChunk(`DLO partial ads for account ${accountIndex + 1}`);
+                return { adsCreated: localAdsCreated, error: localError || undefined, yieldRequested: { reason: `DLO partial ads for account ${accountIndex + 1}` } };
               }
 
               const adParams = new URLSearchParams({
@@ -3291,7 +3303,7 @@ Deno.serve(async (req) => {
                 );
 
                 if (adResult.ok && adResult.json.id) {
-                  totalAdsCreated++;
+                  localAdsCreated++;
                   await supabase.from('campaign_job_items')
                     .update({
                       status: 'completed',
@@ -3307,16 +3319,14 @@ Deno.serve(async (req) => {
                     ? JSON.stringify(errDetail.error_data.blame_field_specs)
                     : 'none';
                   console.error(`[DLO] Ad creation failed: ${errMsg} | subcode: ${errDetail?.error_subcode} | blame_fields: ${blameFields} | full_error: ${JSON.stringify(errDetail).substring(0, 1500)}`);
-                  hasError = true;
-                  lastError = errMsg;
+                  localError = errMsg;
                   await supabase.from('campaign_job_items')
                     .update({ status: 'failed', error_message: errMsg })
                     .eq('id', ad.id);
                 }
               } catch (adErr: any) {
                 console.error(`[DLO] Ad creation exception for ${ad.name}:`, adErr.message);
-                hasError = true;
-                lastError = adErr.message;
+                localError = adErr.message;
                 await supabase.from('campaign_job_items')
                   .update({ status: 'failed', error_message: adErr.message })
                   .eq('id', ad.id);
@@ -3327,11 +3337,10 @@ Deno.serve(async (req) => {
               await sleep(50);
             }
 
-            console.log(`[DLO] Created ${totalAdsCreated} ads using shared creative ${dloCreativeId}`);
+            console.log(`[DLO] Created ${localAdsCreated} ads using shared creative ${dloCreativeId}`);
           } catch (dloErr: any) {
             console.error(`[DLO] Fatal error:`, dloErr.message);
-            hasError = true;
-            lastError = dloErr.message;
+            localError = dloErr.message;
             // Mark all pending DLO ads as failed
             for (const ad of adsWithNames) {
               if (!ad.facebook_id && !(ad.config as any)?.savedAdId) {
@@ -3390,14 +3399,13 @@ Deno.serve(async (req) => {
             );
 
             if (result.success && result.id) {
-              totalAdsCreated++;
+              localAdsCreated++;
               await supabase
                 .from('campaign_job_items')
                 .update({ status: 'completed', facebook_id: result.id })
                 .eq('id', ad.id);
             } else {
-              hasError = true;
-              lastError = result.error || 'Unknown error';
+              localError = result.error || 'Unknown error';
               await supabase
                 .from('campaign_job_items')
                 .update({ status: 'failed', error_message: result.error })
@@ -3415,9 +3423,52 @@ Deno.serve(async (req) => {
         const reason = accountIndex < allAdAccounts.length - 1
           ? `Completed account ${accountIndex + 1}/${allAdAccounts.length}, more accounts remain`
           : `Time limit reached on last account ${accountIndex + 1}/${allAdAccounts.length}`;
-        return yieldChunk(reason);
+        return { adsCreated: localAdsCreated, error: localError || undefined, yieldRequested: { reason: reason } };
+      }
+      console.log(`[ACCOUNT-PAR ${accountIndex + 1}/${allAdAccounts.length}] DONE in ${((Date.now() - __accountStartTime) / 1000).toFixed(1)}s (ads=${localAdsCreated})`);
+      return { adsCreated: localAdsCreated, error: localError || undefined };
+      } catch (err: any) {
+        console.error(`[ACCOUNT-PAR ${accountIndex + 1}/${allAdAccounts.length}] FATAL exception:`, err?.message || err);
+        return { adsCreated: 0, error: err?.message || String(err) };
+      }
+    };
+
+    // ===== WAVE-BASED PARALLEL RUNNER =====
+    for (let waveStart = 0; waveStart < allAdAccounts.length; waveStart += ACCOUNT_CONCURRENCY) {
+      const waveEnd = Math.min(waveStart + ACCOUNT_CONCURRENCY, allAdAccounts.length);
+      const waveSize = waveEnd - waveStart;
+      const waveNum = Math.floor(waveStart / ACCOUNT_CONCURRENCY) + 1;
+      const totalWaves = Math.ceil(allAdAccounts.length / ACCOUNT_CONCURRENCY);
+      const waveStartTime = Date.now();
+      const waveAccountNames = allAdAccounts.slice(waveStart, waveEnd).map(a => a.name).join(", ");
+      console.log(`[WAVE ${waveNum}/${totalWaves}] START ${waveSize} accounts in parallel: ${waveAccountNames}`);
+
+      const waveResults = await Promise.allSettled(
+        Array.from({ length: waveSize }, (_, k) => processAccount(waveStart + k))
+      );
+
+      let waveYieldReason: string | null = null;
+      for (let k = 0; k < waveResults.length; k++) {
+        const r = waveResults[k];
+        if (r.status === "fulfilled") {
+          totalAdsCreated += r.value.adsCreated;
+          if (r.value.error) { hasError = true; lastError = r.value.error; }
+          if (r.value.yieldRequested && !waveYieldReason) waveYieldReason = r.value.yieldRequested.reason;
+        } else {
+          hasError = true;
+          lastError = r.reason?.message || String(r.reason);
+          console.error(`[WAVE ${waveNum}/${totalWaves}] Account ${waveStart + k + 1} rejected:`, r.reason);
+        }
+      }
+
+      const waveElapsed = ((Date.now() - waveStartTime) / 1000).toFixed(1);
+      console.log(`[WAVE ${waveNum}/${totalWaves}] DONE in ${waveElapsed}s — totalAds=${totalAdsCreated}, hasError=${hasError}`);
+
+      if (waveYieldReason) {
+        return yieldChunk(`After wave ${waveNum}/${totalWaves}: ${waveYieldReason}`);
       }
     }
+
 
     // ============= LAYER 2: RETRY TRANSIENT BATCH ERRORS =============
     // After all accounts are processed, check for items that failed with
