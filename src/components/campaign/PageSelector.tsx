@@ -84,6 +84,26 @@ export function PageSelector({
   const [searchQuery, setSearchQuery] = useState('');
   const [distribution, setDistribution] = useState<PageDistribution[]>([]);
 
+  // Pools for AntiSpy filtering
+  const { data: pools = [] } = useQuery({
+    queryKey: ['fanpage-pools'],
+    queryFn: fetchPools,
+    enabled: multiSelect,
+    staleTime: 60_000,
+  });
+
+  const activePool = useMemo<PoolWithPages | null>(
+    () => pools.find((p) => p.id === selectedPoolId) ?? null,
+    [pools, selectedPoolId],
+  );
+
+  // Pages allowed by the current pool filter (when set)
+  const poolFilteredPages = useMemo(() => {
+    if (!activePool) return pages;
+    const allowed = new Set(activePool.pages.map((p) => p.page_id));
+    return pages.filter((p) => allowed.has(p.page_id));
+  }, [pages, activePool]);
+
   // Fetch pages on mount
   useEffect(() => {
     fetchPages();
