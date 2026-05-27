@@ -2580,10 +2580,8 @@ Deno.serve(async (req) => {
       return results.filter((r): r is NonNullable<typeof r> => r !== null);
     }
 
-    // These will be set per-account inside the loop
-    let resolvedPages: Array<{ pageId: string; accessToken: string | null; instagramActorId: string | null; adsRunning: number; adsLimit: number; availableSlots: number }> = [];
-    let defaultPageId = '';
-    let defaultInstagramUserId: string | null = null;
+    // NOTE: resolvedPages / defaultPageId / defaultInstagramUserId are now declared
+    // LOCALLY inside processAccount(...) below, so each parallel branch keeps its own state.
 
     // Separate items by type - ONLY process pending items to prevent duplicates on re-execution
     // This is critical: if a job times out and is re-triggered, we must not re-create items that already have facebook_id
