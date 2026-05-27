@@ -212,6 +212,8 @@ const defaultConfig: CampaignConfig = {
   attributionViewDays: 1,
   attributionEngagedViewDays: 1,
   antiSpyEnabled: false,
+  autoRetryOnFailure: false,
+  selectedPoolId: null,
   selectedPages: [],
   adName: '{{criativo}}',
   multiAdvertiser: false,
