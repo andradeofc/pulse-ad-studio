@@ -8,9 +8,11 @@ interface WizardStepperProps {
     number: number;
     title: string;
   }[];
+  onStepClick?: (step: number) => void;
+  canNavigateToStep?: (step: number) => boolean;
 }
 
-export function WizardStepper({ currentStep, steps }: WizardStepperProps) {
+export function WizardStepper({ currentStep, steps, onStepClick, canNavigateToStep }: WizardStepperProps) {
   return (
     <div className="w-full">
       <div className="flex items-center justify-between">
