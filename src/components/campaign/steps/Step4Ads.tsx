@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Sparkles, Shield, Edit3, AlertTriangle } from 'lucide-react';
+import { Sparkles, Shield, Edit3, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
