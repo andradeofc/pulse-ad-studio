@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Check, ChevronsUpDown, RefreshCw, Facebook, ExternalLink, AlertTriangle, Shuffle, Users, Shield, Info } from 'lucide-react';
+import { Check, ChevronsUpDown, RefreshCw, Facebook, ExternalLink, AlertTriangle, Shuffle, Users, Shield, Info, CheckSquare, Square, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,10 +18,19 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { fetchPools, type PoolWithPages } from '@/services/fanpagePoolsService';
 
 export interface FacebookPage {
   id: string;
@@ -45,6 +54,8 @@ interface PageSelectorProps {
   multiSelect?: boolean;
   totalAdsToCreate: number;
   onValidationChange?: (isValid: boolean, error?: string) => void;
+  selectedPoolId?: string | null;
+  onPoolChange?: (poolId: string | null) => void;
 }
 
 interface PageDistribution {
