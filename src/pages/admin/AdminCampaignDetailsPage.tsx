@@ -324,14 +324,94 @@ export default function AdminCampaignDetailsPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={() => copyToClipboard(campaign.id, 'ID')}>
                 <Copy className="w-4 h-4 mr-2" />
                 Copiar ID
               </Button>
+
+              {/* Admin manual pause / resume */}
+              {campaign.admin_paused ? (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleAdminResume}
+                  disabled={resumeLoading}
+                  className="bg-ads-success hover:bg-ads-success/90"
+                >
+                  {resumeLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Retomar
+                </Button>
+              ) : (
+                campaign.status !== 'completed' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setPauseMessage('Pausado Manualmente'); setPauseDialogOpen(true); }}
+                    className="border-amber-500/40 text-amber-600 hover:bg-amber-500/10"
+                  >
+                    <Pause className="w-4 h-4 mr-2" />
+                    Pausar manualmente
+                  </Button>
+                )
+              )}
             </div>
           </div>
         </div>
+
+        {/* Admin paused banner */}
+        {campaign.admin_paused && (
+          <Card className="border-amber-500/40 bg-amber-500/5">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <Pause className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-medium text-amber-600">Pausado pelo admin</h4>
+                  <p className="text-sm text-foreground/80 mt-1">
+                    {campaign.admin_pause_message || 'Pausado Manualmente'}
+                  </p>
+                  {campaign.admin_paused_at && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {format(new Date(campaign.admin_paused_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Pause dialog */}
+        <Dialog open={pauseDialogOpen} onOpenChange={setPauseDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Pausar campanha manualmente</DialogTitle>
+              <DialogDescription>
+                O processamento será pausado após o batch atual terminar. O usuário verá a mensagem abaixo na fila.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              <Label htmlFor="pause-message">Mensagem para o usuário</Label>
+              <Textarea
+                id="pause-message"
+                value={pauseMessage}
+                onChange={(e) => setPauseMessage(e.target.value)}
+                rows={3}
+                placeholder="Pausado Manualmente"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setPauseDialogOpen(false)} disabled={pauseLoading}>
+                Cancelar
+              </Button>
+              <Button onClick={handleAdminPause} disabled={pauseLoading} className="bg-amber-500 hover:bg-amber-600">
+                {pauseLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Pause className="w-4 h-4 mr-2" />}
+                Pausar campanha
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
 
         {/* Error Message */}
         {campaign.error_message && (
