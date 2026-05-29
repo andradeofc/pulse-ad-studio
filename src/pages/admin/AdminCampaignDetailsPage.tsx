@@ -140,6 +140,44 @@ export default function AdminCampaignDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
+  const [pauseMessage, setPauseMessage] = useState('Pausado Manualmente');
+  const [pauseLoading, setPauseLoading] = useState(false);
+  const [resumeLoading, setResumeLoading] = useState(false);
+
+  const handleAdminPause = async () => {
+    setPauseLoading(true);
+    try {
+      const { error } = await supabase.rpc('admin_pause_job' as any, {
+        p_job_id: id!,
+        p_message: pauseMessage.trim() || 'Pausado Manualmente',
+      });
+      if (error) throw error;
+      toast({ title: 'Campanha pausada', description: 'O job será pausado após o batch atual.' });
+      setPauseDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['admin-campaign-details', id] });
+    } catch (e: any) {
+      toast({ title: 'Erro ao pausar', description: e.message, variant: 'destructive' });
+    } finally {
+      setPauseLoading(false);
+    }
+  };
+
+  const handleAdminResume = async () => {
+    setResumeLoading(true);
+    try {
+      const { error } = await supabase.rpc('admin_resume_job' as any, { p_job_id: id! });
+      if (error) throw error;
+      toast({ title: 'Campanha retomada', description: 'O job voltou para a fila.' });
+      queryClient.invalidateQueries({ queryKey: ['admin-campaign-details', id] });
+    } catch (e: any) {
+      toast({ title: 'Erro ao retomar', description: e.message, variant: 'destructive' });
+    } finally {
+      setResumeLoading(false);
+    }
+  };
+
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin-campaign-details', id],
