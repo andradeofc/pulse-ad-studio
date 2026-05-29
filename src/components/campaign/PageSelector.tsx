@@ -555,13 +555,22 @@ export function PageSelector({
                             <img
                               src={page.picture_url}
                               alt={page.name}
-                              className="w-10 h-10 rounded-lg object-cover"
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                img.style.display = 'none';
+                                img.nextElementSibling?.classList.remove('hidden');
+                              }}
+                              className="w-10 h-10 rounded-lg object-cover bg-secondary"
                             />
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                              <Facebook className="w-5 h-5 text-muted-foreground" />
-                            </div>
-                          )}
+                          ) : null}
+                          <div className={cn(
+                            "w-10 h-10 rounded-lg bg-secondary items-center justify-center",
+                            page.picture_url ? "hidden" : "flex"
+                          )}>
+                            <Facebook className="w-5 h-5 text-muted-foreground" />
+                          </div>
 
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
@@ -720,13 +729,22 @@ export function PageSelector({
                             <img
                               src={page.picture_url}
                               alt={page.name}
-                              className="w-8 h-8 rounded"
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                img.style.display = 'none';
+                                img.nextElementSibling?.classList.remove('hidden');
+                              }}
+                              className="w-8 h-8 rounded object-cover bg-secondary"
                             />
-                          ) : (
-                            <div className="w-8 h-8 rounded bg-secondary flex items-center justify-center">
-                              <Facebook className="w-4 h-4 text-muted-foreground" />
-                            </div>
-                          )}
+                          ) : null}
+                          <div className={cn(
+                            "w-8 h-8 rounded bg-secondary items-center justify-center",
+                            page.picture_url ? "hidden" : "flex"
+                          )}>
+                            <Facebook className="w-4 h-4 text-muted-foreground" />
+                          </div>
 
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-sm truncate">{page.name}</div>
