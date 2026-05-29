@@ -214,13 +214,21 @@ export default function ProcessingQueuePage() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* Paused status indicator */}
-                        {job.status === 'paused' && (
+                        {/* Admin manual pause indicator (priority over auto-pause) */}
+                        {job.status === 'paused' && job.admin_paused ? (
+                          <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-500/10 border border-amber-500/30 px-2 py-1 rounded max-w-[260px]">
+                            <PauseCircle className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate" title={job.admin_pause_message || 'Pausado Manualmente'}>
+                              {job.admin_pause_message || 'Pausado Manualmente'}
+                            </span>
+                          </div>
+                        ) : job.status === 'paused' ? (
                           <div className="flex items-center gap-1 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
                             <Timer className="w-3 h-3" />
                             <span>Retomando automaticamente...</span>
                           </div>
-                        )}
+                        ) : null}
+
 
                         {/* Process button for queued/failed jobs */}
                         {(job.status === 'queued' || job.status === 'failed') && (
