@@ -2685,12 +2685,34 @@ Deno.serve(async (req) => {
     // The existing idempotency system (facebook_id, savedAdId, savedCreativeId)
     // ensures no duplicates when the job resumes.
     const CHUNK_TIME_LIMIT_MS = 90_000; // 90s work limit, ~60s buffer
-    const shouldYield = (): boolean => (Date.now() - startTime) >= CHUNK_TIME_LIMIT_MS;
+
+    // Admin manual pause poller: periodically checks if an admin paused this job.
+    // When detected, shouldYield() returns true so current batch completes and we yield.
+    let adminPauseDetected = false;
+    let adminPauseMessage: string | null = null;
+    const adminPausePoller = setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('campaign_jobs')
+          .select('admin_paused, admin_pause_message')
+          .eq('id', jobId)
+          .maybeSingle();
+        if (data && (data as any).admin_paused === true) {
+          adminPauseDetected = true;
+          adminPauseMessage = (data as any).admin_pause_message || 'Pausado Manualmente';
+        }
+      } catch (_) { /* ignore poll errors */ }
+    }, 5000);
+
+    const shouldYield = (): boolean =>
+      adminPauseDetected || (Date.now() - startTime) >= CHUNK_TIME_LIMIT_MS;
 
     // Yield helper: saves progress, sets job back to queued, returns response
     const yieldChunk = async (reason: string): Promise<Response> => {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
-      console.log(`[process-jobs] CHUNK YIELD after ${elapsed}s: ${reason}`);
+      const isAdminPause = adminPauseDetected;
+      try { clearInterval(adminPausePoller); } catch (_) {}
+      console.log(`[process-jobs] CHUNK YIELD after ${elapsed}s: ${reason}${isAdminPause ? ' (admin pause)' : ''}`);
 
       // Increment ad usage for ads created in this chunk
       if (totalAdsCreated > 0) {
@@ -2714,21 +2736,36 @@ Deno.serve(async (req) => {
       const totalItems = items.length;
       const progress = totalItems > 0 ? Math.round(((completedCount || 0) / totalItems) * 100) : 0;
 
-      // Set job back to queued so queue-processor picks it up in the next cycle
+      // If admin-paused: set status='paused', persist message, DO NOT auto-reinvoke
+      // Otherwise: set back to queued so queue-processor picks it up next cycle
       await supabase
         .from('campaign_jobs')
         .update({
-          status: 'queued',
+          status: isAdminPause ? 'paused' : 'queued',
           progress,
           processed_items: (job.processed_items || 0) + totalAdsCreated,
+          ...(isAdminPause
+            ? { error_message: adminPauseMessage || 'Pausado Manualmente' }
+            : {}),
         })
         .eq('id', jobId);
+
+      if (isAdminPause) {
+        console.log(`[process-jobs] Job ${jobId} admin-paused at ${progress}%, NOT auto-reinvoking`);
+        return new Response(JSON.stringify({
+          success: true,
+          status: 'admin_paused',
+          message: adminPauseMessage || 'Pausado Manualmente',
+          progress,
+          elapsedSeconds: elapsed,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
       console.log(`[process-jobs] Job ${jobId} yielded at ${progress}% progress, auto-reinvoking immediately`);
 
       // OPT-A: Auto-reinvoke ourselves immediately instead of waiting for the cron
-      // (which runs every 60s). Uses EdgeRuntime.waitUntil so the fetch survives
-      // after we return the response. Same internal auth as queue-processor.
       try {
         const selfInvoke = fetch(`${supabaseUrl}/functions/v1/process-campaign-jobs`, {
           method: 'POST',
@@ -2742,7 +2779,7 @@ Deno.serve(async (req) => {
         }).catch((err) => {
           console.warn(`[process-jobs] Auto-reinvoke fetch failed (cron will retry):`, err);
         });
-        // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions runtime
+        // @ts-ignore
         if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
           // @ts-ignore
           EdgeRuntime.waitUntil(selfInvoke);
@@ -2762,6 +2799,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     };
+
 
     // ============= PARALLEL ACCOUNT PROCESSING =============
     const ACCOUNT_CONCURRENCY = Math.max(1, parseInt(Deno.env.get("ACCOUNT_CONCURRENCY") ?? "1", 10));
