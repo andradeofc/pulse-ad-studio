@@ -20,7 +20,11 @@ export interface CampaignJob {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  admin_paused?: boolean;
+  admin_pause_message?: string | null;
+  admin_paused_at?: string | null;
 }
+
 
 export interface CampaignJobItem {
   id: string;
