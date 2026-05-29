@@ -2348,6 +2348,20 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Admin manual pause: refuse to claim/start processing
+    if ((job as any).admin_paused === true) {
+      console.log(`[process-jobs] Job ${jobId} is admin-paused, refusing to process`);
+      return new Response(JSON.stringify({
+        error: 'Job is paused by admin',
+        admin_paused: true,
+        message: (job as any).admin_pause_message || 'Pausado Manualmente',
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+
     // ATOMIC LOCK: Only proceed if we can atomically transition from queued/paused to processing
     // This prevents race conditions when both queue-processor and manual trigger fire simultaneously
     // By using .in('status', [...]) we ensure only ONE instance can claim the job
