@@ -68,7 +68,11 @@ interface CampaignJob {
   started_at: string | null;
   completed_at: string | null;
   user_id: string;
+  admin_paused?: boolean;
+  admin_pause_message?: string | null;
+  admin_paused_at?: string | null;
 }
+
 
 interface CampaignJobItem {
   id: string;
