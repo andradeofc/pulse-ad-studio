@@ -349,6 +349,10 @@ export type Database = {
       campaign_jobs: {
         Row: {
           accounts_count: number
+          admin_pause_message: string | null
+          admin_paused: boolean
+          admin_paused_at: string | null
+          admin_paused_by: string | null
           batch_size: number | null
           completed_at: string | null
           config: Json
@@ -372,6 +376,10 @@ export type Database = {
         }
         Insert: {
           accounts_count?: number
+          admin_pause_message?: string | null
+          admin_paused?: boolean
+          admin_paused_at?: string | null
+          admin_paused_by?: string | null
           batch_size?: number | null
           completed_at?: string | null
           config?: Json
@@ -395,6 +403,10 @@ export type Database = {
         }
         Update: {
           accounts_count?: number
+          admin_pause_message?: string | null
+          admin_paused?: boolean
+          admin_paused_at?: string | null
+          admin_paused_by?: string | null
           batch_size?: number | null
           completed_at?: string | null
           config?: Json
@@ -1848,6 +1860,11 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_pause_job: {
+        Args: { p_job_id: string; p_message?: string }
+        Returns: undefined
+      }
+      admin_resume_job: { Args: { p_job_id: string }; Returns: undefined }
       can_create_ads: {
         Args: { ads_to_create: number; check_user_id: string }
         Returns: {
