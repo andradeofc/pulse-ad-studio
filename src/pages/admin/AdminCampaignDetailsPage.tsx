@@ -1,5 +1,6 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -10,6 +11,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Pause,
+  Play,
   Loader2,
   MapPin,
   Globe,
@@ -34,6 +36,9 @@ import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -45,6 +50,7 @@ import {
   hasMultipleCurrencies,
   getPrimaryCurrency,
 } from '@/lib/currencyUtils';
+
 
 interface CampaignJob {
   id: string;
