@@ -51,7 +51,7 @@ export default function AdCleanupPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [accountFilter, setAccountFilter] = useState('');
-  const [selectedAccount, setSelectedAccount] = useState<AdAccount | null>(null);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['DISAPPROVED', 'WITH_ISSUES']);
   const [ads, setAds] = useState<RejectedAd[]>([]);
   const [selectedAds, setSelectedAds] = useState<Set<string>>(new Set());
@@ -63,6 +63,18 @@ export default function AdCleanupPage() {
   const [catalogMode, setCatalogMode] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number; current?: string } | null>(null);
   const [execProgress, setExecProgress] = useState<{ done: number; total: number; current?: string } | null>(null);
+
+  const selectedAccountsList = useMemo(
+    () => accounts.filter(a => selectedAccountIds.has(a.id)),
+    [accounts, selectedAccountIds]
+  );
+  const toggleAccountSelection = (id: string) => {
+    setSelectedAccountIds(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
 
   useEffect(() => {
     (async () => {
