@@ -51,7 +51,7 @@ export default function AdCleanupPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [accountFilter, setAccountFilter] = useState('');
-  const [selectedAccount, setSelectedAccount] = useState<AdAccount | null>(null);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['DISAPPROVED', 'WITH_ISSUES']);
   const [ads, setAds] = useState<RejectedAd[]>([]);
   const [selectedAds, setSelectedAds] = useState<Set<string>>(new Set());
@@ -63,6 +63,18 @@ export default function AdCleanupPage() {
   const [catalogMode, setCatalogMode] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number; current?: string } | null>(null);
   const [execProgress, setExecProgress] = useState<{ done: number; total: number; current?: string } | null>(null);
+
+  const selectedAccountsList = useMemo(
+    () => accounts.filter(a => selectedAccountIds.has(a.id)),
+    [accounts, selectedAccountIds]
+  );
+  const toggleAccountSelection = (id: string) => {
+    setSelectedAccountIds(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
 
   useEffect(() => {
     (async () => {
@@ -91,8 +103,8 @@ export default function AdCleanupPage() {
   };
 
   const handleScan = async () => {
-    if (!scanAllAccounts && !selectedAccount) {
-      toast({ title: 'Selecione uma conta ou marque "Todas as contas"', variant: 'destructive' });
+    if (!scanAllAccounts && selectedAccountIds.size === 0) {
+      toast({ title: 'Selecione ao menos uma conta ou marque "Todas as contas"', variant: 'destructive' });
       return;
     }
     if (selectedStatuses.length === 0) {
@@ -104,7 +116,7 @@ export default function AdCleanupPage() {
     setSelectedAds(new Set());
     setLastResult(null);
 
-    const targets = scanAllAccounts ? accounts : (selectedAccount ? [selectedAccount] : []);
+    const targets = scanAllAccounts ? accounts : selectedAccountsList;
     setScanProgress({ done: 0, total: targets.length });
 
     const collected: RejectedAd[] = [];
@@ -166,9 +178,9 @@ export default function AdCleanupPage() {
       for (const adId of selectedAds) {
         const ad = ads.find(a => a.id === adId);
         if (!ad) continue;
-        const accId = ad._account_id || selectedAccount?.account_id;
-        const profId = ad._profile_id || selectedAccount?.profile_id;
-        const accName = ad._account_name || selectedAccount?.name || accId || 'conta';
+        const accId = ad._account_id;
+        const profId = ad._profile_id;
+        const accName = ad._account_name || accId || 'conta';
         if (!accId || !profId) continue;
         const key = `${accId}|${profId}`;
         if (!groups.has(key)) groups.set(key, { account_id: accId, profile_id: profId, account_name: accName, ids: [] });
@@ -308,7 +320,37 @@ export default function AdCleanupPage() {
           </label>
 
           <div className={`space-y-2 ${scanAllAccounts ? 'opacity-50 pointer-events-none' : ''}`}>
-            <label className="text-sm font-medium">Conta de Anúncio</label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                Contas de Anúncio {selectedAccountIds.size > 0 && (
+                  <span className="text-muted-foreground font-normal">
+                    — {selectedAccountIds.size} selecionada(s)
+                  </span>
+                )}
+              </label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSelectedAccountIds(new Set(filteredAccounts.map(a => a.id)))}
+                  disabled={scanAllAccounts || filteredAccounts.length === 0}
+                >
+                  Marcar visíveis
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSelectedAccountIds(new Set())}
+                  disabled={scanAllAccounts || selectedAccountIds.size === 0}
+                >
+                  Limpar
+                </Button>
+              </div>
+            </div>
             <Input
               placeholder="Buscar conta por nome ou ID..."
               value={accountFilter}
@@ -319,23 +361,26 @@ export default function AdCleanupPage() {
             <div className="max-h-60 overflow-y-auto border rounded-lg divide-y divide-border">
               {filteredAccounts.length === 0 ? (
                 <p className="p-4 text-sm text-muted-foreground text-center">Nenhuma conta encontrada</p>
-              ) : filteredAccounts.map(acc => (
-                <button
-                  key={acc.id}
-                  onClick={() => setSelectedAccount(acc)}
-                  className={`w-full text-left p-3 hover:bg-secondary/40 transition-colors flex items-center justify-between ${
-                    selectedAccount?.id === acc.id ? 'bg-primary/10 border-l-2 border-primary' : ''
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{acc.name}</p>
-                    <p className="text-xs text-muted-foreground">act_{acc.account_id} {acc.currency ? `• ${acc.currency}` : ''}</p>
-                  </div>
-                  {selectedAccount?.id === acc.id && <Badge>Selecionada</Badge>}
-                </button>
-              ))}
+              ) : filteredAccounts.map(acc => {
+                const checked = selectedAccountIds.has(acc.id);
+                return (
+                  <label
+                    key={acc.id}
+                    className={`w-full text-left p-3 hover:bg-secondary/40 transition-colors flex items-center gap-3 cursor-pointer ${
+                      checked ? 'bg-primary/10 border-l-2 border-primary' : ''
+                    }`}
+                  >
+                    <Checkbox checked={checked} onCheckedChange={() => toggleAccountSelection(acc.id)} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{acc.name}</p>
+                      <p className="text-xs text-muted-foreground">act_{acc.account_id} {acc.currency ? `• ${acc.currency}` : ''}</p>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           </div>
+
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Status a buscar</label>
@@ -354,11 +399,15 @@ export default function AdCleanupPage() {
 
           <Button
             onClick={handleScan}
-            disabled={isScanning || (!scanAllAccounts && !selectedAccount)}
+            disabled={isScanning || (!scanAllAccounts && selectedAccountIds.size === 0)}
             className="w-full"
           >
             {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-            {scanAllAccounts ? `Buscar em todas as contas (${accounts.length})` : 'Buscar anúncios'}
+            {scanAllAccounts
+              ? `Buscar em todas as contas (${accounts.length})`
+              : selectedAccountIds.size > 1
+                ? `Buscar em ${selectedAccountIds.size} contas`
+                : 'Buscar anúncios'}
           </Button>
 
           {scanProgress && (
