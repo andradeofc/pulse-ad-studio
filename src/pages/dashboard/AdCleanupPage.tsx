@@ -320,7 +320,37 @@ export default function AdCleanupPage() {
           </label>
 
           <div className={`space-y-2 ${scanAllAccounts ? 'opacity-50 pointer-events-none' : ''}`}>
-            <label className="text-sm font-medium">Conta de Anúncio</label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                Contas de Anúncio {selectedAccountIds.size > 0 && (
+                  <span className="text-muted-foreground font-normal">
+                    — {selectedAccountIds.size} selecionada(s)
+                  </span>
+                )}
+              </label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSelectedAccountIds(new Set(filteredAccounts.map(a => a.id)))}
+                  disabled={scanAllAccounts || filteredAccounts.length === 0}
+                >
+                  Marcar visíveis
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSelectedAccountIds(new Set())}
+                  disabled={scanAllAccounts || selectedAccountIds.size === 0}
+                >
+                  Limpar
+                </Button>
+              </div>
+            </div>
             <Input
               placeholder="Buscar conta por nome ou ID..."
               value={accountFilter}
@@ -331,23 +361,26 @@ export default function AdCleanupPage() {
             <div className="max-h-60 overflow-y-auto border rounded-lg divide-y divide-border">
               {filteredAccounts.length === 0 ? (
                 <p className="p-4 text-sm text-muted-foreground text-center">Nenhuma conta encontrada</p>
-              ) : filteredAccounts.map(acc => (
-                <button
-                  key={acc.id}
-                  onClick={() => setSelectedAccount(acc)}
-                  className={`w-full text-left p-3 hover:bg-secondary/40 transition-colors flex items-center justify-between ${
-                    selectedAccount?.id === acc.id ? 'bg-primary/10 border-l-2 border-primary' : ''
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{acc.name}</p>
-                    <p className="text-xs text-muted-foreground">act_{acc.account_id} {acc.currency ? `• ${acc.currency}` : ''}</p>
-                  </div>
-                  {selectedAccount?.id === acc.id && <Badge>Selecionada</Badge>}
-                </button>
-              ))}
+              ) : filteredAccounts.map(acc => {
+                const checked = selectedAccountIds.has(acc.id);
+                return (
+                  <label
+                    key={acc.id}
+                    className={`w-full text-left p-3 hover:bg-secondary/40 transition-colors flex items-center gap-3 cursor-pointer ${
+                      checked ? 'bg-primary/10 border-l-2 border-primary' : ''
+                    }`}
+                  >
+                    <Checkbox checked={checked} onCheckedChange={() => toggleAccountSelection(acc.id)} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{acc.name}</p>
+                      <p className="text-xs text-muted-foreground">act_{acc.account_id} {acc.currency ? `• ${acc.currency}` : ''}</p>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           </div>
+
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Status a buscar</label>
