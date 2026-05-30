@@ -103,8 +103,8 @@ export default function AdCleanupPage() {
   };
 
   const handleScan = async () => {
-    if (!scanAllAccounts && !selectedAccount) {
-      toast({ title: 'Selecione uma conta ou marque "Todas as contas"', variant: 'destructive' });
+    if (!scanAllAccounts && selectedAccountIds.size === 0) {
+      toast({ title: 'Selecione ao menos uma conta ou marque "Todas as contas"', variant: 'destructive' });
       return;
     }
     if (selectedStatuses.length === 0) {
@@ -116,7 +116,7 @@ export default function AdCleanupPage() {
     setSelectedAds(new Set());
     setLastResult(null);
 
-    const targets = scanAllAccounts ? accounts : (selectedAccount ? [selectedAccount] : []);
+    const targets = scanAllAccounts ? accounts : selectedAccountsList;
     setScanProgress({ done: 0, total: targets.length });
 
     const collected: RejectedAd[] = [];
