@@ -399,11 +399,15 @@ export default function AdCleanupPage() {
 
           <Button
             onClick={handleScan}
-            disabled={isScanning || (!scanAllAccounts && !selectedAccount)}
+            disabled={isScanning || (!scanAllAccounts && selectedAccountIds.size === 0)}
             className="w-full"
           >
             {isScanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-            {scanAllAccounts ? `Buscar em todas as contas (${accounts.length})` : 'Buscar anúncios'}
+            {scanAllAccounts
+              ? `Buscar em todas as contas (${accounts.length})`
+              : selectedAccountIds.size > 1
+                ? `Buscar em ${selectedAccountIds.size} contas`
+                : 'Buscar anúncios'}
           </Button>
 
           {scanProgress && (
