@@ -178,9 +178,9 @@ export default function AdCleanupPage() {
       for (const adId of selectedAds) {
         const ad = ads.find(a => a.id === adId);
         if (!ad) continue;
-        const accId = ad._account_id || selectedAccount?.account_id;
-        const profId = ad._profile_id || selectedAccount?.profile_id;
-        const accName = ad._account_name || selectedAccount?.name || accId || 'conta';
+        const accId = ad._account_id;
+        const profId = ad._profile_id;
+        const accName = ad._account_name || accId || 'conta';
         if (!accId || !profId) continue;
         const key = `${accId}|${profId}`;
         if (!groups.has(key)) groups.set(key, { account_id: accId, profile_id: profId, account_name: accName, ids: [] });
