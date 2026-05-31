@@ -649,15 +649,37 @@ export default function CatalogSchedulingPage() {
                           });
                           if (error) throw error;
                           await queryClient.invalidateQueries({ queryKey: ['facebook-business-managers', selectedProfile] });
-                          toast({
-                            title: 'Business Managers sincronizados!',
-                            description: `${data?.business_managers_synced || 0} BM(s) encontrado(s).`,
-                          });
+
+                          const fbErrors = (data?.fb_errors || []) as Array<{ message: string; code?: number; type?: string; fbtrace_id?: string }>;
+                          const syncedCount = data?.business_managers_synced || 0;
+
+                          if (fbErrors.length > 0) {
+                            const e = fbErrors[0];
+                            const parts = [e.message];
+                            if (e.code !== undefined) parts.push(`(código ${e.code}${e.type ? ` · ${e.type}` : ''})`);
+                            toast({
+                              title: syncedCount > 0
+                                ? `Sincronizado parcialmente (${syncedCount} BM)`
+                                : 'Facebook retornou um erro',
+                              description: parts.join(' '),
+                              variant: 'destructive',
+                            });
+                          } else {
+                            toast({
+                              title: 'Business Managers sincronizados!',
+                              description: `${syncedCount} BM(s) encontrado(s).`,
+                            });
+                          }
                         } catch (err: any) {
                           console.error('Error syncing BMs:', err);
+                          const fbMessage =
+                            err?.context?.body?.error?.message ||
+                            err?.context?.error?.message ||
+                            err?.message ||
+                            'Não foi possível sincronizar.';
                           toast({
                             title: 'Erro ao sincronizar BMs',
-                            description: err.message || 'Não foi possível sincronizar.',
+                            description: fbMessage,
                             variant: 'destructive',
                           });
                         } finally {
