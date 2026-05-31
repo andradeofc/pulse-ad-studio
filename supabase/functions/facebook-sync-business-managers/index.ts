@@ -95,6 +95,7 @@ Deno.serve(async (req) => {
     }
 
     let totalBMsSynced = 0;
+    const fbErrors: Array<{ profile_id: string; message: string; code?: number; type?: string; fbtrace_id?: string }> = [];
 
     for (const profile of profiles) {
       console.log(`[sync-business-managers] Fetching BMs for profile ${profile.id}`);
@@ -121,6 +122,7 @@ Deno.serve(async (req) => {
 
       if (!accessToken) {
         console.warn(`[sync-business-managers] No access token found for profile ${profile.id}`);
+        fbErrors.push({ profile_id: profile.id, message: 'Token de acesso não encontrado para este perfil.' });
         continue;
       }
       
@@ -132,6 +134,13 @@ Deno.serve(async (req) => {
 
       if (data.error) {
         console.error(`[sync-business-managers] Error fetching BMs for profile ${profile.id}:`, data.error);
+        fbErrors.push({
+          profile_id: profile.id,
+          message: data.error.message || 'Erro desconhecido do Facebook',
+          code: data.error.code,
+          type: data.error.type,
+          fbtrace_id: data.error.fbtrace_id,
+        });
         continue;
       }
 
