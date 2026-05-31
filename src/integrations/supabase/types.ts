@@ -1915,6 +1915,10 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_collaborator: { Args: never; Returns: boolean }
       is_team_member_of: { Args: { owner_uuid: string }; Returns: boolean }
+      migrate_catalog_monitors_to_profile: {
+        Args: { p_new_profile_id: string; p_old_profile_id: string }
+        Returns: Json
+      }
       user_is_admin: { Args: { check_user_id: string }; Returns: boolean }
       user_owns_facebook_profile: {
         Args: { profile_id: string }
