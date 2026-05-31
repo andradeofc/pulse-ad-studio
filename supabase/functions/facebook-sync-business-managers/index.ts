@@ -178,7 +178,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       business_managers_synced: totalBMsSynced,
-      profiles_processed: profiles.length
+      profiles_processed: profiles.length,
+      fb_errors: fbErrors,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
