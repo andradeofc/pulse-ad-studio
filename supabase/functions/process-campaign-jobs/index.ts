@@ -18,7 +18,7 @@ const BATCH_CONFIG = {
   CAMPAIGN_BATCH_SIZE: 15, // Campaigns are heavier ops
   ADSET_BATCH_SIZE: 30, // Reduced to avoid timeouts  
   AD_BATCH_SIZE: 30, // Reduced to avoid timeouts
-  CREATIVE_BATCH_SIZE: 50, // OPT-5: FB Batch API max (50). Was 20 — caused more round-trips.
+  CREATIVE_BATCH_SIZE: 30, // Reduced from 50 to 30 to avoid checkpoint triggers
   BATCH_DELAY_MS: 50, // Minimal delay (QPS allows 100/s)
   DYNAMIC_DELAY_ENABLED: true, // Enable adaptive delays based on usage
 };
