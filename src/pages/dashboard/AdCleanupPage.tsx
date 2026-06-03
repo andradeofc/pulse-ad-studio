@@ -122,6 +122,7 @@ export default function AdCleanupPage() {
     const collected: RejectedAd[] = [];
     let successCount = 0;
     let errorCount = 0;
+    const scanErrors: { account: string; message: string }[] = [];
 
     try {
       for (let i = 0; i < targets.length; i++) {
@@ -139,6 +140,7 @@ export default function AdCleanupPage() {
           if (error) throw error;
           if (data?.error) {
             errorCount++;
+            scanErrors.push({ account: acc.name, message: String(data.error) });
             console.warn(`[scan] ${acc.name}: ${data.error}`);
             continue;
           }
@@ -152,15 +154,31 @@ export default function AdCleanupPage() {
           successCount++;
         } catch (e: any) {
           errorCount++;
+          scanErrors.push({ account: acc.name, message: e?.message || 'Erro desconhecido' });
           console.warn(`[scan] ${acc.name}: ${e.message}`);
         }
       }
       setAds(collected);
+
+      if (errorCount > 0) {
+        const preview = scanErrors.slice(0, 3).map(e => `• ${e.account}: ${e.message}`).join('\n');
+        const more = scanErrors.length > 3 ? `\n…e mais ${scanErrors.length - 3} conta(s).` : '';
+        toast({
+          title: `${errorCount} conta(s) com erro do Facebook`,
+          description: preview + more,
+          variant: 'destructive',
+        });
+      }
+
       toast({
         title: `${collected.length} anúncio(s) encontrado(s)`,
         description: scanAllAccounts
           ? `${successCount} conta(s) escaneadas${errorCount ? `, ${errorCount} com erro` : ''}.`
-          : (collected.length === 0 ? 'Nenhum anúncio corresponde aos filtros.' : undefined),
+          : (collected.length === 0
+              ? (errorCount > 0
+                  ? 'Veja o erro acima — pode ser token bloqueado, perfil desconectado ou limite da API.'
+                  : 'Nenhum anúncio corresponde aos filtros.')
+              : undefined),
       });
     } finally {
       setIsScanning(false);
