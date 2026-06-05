@@ -9,6 +9,34 @@ const corsHeaders = {
 const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
+// TTL for cached Instagram identity / Page Access Token in facebook_pages (7 days)
+const PAGE_IDENTITY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Lazy module-level admin client used ONLY by page-identity cache helpers.
+// Safe: same service-role context already used inside Deno.serve handler.
+let _sbAdmin: ReturnType<typeof createClient> | null = null;
+function getSbAdmin() {
+  if (_sbAdmin) return _sbAdmin;
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  _sbAdmin = createClient(url, key);
+  return _sbAdmin;
+}
+
+// Invalidate cached Instagram identity for a list of pages (memory + DB).
+// Used by the Instagram retry flow when creative creation fails due to identity issues.
+async function invalidatePageIdentityCache(pageIds: string[]): Promise<void> {
+  for (const pid of pageIds) igActorIdCache.delete(pid);
+  try {
+    const sb = getSbAdmin();
+    await sb.from('facebook_pages')
+      .update({ instagram_actor_id: null, instagram_actor_type: null, instagram_resolved_at: null })
+      .in('page_id', pageIds);
+  } catch (e) {
+    console.warn('[process-jobs] Failed to invalidate DB page identity cache:', e);
+  }
+}
+
 // Batch API Configuration
 // Standard Access: 9,000 points per 5-min window per ad account
 // Each POST operation = 3 points (based on FB documentation)
@@ -336,6 +364,8 @@ function shouldPauseForRateLimit(accountId: string): {
 }
 
 // Get a Page Access Token using the user's access token
+// OPTIMIZATION: First try facebook_pages.access_token (populated by facebook-sync-pages).
+// Only fall back to /me/accounts (paginated) if the DB has no token cached.
 async function getPageAccessTokenFromUserToken(
   userAccessToken: string,
   pageId: string,
@@ -343,6 +373,25 @@ async function getPageAccessTokenFromUserToken(
 ): Promise<string | null> {
   if (pageTokenCache.has(pageId)) return pageTokenCache.get(pageId) ?? null;
 
+  // FAST PATH: read from facebook_pages
+  try {
+    const sb = getSbAdmin();
+    const { data: pageRow } = await sb
+      .from('facebook_pages')
+      .select('access_token')
+      .eq('page_id', pageId)
+      .not('access_token', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (pageRow?.access_token) {
+      pageTokenCache.set(pageId, pageRow.access_token as string);
+      return pageRow.access_token as string;
+    }
+  } catch (e) {
+    console.warn(`[process-jobs] DB page token lookup failed for ${pageId}, falling back to Graph:`, e);
+  }
+
+  // FALLBACK: original /me/accounts cascade (unchanged behavior)
   try {
     let url: string | null = `${GRAPH_BASE_URL}/me/accounts?fields=id,access_token&limit=500&access_token=${userAccessToken}`;
 
@@ -358,6 +407,10 @@ async function getPageAccessTokenFromUserToken(
       const match = (json?.data || []).find((p: any) => p?.id === pageId && p?.access_token);
       if (match?.access_token) {
         pageTokenCache.set(pageId, match.access_token);
+        // Persist to facebook_pages for future runs (best-effort)
+        try {
+          await getSbAdmin().from('facebook_pages').update({ access_token: match.access_token }).eq('page_id', pageId);
+        } catch (_) { /* ignore */ }
         return match.access_token;
       }
 
@@ -387,6 +440,44 @@ async function resolveInstagramActorIdForPage(params: {
 
   if (igActorIdCache.has(pageId)) return igActorIdCache.get(pageId) ?? null;
 
+  // FAST PATH: read cached identity from facebook_pages if within TTL.
+  // This eliminates the per-page Graph cascade once a page has been resolved.
+  try {
+    const sb = getSbAdmin();
+    const { data: pageRow } = await sb
+      .from('facebook_pages')
+      .select('instagram_actor_id, instagram_resolved_at')
+      .eq('page_id', pageId)
+      .not('instagram_resolved_at', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (pageRow?.instagram_resolved_at) {
+      const resolvedAt = new Date(pageRow.instagram_resolved_at as string).getTime();
+      if (Date.now() - resolvedAt < PAGE_IDENTITY_CACHE_TTL_MS) {
+        const cachedIg = (pageRow.instagram_actor_id as string | null) ?? null;
+        igActorIdCache.set(pageId, cachedIg);
+        console.log(`[process-jobs] IG identity cache HIT for page ${pageId}: ${cachedIg || 'null'}`);
+        return cachedIg;
+      }
+    }
+  } catch (e) {
+    console.warn(`[process-jobs] DB IG identity lookup failed for ${pageId}:`, e);
+  }
+
+  // Helper: persist a resolution to DB + memory in one shot
+  const persist = async (igId: string | null, actorType: string | null) => {
+    igActorIdCache.set(pageId, igId);
+    try {
+      await getSbAdmin().from('facebook_pages').update({
+        instagram_actor_id: igId,
+        instagram_actor_type: actorType,
+        instagram_resolved_at: new Date().toISOString(),
+      }).eq('page_id', pageId);
+    } catch (e) {
+      console.warn(`[process-jobs] Failed to persist IG identity for ${pageId}:`, e);
+    }
+  };
+
   try {
     // Collect all available tokens to try
     const pageAccessToken = pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId, httpClient));
@@ -402,7 +493,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (pbiaRes.ok && !pbiaJson?.error && Array.isArray(pbiaJson?.data) && pbiaJson.data.length > 0) {
           const igId = pbiaJson.data[0].id as string;
           console.log(`[process-jobs] Resolved existing PBIA ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_existing');
           return igId;
         }
       } catch (e) { /* continue */ }
@@ -415,7 +506,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (iaRes.ok && !iaJson?.error && Array.isArray(iaJson?.data) && iaJson.data.length > 0) {
           const igId = iaJson.data[0].id as string;
           console.log(`[process-jobs] Resolved linked Instagram account ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'ig_linked');
           return igId;
         }
       } catch (e) { /* continue */ }
@@ -429,7 +520,7 @@ async function resolveInstagramActorIdForPage(params: {
       if (ibaRes.ok && !ibaJson?.error && ibaJson?.instagram_business_account?.id) {
         const igId = ibaJson.instagram_business_account.id as string;
         console.log(`[process-jobs] Resolved Instagram Business Account ${igId} for page ${pageId}`);
-        igActorIdCache.set(pageId, igId);
+        await persist(igId, 'ig_business');
         return igId;
       }
     } catch (e) { /* continue */ }
@@ -448,7 +539,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (createRes.ok && !createJson?.error && createJson?.id) {
           const igId = createJson.id as string;
           console.log(`[process-jobs] Created PBIA ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_created');
           return igId;
         }
 
@@ -456,7 +547,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (createRes.ok && Array.isArray(createJson?.data) && createJson.data.length > 0 && createJson.data[0]?.id) {
           const igId = createJson.data[0].id as string;
           console.log(`[process-jobs] Created PBIA (array response) ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_created');
           return igId;
         }
 
@@ -477,14 +568,15 @@ async function resolveInstagramActorIdForPage(params: {
         if (recheckRes.ok && Array.isArray(recheckJson?.data) && recheckJson.data.length > 0) {
           const igId = recheckJson.data[0].id as string;
           console.log(`[process-jobs] Found PBIA ${igId} on recheck for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_recheck');
           return igId;
         }
       } catch (e) { /* continue */ }
     }
 
     console.warn(`[process-jobs] Could not resolve Instagram identity for page ${pageId}. Creative will use page_id + use_page_actor_override only.`);
-    igActorIdCache.set(pageId, null);
+    // Persist null with TTL so we don't re-hammer the cascade for unresolvable pages within the window
+    await persist(null, 'unresolved');
     return null;
   } catch (err) {
     console.error(`[process-jobs] Error resolving Instagram actor for page ${pageId}:`, err);
@@ -1601,11 +1693,9 @@ async function createAdsBatch(
     
     const { config, defaultPageId, resolvedPages } = retryContext;
     
-    // Clear Instagram actor cache to force re-resolution
-    igActorIdCache.delete(defaultPageId);
-    for (const page of resolvedPages) {
-      igActorIdCache.delete(page.pageId);
-    }
+    // Clear Instagram actor cache (memory + DB) to force re-resolution
+    const pagesToInvalidate = [defaultPageId, ...resolvedPages.map((p) => p.pageId)].filter(Boolean) as string[];
+    await invalidatePageIdentityCache(pagesToInvalidate);
     
     // Re-resolve Instagram actor IDs — this will create PBIAs if needed
     for (const page of resolvedPages) {

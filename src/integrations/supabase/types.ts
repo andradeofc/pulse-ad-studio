@@ -1136,6 +1136,9 @@ export type Database = {
           created_at: string
           followers_count: number | null
           id: string
+          instagram_actor_id: string | null
+          instagram_actor_type: string | null
+          instagram_resolved_at: string | null
           is_blacklisted: boolean
           is_published: boolean | null
           name: string
@@ -1158,6 +1161,9 @@ export type Database = {
           created_at?: string
           followers_count?: number | null
           id?: string
+          instagram_actor_id?: string | null
+          instagram_actor_type?: string | null
+          instagram_resolved_at?: string | null
           is_blacklisted?: boolean
           is_published?: boolean | null
           name: string
@@ -1180,6 +1186,9 @@ export type Database = {
           created_at?: string
           followers_count?: number | null
           id?: string
+          instagram_actor_id?: string | null
+          instagram_actor_type?: string | null
+          instagram_resolved_at?: string | null
           is_blacklisted?: boolean
           is_published?: boolean | null
           name?: string
