@@ -440,6 +440,44 @@ async function resolveInstagramActorIdForPage(params: {
 
   if (igActorIdCache.has(pageId)) return igActorIdCache.get(pageId) ?? null;
 
+  // FAST PATH: read cached identity from facebook_pages if within TTL.
+  // This eliminates the per-page Graph cascade once a page has been resolved.
+  try {
+    const sb = getSbAdmin();
+    const { data: pageRow } = await sb
+      .from('facebook_pages')
+      .select('instagram_actor_id, instagram_resolved_at')
+      .eq('page_id', pageId)
+      .not('instagram_resolved_at', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (pageRow?.instagram_resolved_at) {
+      const resolvedAt = new Date(pageRow.instagram_resolved_at as string).getTime();
+      if (Date.now() - resolvedAt < PAGE_IDENTITY_CACHE_TTL_MS) {
+        const cachedIg = (pageRow.instagram_actor_id as string | null) ?? null;
+        igActorIdCache.set(pageId, cachedIg);
+        console.log(`[process-jobs] IG identity cache HIT for page ${pageId}: ${cachedIg || 'null'}`);
+        return cachedIg;
+      }
+    }
+  } catch (e) {
+    console.warn(`[process-jobs] DB IG identity lookup failed for ${pageId}:`, e);
+  }
+
+  // Helper: persist a resolution to DB + memory in one shot
+  const persist = async (igId: string | null, actorType: string | null) => {
+    igActorIdCache.set(pageId, igId);
+    try {
+      await getSbAdmin().from('facebook_pages').update({
+        instagram_actor_id: igId,
+        instagram_actor_type: actorType,
+        instagram_resolved_at: new Date().toISOString(),
+      }).eq('page_id', pageId);
+    } catch (e) {
+      console.warn(`[process-jobs] Failed to persist IG identity for ${pageId}:`, e);
+    }
+  };
+
   try {
     // Collect all available tokens to try
     const pageAccessToken = pageAccessTokenFromDb || (await getPageAccessTokenFromUserToken(userAccessToken, pageId, httpClient));
