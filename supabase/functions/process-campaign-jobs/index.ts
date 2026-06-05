@@ -364,6 +364,8 @@ function shouldPauseForRateLimit(accountId: string): {
 }
 
 // Get a Page Access Token using the user's access token
+// OPTIMIZATION: First try facebook_pages.access_token (populated by facebook-sync-pages).
+// Only fall back to /me/accounts (paginated) if the DB has no token cached.
 async function getPageAccessTokenFromUserToken(
   userAccessToken: string,
   pageId: string,
@@ -371,6 +373,25 @@ async function getPageAccessTokenFromUserToken(
 ): Promise<string | null> {
   if (pageTokenCache.has(pageId)) return pageTokenCache.get(pageId) ?? null;
 
+  // FAST PATH: read from facebook_pages
+  try {
+    const sb = getSbAdmin();
+    const { data: pageRow } = await sb
+      .from('facebook_pages')
+      .select('access_token')
+      .eq('page_id', pageId)
+      .not('access_token', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (pageRow?.access_token) {
+      pageTokenCache.set(pageId, pageRow.access_token as string);
+      return pageRow.access_token as string;
+    }
+  } catch (e) {
+    console.warn(`[process-jobs] DB page token lookup failed for ${pageId}, falling back to Graph:`, e);
+  }
+
+  // FALLBACK: original /me/accounts cascade (unchanged behavior)
   try {
     let url: string | null = `${GRAPH_BASE_URL}/me/accounts?fields=id,access_token&limit=500&access_token=${userAccessToken}`;
 
@@ -386,6 +407,10 @@ async function getPageAccessTokenFromUserToken(
       const match = (json?.data || []).find((p: any) => p?.id === pageId && p?.access_token);
       if (match?.access_token) {
         pageTokenCache.set(pageId, match.access_token);
+        // Persist to facebook_pages for future runs (best-effort)
+        try {
+          await getSbAdmin().from('facebook_pages').update({ access_token: match.access_token }).eq('page_id', pageId);
+        } catch (_) { /* ignore */ }
         return match.access_token;
       }
 
