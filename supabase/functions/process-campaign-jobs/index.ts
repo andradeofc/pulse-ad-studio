@@ -493,7 +493,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (pbiaRes.ok && !pbiaJson?.error && Array.isArray(pbiaJson?.data) && pbiaJson.data.length > 0) {
           const igId = pbiaJson.data[0].id as string;
           console.log(`[process-jobs] Resolved existing PBIA ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_existing');
           return igId;
         }
       } catch (e) { /* continue */ }
@@ -506,7 +506,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (iaRes.ok && !iaJson?.error && Array.isArray(iaJson?.data) && iaJson.data.length > 0) {
           const igId = iaJson.data[0].id as string;
           console.log(`[process-jobs] Resolved linked Instagram account ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'ig_linked');
           return igId;
         }
       } catch (e) { /* continue */ }
@@ -520,7 +520,7 @@ async function resolveInstagramActorIdForPage(params: {
       if (ibaRes.ok && !ibaJson?.error && ibaJson?.instagram_business_account?.id) {
         const igId = ibaJson.instagram_business_account.id as string;
         console.log(`[process-jobs] Resolved Instagram Business Account ${igId} for page ${pageId}`);
-        igActorIdCache.set(pageId, igId);
+        await persist(igId, 'ig_business');
         return igId;
       }
     } catch (e) { /* continue */ }
@@ -539,7 +539,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (createRes.ok && !createJson?.error && createJson?.id) {
           const igId = createJson.id as string;
           console.log(`[process-jobs] Created PBIA ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_created');
           return igId;
         }
 
@@ -547,7 +547,7 @@ async function resolveInstagramActorIdForPage(params: {
         if (createRes.ok && Array.isArray(createJson?.data) && createJson.data.length > 0 && createJson.data[0]?.id) {
           const igId = createJson.data[0].id as string;
           console.log(`[process-jobs] Created PBIA (array response) ${igId} for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_created');
           return igId;
         }
 
@@ -568,14 +568,15 @@ async function resolveInstagramActorIdForPage(params: {
         if (recheckRes.ok && Array.isArray(recheckJson?.data) && recheckJson.data.length > 0) {
           const igId = recheckJson.data[0].id as string;
           console.log(`[process-jobs] Found PBIA ${igId} on recheck for page ${pageId}`);
-          igActorIdCache.set(pageId, igId);
+          await persist(igId, 'pbia_recheck');
           return igId;
         }
       } catch (e) { /* continue */ }
     }
 
     console.warn(`[process-jobs] Could not resolve Instagram identity for page ${pageId}. Creative will use page_id + use_page_actor_override only.`);
-    igActorIdCache.set(pageId, null);
+    // Persist null with TTL so we don't re-hammer the cascade for unresolvable pages within the window
+    await persist(null, 'unresolved');
     return null;
   } catch (err) {
     console.error(`[process-jobs] Error resolving Instagram actor for page ${pageId}:`, err);
