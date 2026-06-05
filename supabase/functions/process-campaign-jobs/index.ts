@@ -1693,11 +1693,9 @@ async function createAdsBatch(
     
     const { config, defaultPageId, resolvedPages } = retryContext;
     
-    // Clear Instagram actor cache to force re-resolution
-    igActorIdCache.delete(defaultPageId);
-    for (const page of resolvedPages) {
-      igActorIdCache.delete(page.pageId);
-    }
+    // Clear Instagram actor cache (memory + DB) to force re-resolution
+    const pagesToInvalidate = [defaultPageId, ...resolvedPages.map((p) => p.pageId)].filter(Boolean) as string[];
+    await invalidatePageIdentityCache(pagesToInvalidate);
     
     // Re-resolve Instagram actor IDs — this will create PBIAs if needed
     for (const page of resolvedPages) {
