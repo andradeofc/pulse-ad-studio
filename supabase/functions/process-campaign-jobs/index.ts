@@ -9,6 +9,34 @@ const corsHeaders = {
 const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
+// TTL for cached Instagram identity / Page Access Token in facebook_pages (7 days)
+const PAGE_IDENTITY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Lazy module-level admin client used ONLY by page-identity cache helpers.
+// Safe: same service-role context already used inside Deno.serve handler.
+let _sbAdmin: ReturnType<typeof createClient> | null = null;
+function getSbAdmin() {
+  if (_sbAdmin) return _sbAdmin;
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  _sbAdmin = createClient(url, key);
+  return _sbAdmin;
+}
+
+// Invalidate cached Instagram identity for a list of pages (memory + DB).
+// Used by the Instagram retry flow when creative creation fails due to identity issues.
+async function invalidatePageIdentityCache(pageIds: string[]): Promise<void> {
+  for (const pid of pageIds) igActorIdCache.delete(pid);
+  try {
+    const sb = getSbAdmin();
+    await sb.from('facebook_pages')
+      .update({ instagram_actor_id: null, instagram_actor_type: null, instagram_resolved_at: null })
+      .in('page_id', pageIds);
+  } catch (e) {
+    console.warn('[process-jobs] Failed to invalidate DB page identity cache:', e);
+  }
+}
+
 // Batch API Configuration
 // Standard Access: 9,000 points per 5-min window per ad account
 // Each POST operation = 3 points (based on FB documentation)
