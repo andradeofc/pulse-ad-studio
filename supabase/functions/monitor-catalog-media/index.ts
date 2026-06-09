@@ -189,7 +189,18 @@ Deno.serve(async (req) => {
 
         if (productsWithIssues.length === 0) {
           console.log(`[monitor-catalog-media] No issues found for ${monitor.product_set_name}`);
-          results.push({ monitor_id: monitor.id, issues: 0 });
+          // Retroactive cleanup: mark stale 'detected' alerts as repaired
+          // (products are now healthy, so any open alert is obsolete)
+          const { data: cleaned } = await supabase
+            .from('catalog_media_alerts')
+            .update({ status: 'repaired', repaired_at: new Date().toISOString() })
+            .eq('monitor_id', monitor.id)
+            .eq('status', 'detected')
+            .select('id');
+          if (cleaned && cleaned.length > 0) {
+            console.log(`[monitor-catalog-media] Retroactive cleanup: ${cleaned.length} stale alerts marked repaired for ${monitor.product_set_name}`);
+          }
+          results.push({ monitor_id: monitor.id, issues: 0, cleaned: cleaned?.length || 0 });
           continue;
         }
 
