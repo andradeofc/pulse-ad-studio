@@ -472,6 +472,8 @@ export type Database = {
           monitor_id: string
           product_name: string | null
           product_set_name: string
+          repair_attempted_at: string | null
+          repair_error: string | null
           repaired_at: string | null
           retailer_id: string
           status: string
@@ -486,6 +488,8 @@ export type Database = {
           monitor_id: string
           product_name?: string | null
           product_set_name: string
+          repair_attempted_at?: string | null
+          repair_error?: string | null
           repaired_at?: string | null
           retailer_id: string
           status?: string
@@ -500,6 +504,8 @@ export type Database = {
           monitor_id?: string
           product_name?: string | null
           product_set_name?: string
+          repair_attempted_at?: string | null
+          repair_error?: string | null
           repaired_at?: string | null
           retailer_id?: string
           status?: string
@@ -527,6 +533,9 @@ export type Database = {
           issues_found: number
           last_checked_at: string | null
           last_issue_at: string | null
+          last_repair_attempt_at: string | null
+          last_repair_error: string | null
+          last_repair_success_at: string | null
           product_set_id: string
           product_set_name: string
           profile_id: string
@@ -545,6 +554,9 @@ export type Database = {
           issues_found?: number
           last_checked_at?: string | null
           last_issue_at?: string | null
+          last_repair_attempt_at?: string | null
+          last_repair_error?: string | null
+          last_repair_success_at?: string | null
           product_set_id: string
           product_set_name: string
           profile_id: string
@@ -563,6 +575,9 @@ export type Database = {
           issues_found?: number
           last_checked_at?: string | null
           last_issue_at?: string | null
+          last_repair_attempt_at?: string | null
+          last_repair_error?: string | null
+          last_repair_success_at?: string | null
           product_set_id?: string
           product_set_name?: string
           profile_id?: string
