@@ -189,7 +189,18 @@ Deno.serve(async (req) => {
 
         if (productsWithIssues.length === 0) {
           console.log(`[monitor-catalog-media] No issues found for ${monitor.product_set_name}`);
-          results.push({ monitor_id: monitor.id, issues: 0 });
+          // Retroactive cleanup: mark stale 'detected' alerts as repaired
+          // (products are now healthy, so any open alert is obsolete)
+          const { data: cleaned } = await supabase
+            .from('catalog_media_alerts')
+            .update({ status: 'repaired', repaired_at: new Date().toISOString() })
+            .eq('monitor_id', monitor.id)
+            .eq('status', 'detected')
+            .select('id');
+          if (cleaned && cleaned.length > 0) {
+            console.log(`[monitor-catalog-media] Retroactive cleanup: ${cleaned.length} stale alerts marked repaired for ${monitor.product_set_name}`);
+          }
+          results.push({ monitor_id: monitor.id, issues: 0, cleaned: cleaned?.length || 0 });
           continue;
         }
 
@@ -212,11 +223,12 @@ Deno.serve(async (req) => {
 
         // Auto-repair if enabled
         let repaired = false;
+        let lastRepairError: string | null = null;
         if (monitor.auto_repair && monitor.creative_id && catalogFbId) {
           const creative = monitor.creative as any;
           if (creative?.url) {
             console.log(`[monitor-catalog-media] Auto-repairing ${productsWithIssues.length} products...`);
-            
+
             const batchRequests = productsWithIssues.map(p => ({
               method: 'UPDATE' as const,
               retailer_id: p.retailer_id,
@@ -225,6 +237,8 @@ Deno.serve(async (req) => {
                 video: [{ url: creative.url }],
               },
             }));
+
+            const repairAttemptAt = new Date().toISOString();
 
             // Process in batches of 4999
             for (let i = 0; i < batchRequests.length; i += 4999) {
@@ -243,24 +257,51 @@ Deno.serve(async (req) => {
                   },
                   'auto-repair batch'
                 );
-                
+
                 if (batchRes.ok) {
                   repaired = true;
                   console.log(`[monitor-catalog-media] Auto-repair batch sent successfully`);
                 } else {
                   const errText = await batchRes.text();
+                  lastRepairError = `HTTP ${batchRes.status}: ${errText}`.slice(0, 2000);
                   console.error(`[monitor-catalog-media] Auto-repair batch failed: ${errText}`);
                 }
               } catch (err) {
+                lastRepairError = `Exception: ${String(err)}`.slice(0, 2000);
                 console.error(`[monitor-catalog-media] Auto-repair error:`, err);
               }
             }
+
+            // Persist repair attempt outcome on monitor
+            await supabase
+              .from('catalog_media_monitors')
+              .update({
+                last_repair_attempt_at: repairAttemptAt,
+                ...(repaired
+                  ? { last_repair_success_at: new Date().toISOString(), last_repair_error: null }
+                  : { last_repair_error: lastRepairError }),
+              })
+              .eq('id', monitor.id);
 
             if (repaired) {
               // Update alert statuses to repaired
               await supabase
                 .from('catalog_media_alerts')
-                .update({ status: 'repaired', repaired_at: new Date().toISOString() })
+                .update({
+                  status: 'repaired',
+                  repaired_at: new Date().toISOString(),
+                  repair_attempted_at: repairAttemptAt,
+                })
+                .eq('monitor_id', monitor.id)
+                .eq('status', 'detected');
+            } else if (lastRepairError) {
+              // Persist error on the newly inserted alerts so we can audit later
+              await supabase
+                .from('catalog_media_alerts')
+                .update({
+                  repair_attempted_at: repairAttemptAt,
+                  repair_error: lastRepairError,
+                })
                 .eq('monitor_id', monitor.id)
                 .eq('status', 'detected');
             }
