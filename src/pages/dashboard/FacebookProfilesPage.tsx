@@ -689,9 +689,23 @@ export default function FacebookProfilesPage() {
                         <CardDescription>{profile.email || profile.facebook_id}</CardDescription>
                       </div>
                     </div>
-                    <Badge className={profile.status === 'active' ? 'badge-active' : 'badge-danger'}>
-                      {profile.status === 'active' ? 'Ativa' : profile.status === 'expired' ? 'Expirada' : 'Inativa'}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge className={profile.status === 'active' ? 'badge-active' : 'badge-danger'}>
+                        {profile.status === 'active' ? 'Ativa' : profile.status === 'expired' ? 'Expirada' : 'Inativa'}
+                      </Badge>
+                      {profile.role === 'monitor' && (
+                        <Badge variant="outline" className="text-xs gap-1 bg-primary/10 text-primary border-primary/30">
+                          <Shield className="w-3 h-3" />
+                          Monitor dedicado
+                        </Badge>
+                      )}
+                      {profile.role === 'campaigns' && (
+                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-500 border-amber-500/30">
+                          Só campanhas
+                        </Badge>
+                      )}
+                    </div>
+
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
