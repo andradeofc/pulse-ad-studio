@@ -182,7 +182,9 @@ export default function FacebookProfilesPage() {
     }
   };
 
+  const handleValidateToken = async () => {
     if (!tokenInput.trim()) return;
+
     
     setIsValidating(true);
     try {
