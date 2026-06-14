@@ -49,8 +49,10 @@ export function PixelSelector({ value, onChange }: PixelSelectorProps) {
     try {
       const { data, error } = await supabase
         .from('facebook_pixels')
-        .select('*')
+        .select('*, facebook_profiles!inner(role)')
+        .neq('facebook_profiles.role', 'monitor')
         .order('name');
+
 
       if (error) throw error;
       setPixels(data || []);
