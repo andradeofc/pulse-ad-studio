@@ -61,10 +61,12 @@ export function AdAccountSelector({
     try {
       const { data, error } = await supabase
         .from('facebook_ad_accounts')
-        .select('*, facebook_profiles!inner(status)')
+        .select('*, facebook_profiles!inner(status,role)')
         .eq('status', 'active')
         .neq('facebook_profiles.status', 'disconnected')
+        .neq('facebook_profiles.role', 'monitor')
         .order('name');
+
 
       if (error) throw error;
       setAccounts(data || []);
