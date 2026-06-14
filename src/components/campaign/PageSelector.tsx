@@ -123,10 +123,12 @@ export function PageSelector({
     try {
       const { data, error } = await supabase
         .from('facebook_pages')
-        .select('*, facebook_profiles!inner(status)')
+        .select('*, facebook_profiles!inner(status,role)')
         .neq('facebook_profiles.status', 'disconnected')
+        .neq('facebook_profiles.role', 'monitor')
         .eq('is_blacklisted', false)
         .order('name');
+
 
       if (error) throw error;
       
