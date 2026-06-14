@@ -40,16 +40,24 @@ export function CatalogSelector({ value, onChange, businessManagerId, selectedAc
 
     setLoading(true);
     try {
+      // Include catalogs from ALL profiles (monitor + campaigns/both) and dedupe by catalog_id.
+      // Monitor-dedicated profiles may own the catalog row in the DB, but the catalog itself
+      // is still usable when the campaign's ad account profile has BM access to it.
       const { data, error } = await supabase
         .from('facebook_catalogs')
-        .select('id, catalog_id, name, business_name, product_count, vertical, facebook_profiles!inner(role)')
+        .select('id, catalog_id, name, business_name, product_count, vertical')
         .eq('business_id', businessManagerId)
-        .neq('facebook_profiles.role', 'monitor')
         .order('name');
 
 
       if (error) throw error;
-      setCatalogs(data || []);
+      const seen = new Set<string>();
+      const deduped = (data || []).filter((c: any) => {
+        if (seen.has(c.catalog_id)) return false;
+        seen.add(c.catalog_id);
+        return true;
+      });
+      setCatalogs(deduped);
     } catch (err) {
       console.error('Error fetching catalogs:', err);
     } finally {
