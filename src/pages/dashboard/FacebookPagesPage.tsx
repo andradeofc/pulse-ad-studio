@@ -196,8 +196,10 @@ export default function FacebookPagesPage() {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('facebook_pages')
-        .select('*, facebook_profiles(name)')
+        .select('*, facebook_profiles!inner(name,role)')
+        .neq('facebook_profiles.role', 'monitor')
         .order('name');
+
 
       if (error) throw error;
 

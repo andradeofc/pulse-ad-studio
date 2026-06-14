@@ -160,19 +160,35 @@ export default function CatalogMonitorPage() {
     },
   });
 
-  // Fetch profiles
+  // Fetch profiles (preferring monitor-dedicated profile)
   const { data: profiles } = useQuery({
-    queryKey: ['facebook-profiles'],
+    queryKey: ['facebook-profiles-monitor'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('facebook_profiles')
-        .select('id, name, avatar_url')
+        .select('id, name, avatar_url, role')
         .eq('status', 'active')
+        .neq('role', 'campaigns')
+        .order('role', { ascending: true }) // 'both' before 'monitor' alphabetically; we'll re-sort
         .order('name');
       if (error) throw error;
-      return data;
+      // Sort: monitor first, then both
+      return (data || []).sort((a: any, b: any) => {
+        if (a.role === 'monitor' && b.role !== 'monitor') return -1;
+        if (a.role !== 'monitor' && b.role === 'monitor') return 1;
+        return a.name.localeCompare(b.name);
+      });
     },
   });
+
+  // Auto-select monitor profile when profiles load
+  useEffect(() => {
+    if (!selectedProfile && profiles && profiles.length > 0) {
+      const monitorProfile = profiles.find((p: any) => p.role === 'monitor');
+      if (monitorProfile) setSelectedProfile(monitorProfile.id);
+    }
+  }, [profiles, selectedProfile]);
+
 
   // Fetch BMs
   const { data: businessManagers } = useQuery({

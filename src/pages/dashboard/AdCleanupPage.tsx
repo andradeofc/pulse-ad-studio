@@ -80,10 +80,12 @@ export default function AdCleanupPage() {
     (async () => {
       const { data } = await supabase
         .from('facebook_ad_accounts')
-        .select('id, account_id, name, profile_id, currency, facebook_profiles!inner(status)')
+        .select('id, account_id, name, profile_id, currency, facebook_profiles!inner(status,role)')
         .eq('status', 'active')
         .neq('facebook_profiles.status', 'disconnected')
+        .neq('facebook_profiles.role', 'monitor')
         .order('name');
+
       setAccounts((data as any) || []);
     })();
   }, []);

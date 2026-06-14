@@ -38,8 +38,10 @@ export function BusinessManagerSelector({
     try {
       const { data, error } = await supabase
         .from('facebook_business_managers')
-        .select('id, business_id, name, verification_status')
+        .select('id, business_id, name, verification_status, facebook_profiles!inner(role)')
+        .neq('facebook_profiles.role', 'monitor')
         .order('name');
+
 
       if (error) throw error;
 

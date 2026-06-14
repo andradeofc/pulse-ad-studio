@@ -1386,6 +1386,7 @@ export type Database = {
           proxy_username: string | null
           rate_limit_count: number
           rate_limited_until: string | null
+          role: string
           status: string
           sync_status: string | null
           token_check_error: string | null
@@ -1420,6 +1421,7 @@ export type Database = {
           proxy_username?: string | null
           rate_limit_count?: number
           rate_limited_until?: string | null
+          role?: string
           status?: string
           sync_status?: string | null
           token_check_error?: string | null
@@ -1454,6 +1456,7 @@ export type Database = {
           proxy_username?: string | null
           rate_limit_count?: number
           rate_limited_until?: string | null
+          role?: string
           status?: string
           sync_status?: string | null
           token_check_error?: string | null

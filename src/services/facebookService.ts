@@ -28,7 +28,22 @@ export interface FacebookProfile {
   token_check_error?: string | null;
   token_check_error_code?: string | null;
   last_token_check_at?: string | null;
+  // Dedicated role: 'monitor' = só para monitor de catálogo, 'campaigns' = só campanhas, 'both' = ambos
+  role?: 'monitor' | 'campaigns' | 'both' | null;
 }
+
+export type FacebookProfileRole = 'monitor' | 'campaigns' | 'both';
+
+// Update profile role (monitor-dedicated vs campaigns vs both)
+export async function updateFacebookProfileRole(profileId: string, role: FacebookProfileRole) {
+  const { error } = await supabase
+    .from('facebook_profiles')
+    .update({ role } as any)
+    .eq('id', profileId);
+  if (error) throw error;
+  return { success: true };
+}
+
 
 export interface FacebookAdAccount {
   id: string;

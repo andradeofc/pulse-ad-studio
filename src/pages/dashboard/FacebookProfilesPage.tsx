@@ -63,8 +63,11 @@ import {
   updateFacebookToken,
   testProxyConnection,
   refreshFacebookProfileToken,
+  updateFacebookProfileRole,
   type FacebookProfile,
+  type FacebookProfileRole,
 } from '@/services/facebookService';
+
 import { AddProfileWizard } from '@/components/facebook/AddProfileWizard';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -152,8 +155,36 @@ export default function FacebookProfilesPage() {
     loadProfiles();
   }, [loadProfiles]);
 
+  // Update role (monitor / campaigns / both) for a profile
+  const handleRoleChange = async (profile: FacebookProfile, newRole: FacebookProfileRole) => {
+    try {
+      await updateFacebookProfileRole(profile.id, newRole);
+      toast({
+        title: 'Função atualizada',
+        description:
+          newRole === 'monitor'
+            ? `${profile.name} agora é dedicado APENAS ao monitor de catálogo.`
+            : newRole === 'campaigns'
+              ? `${profile.name} agora é usado APENAS para campanhas.`
+              : `${profile.name} voltou a ser usado para tudo.`,
+      });
+      await loadProfiles();
+    } catch (err: any) {
+      const msg = err?.message || '';
+      const isUnique = msg.includes('idx_one_monitor_per_user') || msg.includes('duplicate');
+      toast({
+        title: 'Erro ao atualizar função',
+        description: isUnique
+          ? 'Já existe outro perfil dedicado ao monitor. Só pode haver um.'
+          : msg || 'Erro desconhecido.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleValidateToken = async () => {
     if (!tokenInput.trim()) return;
+
     
     setIsValidating(true);
     try {
@@ -658,9 +689,23 @@ export default function FacebookProfilesPage() {
                         <CardDescription>{profile.email || profile.facebook_id}</CardDescription>
                       </div>
                     </div>
-                    <Badge className={profile.status === 'active' ? 'badge-active' : 'badge-danger'}>
-                      {profile.status === 'active' ? 'Ativa' : profile.status === 'expired' ? 'Expirada' : 'Inativa'}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge className={profile.status === 'active' ? 'badge-active' : 'badge-danger'}>
+                        {profile.status === 'active' ? 'Ativa' : profile.status === 'expired' ? 'Expirada' : 'Inativa'}
+                      </Badge>
+                      {profile.role === 'monitor' && (
+                        <Badge variant="outline" className="text-xs gap-1 bg-primary/10 text-primary border-primary/30">
+                          <Shield className="w-3 h-3" />
+                          Monitor dedicado
+                        </Badge>
+                      )}
+                      {profile.role === 'campaigns' && (
+                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-500 border-amber-500/30">
+                          Só campanhas
+                        </Badge>
+                      )}
+                    </div>
+
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -786,6 +831,29 @@ export default function FacebookProfilesPage() {
                       {profile.page_token_valid ? 'Válido' : 'Não verificado'}
                     </Badge>
                   </div>
+
+                  {/* Role */}
+                  <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Shield className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm text-muted-foreground">Função do perfil</span>
+                    </div>
+                    <Select
+                      value={profile.role || 'both'}
+                      onValueChange={(v) => handleRoleChange(profile, v as FacebookProfileRole)}
+                    >
+                      <SelectTrigger className="w-[180px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="both">Tudo (padrão)</SelectItem>
+                        <SelectItem value="monitor">Só monitor de catálogo</SelectItem>
+                        <SelectItem value="campaigns">Só campanhas</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+
 
                   {/* Proxy */}
                   <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">

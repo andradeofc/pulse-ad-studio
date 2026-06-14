@@ -34,8 +34,10 @@ export function useDashboardData() {
     queryFn: async () => {
       const { count, error } = await supabase
         .from('facebook_ad_accounts')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'active');
+        .select('*, facebook_profiles!inner(role)', { count: 'exact', head: true })
+        .eq('status', 'active')
+        .neq('facebook_profiles.role', 'monitor');
+
       
       if (error) throw error;
       return count || 0;
