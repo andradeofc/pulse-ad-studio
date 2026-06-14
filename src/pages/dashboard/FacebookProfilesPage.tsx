@@ -63,8 +63,11 @@ import {
   updateFacebookToken,
   testProxyConnection,
   refreshFacebookProfileToken,
+  updateFacebookProfileRole,
   type FacebookProfile,
+  type FacebookProfileRole,
 } from '@/services/facebookService';
+
 import { AddProfileWizard } from '@/components/facebook/AddProfileWizard';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
