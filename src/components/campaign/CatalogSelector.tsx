@@ -42,9 +42,11 @@ export function CatalogSelector({ value, onChange, businessManagerId, selectedAc
     try {
       const { data, error } = await supabase
         .from('facebook_catalogs')
-        .select('id, catalog_id, name, business_name, product_count, vertical')
+        .select('id, catalog_id, name, business_name, product_count, vertical, facebook_profiles!inner(role)')
         .eq('business_id', businessManagerId)
+        .neq('facebook_profiles.role', 'monitor')
         .order('name');
+
 
       if (error) throw error;
       setCatalogs(data || []);
