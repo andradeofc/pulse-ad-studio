@@ -112,13 +112,23 @@ export default function AdAccountsPage() {
     try {
       setLoading(true);
       const profilesData = await fetchFacebookProfiles();
-      setProfiles(profilesData);
+      // Exclude monitor-dedicated profiles from the ad accounts listing
+      const usableProfiles = profilesData.filter((p) => (p as any).role !== 'monitor');
+      setProfiles(usableProfiles);
       const allAccounts: FacebookAdAccount[] = [];
-      for (const profile of profilesData) {
+      for (const profile of usableProfiles) {
         const accs = await fetchAdAccounts(profile.id);
         allAccounts.push(...accs);
       }
-      setAccounts(allAccounts);
+      // Dedupe by account_id (same ad account often appears under multiple profiles)
+      const seen = new Set<string>();
+      const deduped: FacebookAdAccount[] = [];
+      for (const a of allAccounts) {
+        if (seen.has(a.account_id)) continue;
+        seen.add(a.account_id);
+        deduped.push(a);
+      }
+      setAccounts(deduped);
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Erro ao carregar contas');
