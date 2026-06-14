@@ -832,6 +832,29 @@ export default function FacebookProfilesPage() {
                     </Badge>
                   </div>
 
+                  {/* Role */}
+                  <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Shield className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm text-muted-foreground">Função do perfil</span>
+                    </div>
+                    <Select
+                      value={profile.role || 'both'}
+                      onValueChange={(v) => handleRoleChange(profile, v as FacebookProfileRole)}
+                    >
+                      <SelectTrigger className="w-[180px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="both">Tudo (padrão)</SelectItem>
+                        <SelectItem value="monitor">Só monitor de catálogo</SelectItem>
+                        <SelectItem value="campaigns">Só campanhas</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+
+
                   {/* Proxy */}
                   <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
                     <div className="flex items-center gap-2">
