@@ -155,7 +155,33 @@ export default function FacebookProfilesPage() {
     loadProfiles();
   }, [loadProfiles]);
 
-  const handleValidateToken = async () => {
+  // Update role (monitor / campaigns / both) for a profile
+  const handleRoleChange = async (profile: FacebookProfile, newRole: FacebookProfileRole) => {
+    try {
+      await updateFacebookProfileRole(profile.id, newRole);
+      toast({
+        title: 'Função atualizada',
+        description:
+          newRole === 'monitor'
+            ? `${profile.name} agora é dedicado APENAS ao monitor de catálogo.`
+            : newRole === 'campaigns'
+              ? `${profile.name} agora é usado APENAS para campanhas.`
+              : `${profile.name} voltou a ser usado para tudo.`,
+      });
+      await loadProfiles();
+    } catch (err: any) {
+      const msg = err?.message || '';
+      const isUnique = msg.includes('idx_one_monitor_per_user') || msg.includes('duplicate');
+      toast({
+        title: 'Erro ao atualizar função',
+        description: isUnique
+          ? 'Já existe outro perfil dedicado ao monitor. Só pode haver um.'
+          : msg || 'Erro desconhecido.',
+        variant: 'destructive',
+      });
+    }
+  };
+
     if (!tokenInput.trim()) return;
     
     setIsValidating(true);
