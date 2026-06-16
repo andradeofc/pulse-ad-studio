@@ -49,13 +49,25 @@ export function PixelSelector({ value, onChange }: PixelSelectorProps) {
     try {
       const { data, error } = await supabase
         .from('facebook_pixels')
-        .select('*, facebook_profiles!inner(role)')
+        .select('*, facebook_profiles!inner(role, status)')
         .neq('facebook_profiles.role', 'monitor')
         .order('name');
 
 
       if (error) throw error;
-      setPixels(data || []);
+      // Dedupe by pixel_id, preferring rows whose owning profile is active
+      const sorted = (data || []).slice().sort((a: any, b: any) => {
+        const aActive = a.facebook_profiles?.status === 'active' ? 0 : 1;
+        const bActive = b.facebook_profiles?.status === 'active' ? 0 : 1;
+        return aActive - bActive;
+      });
+      const seen = new Set<string>();
+      const deduped = sorted.filter((p: any) => {
+        if (seen.has(p.pixel_id)) return false;
+        seen.add(p.pixel_id);
+        return true;
+      });
+      setPixels(deduped);
     } catch (error) {
       console.error('Error fetching pixels:', error);
       toast({
