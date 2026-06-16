@@ -45,14 +45,20 @@ export function CatalogSelector({ value, onChange, businessManagerId, selectedAc
       // is still usable when the campaign's ad account profile has BM access to it.
       const { data, error } = await supabase
         .from('facebook_catalogs')
-        .select('id, catalog_id, name, business_name, product_count, vertical')
+        .select('id, catalog_id, name, business_name, product_count, vertical, profile_id, facebook_profiles!inner(status)')
         .eq('business_id', businessManagerId)
         .order('name');
 
 
       if (error) throw error;
+      // Prefer rows whose owning profile is active (so the sync uses a valid token).
+      const sorted = (data || []).slice().sort((a: any, b: any) => {
+        const aActive = a.facebook_profiles?.status === 'active' ? 0 : 1;
+        const bActive = b.facebook_profiles?.status === 'active' ? 0 : 1;
+        return aActive - bActive;
+      });
       const seen = new Set<string>();
-      const deduped = (data || []).filter((c: any) => {
+      const deduped = sorted.filter((c: any) => {
         if (seen.has(c.catalog_id)) return false;
         seen.add(c.catalog_id);
         return true;

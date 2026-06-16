@@ -97,44 +97,94 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get access token securely (service role already in use)
-    const { data: credentials } = await supabase
+    // Build a prioritized list of candidate tokens to try:
+    // 1) the catalog's own profile (if active + valid token)
+    // 2) any other active profile owned by the effective user with a valid token
+    // This handles cases where the catalog row points to a disconnected/stale profile
+    // but the user has other active profiles that can read the same catalog via BM sharing.
+    const { data: userProfiles } = await supabase
+      .from('facebook_profiles')
+      .select('id, name, status, role, access_token')
+      .eq('user_id', effectiveUserId);
+
+    const profileIds = (userProfiles || []).map((p: any) => p.id);
+    const { data: allCreds } = await supabase
       .from('facebook_credentials')
-      .select('access_token')
-      .eq('profile_id', catalog.profile_id)
-      .single();
+      .select('profile_id, access_token')
+      .in('profile_id', profileIds.length > 0 ? profileIds : ['00000000-0000-0000-0000-000000000000']);
 
-    // Fallback to facebook_profiles.access_token if credentials not found
-    let accessToken: string | null = null;
-    if (credentials?.access_token) {
-      accessToken = credentials.access_token;
-    } else {
-      const { data: fallbackProfile } = await supabase
-        .from('facebook_profiles')
-        .select('access_token')
-        .eq('id', catalog.profile_id)
-        .single();
-      accessToken = fallbackProfile?.access_token || null;
+    const credMap = new Map<string, string>();
+    for (const c of allCreds || []) {
+      if (c.access_token && c.access_token.length > 30) credMap.set(c.profile_id, c.access_token);
     }
 
-    if (!accessToken) {
-      return new Response(JSON.stringify({ error: 'No access token found' }), {
+    type Candidate = { profile_id: string; name: string; token: string };
+    const candidates: Candidate[] = [];
+    const seenProfiles = new Set<string>();
+
+    const pushCandidate = (p: any) => {
+      if (!p || seenProfiles.has(p.id)) return;
+      const tok = credMap.get(p.id) || (p.access_token && p.access_token.length > 30 ? p.access_token : null);
+      if (!tok) return;
+      seenProfiles.add(p.id);
+      candidates.push({ profile_id: p.id, name: p.name, token: tok });
+    };
+
+    // Priority 1: the catalog's own profile (if active)
+    const ownerProfile = (userProfiles || []).find((p: any) => p.id === catalog.profile_id && p.status === 'active');
+    pushCandidate(ownerProfile);
+
+    // Priority 2: other active profiles
+    for (const p of (userProfiles || [])) {
+      if (p.status === 'active') pushCandidate(p);
+    }
+
+    if (candidates.length === 0) {
+      return new Response(JSON.stringify({ error: 'No active profile with a valid token was found for this user.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Fetch product sets from Facebook
-    const productSetsUrl = `https://graph.facebook.com/v21.0/${catalog_id}/product_sets?fields=id,name,product_count,filter&limit=500&access_token=${accessToken}`;
-    const productSetsRes = await fetch(productSetsUrl);
-    const productSetsData = await productSetsRes.json();
+    // Try each candidate token until one succeeds
+    let productSetsData: any = null;
+    let lastError: any = null;
+    let usedProfile: string | null = null;
 
-    if (productSetsData.error) {
-      console.error('[sync-product-sets] Error from Facebook:', productSetsData.error);
-      return new Response(JSON.stringify({ error: productSetsData.error.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    for (const cand of candidates) {
+      const productSetsUrl = `https://graph.facebook.com/v21.0/${catalog_id}/product_sets?fields=id,name,product_count,filter&limit=500&access_token=${cand.token}`;
+      try {
+        const res = await fetch(productSetsUrl);
+        const data = await res.json();
+        if (data?.error) {
+          console.warn(`[sync-product-sets] Profile "${cand.name}" failed: ${data.error.message} (code ${data.error.code})`);
+          lastError = data.error;
+          // Token-related errors → try next candidate. Other errors → stop.
+          const code = data.error.code;
+          if (code === 190 || code === 102 || code === 104 || code === 200) continue;
+          // Permission denied for this token → try next
+          if (String(data.error.message || '').toLowerCase().includes('permission')) continue;
+          break;
+        }
+        productSetsData = data;
+        usedProfile = cand.name;
+        console.log(`[sync-product-sets] Success using profile "${cand.name}"`);
+        break;
+      } catch (err: any) {
+        lastError = { message: err?.message || String(err) };
+        continue;
+      }
+    }
+
+    if (!productSetsData) {
+      console.error('[sync-product-sets] All candidate tokens failed. Last error:', lastError);
+      return new Response(
+        JSON.stringify({
+          error: lastError?.message || 'Failed to fetch product sets from any available profile.',
+          hint: 'Verifique se algum perfil ativo do usuário tem acesso a este catálogo no Facebook Business Manager.',
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     const productSets: FacebookProductSet[] = productSetsData.data || [];
