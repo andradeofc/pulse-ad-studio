@@ -179,7 +179,7 @@ function LanguageCard({ language, isDefault, index, usedLocales, allCreatives, o
                 onChange={(e) => onUpdate({ ...language, headline: e.target.value })}
                 placeholder={!isDefault ? 'Vazio = usar título do idioma padrão' : 'Título do anúncio...'}
                 className="bg-secondary/50 text-sm"
-                maxLength={40}
+                maxLength={80}
               />
             </div>
 
