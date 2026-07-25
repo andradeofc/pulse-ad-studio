@@ -928,6 +928,31 @@ function buildAdsetParams(
     params.daily_budget = String(Math.round((config.adsetBudget || 10) * 100));
   }
 
+  // Bid controls (only added when strategy requires it AND value is provided).
+  // Safe defaults: if any value is missing/invalid we simply skip, preserving
+  // legacy behavior (Facebook will reject the adset with a clear error instead
+  // of silently ignoring a misconfigured cap).
+  const strategy = config.bidStrategy || 'LOWEST_COST_WITHOUT_CAP';
+  if (strategy === 'LOWEST_COST_WITH_BID_CAP') {
+    const bidCap = Number(config.bidCap);
+    if (Number.isFinite(bidCap) && bidCap > 0) {
+      params.bid_amount = String(Math.round(bidCap * 100));
+    }
+  } else if (strategy === 'COST_CAP') {
+    const costCap = Number(config.costCap);
+    if (Number.isFinite(costCap) && costCap > 0) {
+      params.bid_amount = String(Math.round(costCap * 100));
+    }
+  } else if (strategy === 'LOWEST_COST_WITH_MIN_ROAS') {
+    const roas = Number(config.roasGoal);
+    // Meta expects roas_average_floor as ROAS * 10000 (e.g. 2.0 => 20000).
+    if (Number.isFinite(roas) && roas > 0) {
+      params.bid_constraints = JSON.stringify({
+        roas_average_floor: Math.round(roas * 10000),
+      });
+    }
+  }
+
   // Promoted object
   const promotedObject: Record<string, any> = {};
   
