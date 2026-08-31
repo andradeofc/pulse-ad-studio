@@ -56,11 +56,27 @@ Deno.serve(async (req) => {
 
     console.log(`Syncing pixels for user: ${user.id}`);
 
-    // Get all Facebook profiles for this user (RLS handles team member access)
-    const { data: profiles, error: profilesError } = await supabase
+    // Create service role client to fetch credentials securely
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
+
+    // Get the profile ids this user may access (RLS handles team member access)
+    const { data: visibleProfiles, error: visibleProfilesError } = await supabase
+      .from("facebook_profiles")
+      .select("id")
+      .eq("status", "active");
+
+    if (visibleProfilesError) {
+      console.error("Error fetching profiles:", visibleProfilesError);
+      throw visibleProfilesError;
+    }
+
+    // Proxy credentials are only readable with the service role
+    const { data: profiles, error: profilesError } = await supabaseService
       .from("facebook_profiles")
       .select("id, proxy_host, proxy_port, proxy_username, proxy_password")
-      .eq("status", "active");
+      .in("id", (visibleProfiles || []).map((p: any) => p.id));
+
 
     if (profilesError) {
       console.error("Error fetching profiles:", profilesError);
