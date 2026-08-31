@@ -202,7 +202,7 @@ export function NotificationPopover() {
 
       const readIds = new Set(reads?.map((r) => r.notification_id) || []);
 
-      return notifications.map((n): AdminNotification => ({
+      return (notifications as any[]).map((n): AdminNotification => ({
         id: n.id,
         type: n.notification_type as AdminNotification['type'],
         title: n.title,
