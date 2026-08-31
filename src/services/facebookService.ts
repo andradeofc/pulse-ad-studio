@@ -15,7 +15,9 @@ export interface FacebookProfile {
   proxy_host: string | null;
   proxy_port: number | null;
   proxy_username: string | null;
-  proxy_password: string | null;
+  // Never readable from the client (server-side only)
+  proxy_password?: string | null;
+
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
