@@ -196,7 +196,7 @@ export default function FacebookPagesPage() {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('facebook_pages')
-        .select('*, facebook_profiles!inner(name,role)')
+        .select('id, profile_id, page_id, name, category, picture_url, followers_count, is_published, business_id, business_name, ads_running, ads_limit, tasks, created_at, updated_at, source, is_blacklisted, blacklist_reason, blacklisted_at, instagram_actor_id, instagram_actor_type, instagram_resolved_at, facebook_profiles!inner(name,role)')
         .neq('facebook_profiles.role', 'monitor')
         .order('name');
 

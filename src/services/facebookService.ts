@@ -65,7 +65,7 @@ export interface FacebookAdAccount {
 export async function fetchFacebookProfiles(): Promise<FacebookProfile[]> {
   const { data, error } = await supabase
     .from('facebook_profiles')
-    .select('*')
+    .select('id, user_id, facebook_id, name, email, avatar_url, status, permissions, token_expires_at, page_token_valid, proxy_host, proxy_port, proxy_username, last_synced_at, created_at, updated_at, sync_status, proxy_protocol, is_primary, app_id, app_name, auth_method, token_status, token_check_error, token_check_error_code, last_token_check_at, is_long_lived, rate_limited_until, rate_limit_count, role')
     .neq('status', 'disconnected')
     .order('created_at', { ascending: false });
 

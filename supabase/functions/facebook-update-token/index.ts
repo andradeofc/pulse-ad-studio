@@ -601,7 +601,7 @@ Deno.serve(async (req) => {
     // Verify profile ownership
     const { data: profile, error: profileError } = await supabase
       .from("facebook_profiles")
-      .select("*")
+      .select("id, user_id, name, facebook_id, status")
       .eq("id", profileId)
       .eq("user_id", user.id)
       .single();
