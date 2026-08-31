@@ -93,9 +93,6 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${profiles.length} active profiles`);
 
-    // Create service role client to fetch credentials securely
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
 
     let totalPixels = 0;
 
