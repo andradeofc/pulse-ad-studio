@@ -165,7 +165,7 @@ export default function AdminDashboardPage() {
       sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
       const { count: expiringTokens } = await supabase
         .from('facebook_profiles')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .lte('token_expires_at', sevenDaysFromNow.toISOString())
         .gte('token_expires_at', new Date().toISOString());
 

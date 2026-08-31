@@ -188,18 +188,11 @@ export function NotificationPopover() {
     queryFn: async () => {
       if (!user?.id) return [];
 
-      const now = new Date().toISOString();
-
-      // Get active notifications that haven't expired
-      const { data: notifications, error } = await supabase
-        .from('admin_notifications')
-        .select('id, title, message, notification_type, sent_at, created_at')
-        .not('sent_at', 'is', null)
-        .or(`expires_at.is.null,expires_at.gt.${now}`)
-        .order('sent_at', { ascending: false })
-        .limit(10);
+      // Get active notifications targeted at this user (secure RPC — no targeting data exposed)
+      const { data: notifications, error } = await supabase.rpc('get_my_notifications' as any);
 
       if (error || !notifications) return [];
+
 
       // Get read status for current user
       const { data: reads } = await supabase
@@ -209,7 +202,7 @@ export function NotificationPopover() {
 
       const readIds = new Set(reads?.map((r) => r.notification_id) || []);
 
-      return notifications.map((n): AdminNotification => ({
+      return (notifications as any[]).map((n): AdminNotification => ({
         id: n.id,
         type: n.notification_type as AdminNotification['type'],
         title: n.title,
