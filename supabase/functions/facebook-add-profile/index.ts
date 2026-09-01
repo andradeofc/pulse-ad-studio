@@ -198,7 +198,7 @@ async function performFullSync(
   let bmsCount = 0;
 
   console.log("=== STAGE 1: SYNCING ACCOUNTS ===");
-  await updateSyncStatus(supabase, profileId, "syncing_accounts");
+  await updateSyncStatus(svcClient || supabase, profileId, "syncing_accounts");
   await reportTaskStep(svcClient, taskId, 5, "fetchingAdAccounts", "Buscando contas de anúncio...");
 
   let allBusinesses: any[] = [];
@@ -338,7 +338,7 @@ async function performFullSync(
 
   } catch (error) {
     console.error("Error in Stage 1 (accounts):", error);
-    await updateSyncStatus(supabase, profileId, "error");
+    await updateSyncStatus(svcClient || supabase, profileId, "error");
     await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar contas" });
     return;
   }
@@ -354,7 +354,7 @@ async function performFullSync(
 
   // ========== STAGE 3: SYNC PIXELS ==========
   console.log("=== STAGE 3: SYNCING PIXELS ===");
-  await updateSyncStatus(supabase, profileId, "syncing_pixels");
+  await updateSyncStatus(svcClient || supabase, profileId, "syncing_pixels");
   await reportTaskStep(svcClient, taskId, 8, "syncingPixels", "Sincronizando pixels...");
 
   try {
@@ -445,7 +445,7 @@ async function performFullSync(
 
   } catch (error) {
     console.error("Error in Stage 3 (pixels):", error);
-    await updateSyncStatus(supabase, profileId, "error");
+    await updateSyncStatus(svcClient || supabase, profileId, "error");
     await finishTask(svcClient, taskId, "failed", { error: error instanceof Error ? error.message : "Falha ao sincronizar pixels" });
     return;
   }
@@ -453,7 +453,7 @@ async function performFullSync(
   // ========== FINAL: UPDATE COMPLETED ==========
   console.log("=== SYNC COMPLETED ===");
   
-  await supabase
+  await (svcClient || supabase)
     .from("facebook_profiles")
     .update({
       last_synced_at: new Date().toISOString(),
@@ -593,19 +593,20 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Create service role client (client role has no write access to facebook_profiles)
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
+
     // 3. Check if profile already exists for this user
-    const { data: existingProfile } = await supabase
+    const { data: existingProfile } = await supabaseService
       .from("facebook_profiles")
       .select("id")
       .eq("user_id", userId)
       .eq("facebook_id", userData.id)
-      .single();
+      .maybeSingle();
 
     let profile;
 
-    // Create service role client for secure credential storage
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
 
     // Initial task progress (no-op if no taskId)
     await reportTaskStep(supabaseService, taskId, 1, "validatingToken", "Token validado com sucesso", { userName: userData.name });
@@ -633,7 +634,7 @@ Deno.serve(async (req) => {
     if (existingProfile) {
       // Update existing profile (may be reconnecting a disconnected profile)
       console.log("Updating existing profile:", existingProfile.id);
-      const { data, error } = await supabase
+      const { data, error } = await supabaseService
         .from("facebook_profiles")
         .update({
           name: userData.name,
@@ -697,7 +698,7 @@ Deno.serve(async (req) => {
     } else {
       // Create new profile
       console.log("Creating new profile for user:", userId);
-      const { data, error } = await supabase
+      const { data, error } = await supabaseService
         .from("facebook_profiles")
         .insert({
           user_id: userId,
