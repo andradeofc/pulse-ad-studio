@@ -593,19 +593,20 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Create service role client (client role has no write access to facebook_profiles)
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
+
     // 3. Check if profile already exists for this user
-    const { data: existingProfile } = await supabase
+    const { data: existingProfile } = await supabaseService
       .from("facebook_profiles")
       .select("id")
       .eq("user_id", userId)
       .eq("facebook_id", userData.id)
-      .single();
+      .maybeSingle();
 
     let profile;
 
-    // Create service role client for secure credential storage
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseService = createClient(supabaseUrl, serviceRoleKey);
 
     // Initial task progress (no-op if no taskId)
     await reportTaskStep(supabaseService, taskId, 1, "validatingToken", "Token validado com sucesso", { userName: userData.name });
